@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Local state / generated views
+.why-exist/
+*.sqlite
+*.sqlite-*
+export/
+*.bak
+
+# Scratch / audits / release outputs
+.verify/
+.wxg-tmp/
+dist/
+*.log
+*.zip
+
+# Test caches
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+.DS_Store

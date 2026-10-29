@@ -1,0 +1,30 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify before publishing
+        run: |
+          python scripts/wxg.py verify
+          python -m unittest discover -s tests -v
+      - name: Build deterministic release zip
+        run: python tools/build_release.py --out dist
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**/why-exist-graph-*.zip
+          generate_release_notes: true
