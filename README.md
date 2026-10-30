@@ -86,7 +86,7 @@ python $wxg --root .why-exist export --feature feat-x
 ## 自检与开发
 
 ```bash
-PYTHONUTF8=1 python scripts/wxg.py verify          # ok:true, contract v0.4.0 / schema v3
+PYTHONUTF8=1 python scripts/wxg.py verify          # ok:true, contract v0.4.1 / schema v3
 PYTHONUTF8=1 python -m unittest discover -s tests -v   # Ran 42 tests ... OK
 python scripts/gen_sample.py                        # 重建导出样例（--write 刷新 references/export-sample）
 ```
@@ -132,7 +132,7 @@ python scripts/gen_sample.py                        # 重建导出样例（--wri
 
 ## 版本
 
-当前 `0.4.0`（首个发布版本，契约 0.4.0 / schema 3）。变更记录见 [`CHANGELOG.md`](CHANGELOG.md)，
+当前 `0.4.1`（首个公开版本 0.4.0；0.4.1 仅测试修复，契约 0.4.1 / schema 3）。变更记录见 [`CHANGELOG.md`](CHANGELOG.md)，
 版本号见 [`VERSION`](VERSION)。GitHub Releases 会附带可安装 zip 与 SHA-256。
 
 ## License

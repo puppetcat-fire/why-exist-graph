@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 
 SCHEMA_VERSION = 3
-CONTRACT_VERSION = "0.4.0"
+CONTRACT_VERSION = "0.4.1"
 
 # ---------------------------------------------------------------- 条件与工单
 

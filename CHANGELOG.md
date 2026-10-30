@@ -1,5 +1,16 @@
 # Changelog — why-exist-graph
 
+## 0.4.1（2026-10-30）
+
+**仅测试修复，无功能与 schema 行为变更。** Windows 上 `tempfile` 的根可能返回 8.3 短路径
+（如 `C:\Users\RUNNER~1\AppData\Local\Temp`），`test_role_prompt_uses_real_root` 用短路径字符串
+与 `role-prompt` 解析出的长路径比较，在 GitHub Actions 的 windows runner 上必失败（ubuntu 不复现）。
+测试夹具改为 `Path(...).resolve()` 后再断言，其余用例不变。
+
+- 契约版本 `0.4.0` → `0.4.1`（版本号随发布推进；schema 仍为 `3`，命令与行为无变化）。
+- CI 六格（ubuntu-latest / windows-latest × Python 3.10/3.12/3.13）全绿；`verify` 与 42 个用例标准不变。
+- 发布资产与 0.4.0 的内容差异仅限测试文件与版本号。
+
 ## 0.4.0（2026-10-29）
 
 **首个对外发布版本（initial release）**。来自对 0.3.0 的"文档描述 vs 实现"一致性审计

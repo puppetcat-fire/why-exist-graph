@@ -4,7 +4,7 @@
 Usage (from the repository root):
   python tools/build_release.py
   python tools/build_release.py --out dist
-  python tools/build_release.py --version 0.4.0
+  python tools/build_release.py --version 0.4.1
 
 产物（默认 dist/v<version>/）：
   why-exist-graph-<version>.zip   确定性的技能包（顶层目录 why-exist-graph/）
