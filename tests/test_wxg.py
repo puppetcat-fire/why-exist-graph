@@ -45,7 +45,9 @@ def create_order(repo, data):
 class WxgTestCase(unittest.TestCase):
     def setUp(self):
         self._tmpdir = wxg.make_temp_dir("wxg-test-")
-        self.base = Path(self._tmpdir)
+        # Windows 上 tempfile 的根可能是 8.3 短路径（如 C:\Users\RUNNER~1\...），
+        # 而 wxg 会把 --root 解析成真实长路径；统一成 realpath 后断言与 CLI 输出可比。
+        self.base = Path(self._tmpdir).resolve()
         self.root = self.base / "state"
         self.repo = self.base / "repo"
         self.repo.mkdir()
