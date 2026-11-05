@@ -1,20 +1,17 @@
 ---
 name: why-exist-graph
 description: >-
-  DSH 原生的“设计期编译器 + 交付门”技能：把设计图（Design IR）编译成可并行执行的任务，
-  并在交付前用机械判定挡住没有证据的完成。
-  图库侧：登记源码仓、按 Python 源文件导入图库、声明功能、按角色领取工单、必要性咬合
-  （KEEP/UNNECESSARY/HOLLOW 等）、设计模式有限应用、咬合覆盖约束、按 feature 导出只读设计视图。
-  编译器 pass（只读）：`plan` 并行规划（SCC / 拓扑波次 / 最大反链 / 瓶颈）、`brief` 盲化任务书、
-  `blind-check` 盲执行校验、`impact` 影响域闭包、`cycles` 环检测与破环建议、`conformance` 锚点一致性、
-  `derive` 按目录反推组件、`conflicts` 多 feature 写入边界重叠。
-  运行时：8 条件状态机、generation、变更集、工单生命周期、证据、`patch`/`apply` 操作日志、
-  `reconcile`/`serve` 控制器。
-  状态库默认 SQLite，也可切 MariaDB/MySQL/PostgreSQL。条件、工单、角色、命令、属性键、导出形状由
-  `scripts/wxg_contract.py` 定义；`wxg verify` 校验生成文档块与导出样例是否漂移，`doctor` 校验状态库。
-  用于 why-exist、设计一致性检查、并行切分规划、质疑一块代码有没有必要、声明功能、拆分角色并行、
+  DSH 原生的“设计期编译器 + 交付门”技能，让设计是否成立、功能是否交付变成机械判定。
+  三层：设计图（Design IR）→ 编译 pass（`plan` 并行规划 / `brief` 盲化任务书 /
+  `blind-check` 盲执行校验 / `impact` 影响域 / `cycles` 环检测 / `conformance` 锚点一致性 /
+  `derive` 反推组件 / `conflicts` 边界重叠）→ 运行时（8 条件状态机、工单生命周期、证据、
+  `patch`/`apply` 操作日志、`reconcile`/`serve` 控制器）。图库侧支持登记源码仓、
+  按 Python 源文件导入、声明功能、按角色领工单、必要性咬合、设计模式有限应用、按 feature 导出视图。
+  状态库默认 SQLite，可切 MariaDB/MySQL/PostgreSQL；契约常量用 `wxg contract --json` 取。
+  **能力边界**：`wxg verify` 只比字节一致性（生成文档块、导出样例），不是契约提取器；
+  `doctor` 只体检状态库。用于设计一致性检查、并行切分规划、质疑代码必要性、声明功能、
   交付前门禁（gate，PASS/FAIL 退出码 0/1）。
-whenToUse: 需要把“设计/代码是否成立、功能是否交付”变成可判定状态时；要规划并行切分、判断一次切分能不能交给不知全局的执行者、估算改动影响面时；或用户点名 why-exist、设计期编译器、并行规划、盲执行、撕咬、交付门、声明调和、设计图谱时。
+whenToUse: 需要一次性 PASS/FAIL 判定（gate / verify / doctor / 咬合结论）、按工单流程推进一个 feature 的交付、规划并行切分、判断一次切分能不能交给不知全局的执行者、估算改动影响面时；或用户点名 why-exist、设计期编译器、并行规划、盲执行、撕咬、交付门、声明调和、设计图谱时。开放式仓库审计、代码综述、多文件行为契约盘点不属于本技能的典型路径——那类任务用普通读码/grep 更快，加载本技能只会增加状态库与流程开销。
 ---
 
 # why-exist-graph（DSH 原生）
@@ -25,6 +22,23 @@ whenToUse: 需要把“设计/代码是否成立、功能是否交付”变成�
 ## 为什么它设计上一致
 
 下面 21 条不变量由契约生成（见“契约”块末尾“一致性不变量”表）；`wxg verify` 校验生成文档块、命令/角色/kind/写入列交叉引用与导出样例的字节一致性（不替代 doctor 与行为测试）；`tests/test_wxg.py` 覆盖主要不变量与端到端流程（I6 的“导入器仅 Python”边界见 `references/design.md`）。
+
+## 首次响应：先拿退出码，别把门禁做成开放式审计
+
+被问「这样行不行 / 交付了吗 / 这块该不该存在」时，先跑三条命令拿退出码，再决定要不要深挖：
+
+```powershell
+python <skill>/scripts/wxg.py --root <root> verify                 # 字节一致性：ok:true → 退出 0
+python <skill>/scripts/wxg.py --root <root> doctor                 # 状态库体检
+python <skill>/scripts/wxg.py --root <root> gate --feature <id>    # PASS/FAIL → 退出 0/1
+```
+
+- 三条都过就直接给结论。不要为了「更全面」另写探针脚本——那会把一次判定拖成仓库审计。
+- `verify` **只**比字节一致性（生成文档块 vs 重新生成的内容、导出样例），它不会告诉你契约
+  内容是什么；要权威常量用 `wxg contract --json`。
+- 要的是「这个仓库有哪些行为契约」这类盘点：那不是本技能的典型路径。先用普通 grep/读码
+  给结论，只有需要把结论固化成 gate 时才建库。
+- 长任务要有收敛点：预算内先输出 PASS/FAIL，再按需扩展审计。
 
 ## 快速开始（在 DSH 里调用）
 
@@ -463,6 +477,11 @@ feature 开启 `--conformance`（默认关闭）时，gate 对 `missing`/`missin
 - `serve` 是单进程循环，不是分布式控制器；多实例同时跑时只有安全迁移是幂等的，审计与写入仍由代理显式完成。
 - `feature-register` 不能代替 work-judge 置真条件（0.4.0 起不再提供 `--true`）；已有图要恢复条件，仍需走 work-open → claim → finish → judge 的审计链。
 - `tools/verify_reports.py` 只验证"同一份图在不同命令里的说法一致"，不验证结论对不对——后者需要外部真值。它抓得到命令间自相矛盾，抓不到"几个命令一起错"。
+- `wxg verify` 不是契约提取器：它只比字节（生成文档块、命令/角色/kind/写入列交叉引用、导出样例），
+  查不出「文档写的行为和实现对不上」。要提取行为契约得读 `wxg_contract.py` + `commands_*.py` + 测试，
+  或者 `contract --json` 取权威常量。把 verify 当审计工具用会得出「全绿所以契约没问题」的错觉。
+- 加载本技能 ≠ 必须建库：只是问「这块代码该不该存在」「契约是什么」时，用只读命令
+  （`contract --json` / `find` / `get` / `plan` 在已有库上）即可，不必走 declare → claim → gate 流水线。
 
 ## 与 DSH Agent Teams 对齐
 
