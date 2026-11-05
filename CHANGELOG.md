@@ -1,5 +1,24 @@
 # Changelog — why-exist-graph
 
+## 3.4.0（2026-11-06）
+
+**契约块分层：SKILL.md 瘦 25%**。依据是 dreaming 的第 17 次调用数据（n 16→17，
+wasteRate 42.5%→38%，consciousness 67→69）——3.3.0/3.3.1 的指令改动方向对但不够，
+因为技能本体一次就加载 60KB。
+
+- **`main_contract_markdown()` 只放结构**：条件顺序、角色与允许命令、命令表（50 条）、
+  咬合判决允许值。10 张规则表（gate / coverage / reconcile / 变更集 / 回扫 / conformance /
+  后端 / serve / 审计与证据 / 导出文件）与 21 条一致性不变量移到 `_rules_and_invariants()`，
+  只拼进 full 块。
+- **效果**：main 块 15424 → 6752 字符（-56%）；`SKILL.md` 60599 → 45369 字节
+  （-25%，省 15KB）；行数 354 → 237。full 块内容不变（19916 字符），
+  `references/contract.md` 仍含全部规则与不变量。
+- **main 块加了指针**：明确说规则与不变量在 full 块；要机器可读用 `contract --json`
+  的 `gate_rules` / `coverage_rules` / `invariants` 等独立键。
+- **验证**：`verify` PASS（main/full 块都重新生成一致）、`doc_flow` 照精简后的 SKILL.md
+  仍能走到 gate PASS、416 tests OK。
+- **版本**：契约 `3.3.1` → `3.4.0`；schema 仍为 `9`。
+
 ## 3.3.1（2026-11-06）
 
 **SKILL.md 补「契约速查」与「什么时候不该加载」**。延续 3.3.0 对 dreaming

@@ -85,6 +85,18 @@
 | `verify` | 一致性自检：契约块、角色/命令/kind 交叉引用、导出样例、写入列；不替代 doctor/行为测试 | — | 只读 |
 | `doctor` | 状态库自检：悬空 bite/边/引用、陈旧 token、条件与审计配对、legacy 身份、证据产物；--fix 只清理悬空引用与陈旧 token | --fix | 只读（--fix 时状态库） |
 
+### 规则与不变量
+
+咬合判决允许值：`KEEP`、`UNNECESSARY`、`HOLLOW`、`DOC-ONLY`、`UNMAPPED`、`UNKNOWN`。
+
+结构性漂移判决：`UNMAPPED`、`DOC-ONLY`（由 `--drift-limit` 控制是否拦门）。
+
+gate / coverage / reconcile / 变更集 / 回扫 / conformance / 后端 / serve / 审计与证据 /
+导出文件共 10 张规则表，以及 21 条一致性不变量，**只在 full 契约块里**——本块刻意不收，
+避免每次加载技能都带上十几 KB 的规则正文。要看它们：`wxg contract --section full`，
+或读 `references/contract.md`；机器可读用 `wxg contract --json`（`gate_rules` /
+`coverage_rules` / … / `invariants` 都是独立键）。
+
 ### 咬合判决
 
 允许值：`KEEP`、`UNNECESSARY`、`HOLLOW`、`DOC-ONLY`、`UNMAPPED`、`UNKNOWN`。
@@ -340,5 +352,5 @@
 
 导出只包含图里连到该 feature 的记录：01 取 requirement；02 取 satisfies 这些 requirement 的 use_case；04 取用例经 depends/associates/realizes 到达的 component 与 port，以及 feature 作用域内的 pattern；05 取用例 contains 的 operation 及其 has_input、以及 contains 指向这些 operation 的 classifier；07 每条 writes->sink 算一步，另附请求参数表（同一参数只列一次，顺序按首次出现）；测试规格取 verifies 到这些 operation/use_case 的 testcase 与 asserts 到 operation 的 assertion。缺的格子留空，禁止从任何旧文档补句。参数、测试与断言按 id 去重。
 
-契约版本 `3.3.1`，库 schema 版本 `9`。
+契约版本 `3.4.0`，库 schema 版本 `9`。
 <!-- wxg:contract:full:end -->

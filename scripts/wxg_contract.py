@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 
 SCHEMA_VERSION = 9
-CONTRACT_VERSION = "3.3.1"
+CONTRACT_VERSION = "3.4.0"
 
 #: ``doctor --fix`` 能自动修的检查项。其余问题（legacy 身份、条件行缺失、审计配对等）
 #: 只能报给人看——要么需要裁决，要么需要改设计，自动修等于替人做决定。
@@ -827,6 +827,24 @@ def main_contract_markdown() -> str:
     for name, spec in COMMANDS.items():
         lines.append(f"| `{name}` | {spec['help']} | {_cmd_params(spec)} | {_cmd_write(name)} |")
     lines.append("")
+    lines.append("### 规则与不变量")
+    lines.append("")
+    lines.append("咬合判决允许值：" + "、".join(f"`{v}`" for v in BITE_VERDICTS) + "。")
+    lines.append("")
+    lines.append("结构性漂移判决：" + "、".join(f"`{v}`" for v in DRIFT_VERDICTS) + "（由 `--drift-limit` 控制是否拦门）。")
+    lines.append("")
+    lines.append("gate / coverage / reconcile / 变更集 / 回扫 / conformance / 后端 / serve / 审计与证据 /")
+    lines.append("导出文件共 10 张规则表，以及 21 条一致性不变量，**只在 full 契约块里**——本块刻意不收，")
+    lines.append("避免每次加载技能都带上十几 KB 的规则正文。要看它们：`wxg contract --section full`，")
+    lines.append("或读 `references/contract.md`；机器可读用 `wxg contract --json`（`gate_rules` /")
+    lines.append("`coverage_rules` / … / `invariants` 都是独立键）。")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _rules_and_invariants() -> list[str]:
+    """10 张规则表 + 导出文件 + 一致性不变量；只拼进 full 契约块。"""
+    lines: list[str] = []
     lines.append("### 咬合判决")
     lines.append("")
     lines.append("允许值：" + "、".join(f"`{v}`" for v in BITE_VERDICTS) + "。")
@@ -918,11 +936,13 @@ def main_contract_markdown() -> str:
     for name, text in INVARIANTS:
         lines.append(f"| {name} | {text} |")
     lines.append("")
-    return "\n".join(lines)
+    return lines
 
 
 def full_contract_markdown() -> str:
     lines = [main_contract_markdown()]
+    # main 块刻意只放结构（命令/角色/条件），规则正文与不变量在这里补齐
+    lines.extend(_rules_and_invariants())
     lines.append("### 节点 kind")
     lines.append("")
     lines.append("| kind | 说明 | 创建者 |")
