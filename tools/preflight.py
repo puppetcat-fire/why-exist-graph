@@ -110,6 +110,11 @@ def main(argv: list[str] | None = None) -> int:
         shutil.rmtree(tmp2, ignore_errors=True)
         shutil.rmtree(tmp2.parent / "demo-repo", ignore_errors=True)
 
+    step("后端集成（可选，需 WXG_TEST_MYSQL_URL / WXG_TEST_PG_URL）")
+    proc = sh([sys.executable, str(HERE / "test_backend.py")])
+    backend_lines = [line for line in proc.stdout.splitlines() if line.startswith("后端集成测试")]
+    ok(backend_lines[-1] if backend_lines else "跳过")
+
     if args.release:
         step("打包发布")
         proc = sh([sys.executable, str(HERE / "build_release.py")])

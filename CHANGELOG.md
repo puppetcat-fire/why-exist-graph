@@ -1,5 +1,22 @@
 # Changelog — why-exist-graph
 
+## 2.97.0（2026-11-06）
+
+**后端集成测试接进 CI 与本地流程**。2.94–2.96 修的 MySQL/PG 问题，此前只能靠审计时
+手工连库验证——CI 里两个后端集成测试永远 skip，后端坏了 CI 照样绿。
+
+- **CI 新增 `backend` job**（ubuntu-latest）：MariaDB 11 + PostgreSQL 16 各起一个
+  service 容器，跑 `tests.test_mysql_backend` 与 `tests.test_pg_backend`。
+  GitHub Actions 的 `services` 只在 Linux 可用，所以独立成 job，不污染三系统矩阵。
+- **新增 `tools/test_backend.py`**：本地一条命令跑两个后端集成测试，按环境变量决定跑哪个；
+  URL 里的密码自动掩码；`--strict` 要求至少跑一个（给 CI / preflight 用）。
+- **`preflight` 新增一步**「后端集成（可选）」：配了 `WXG_TEST_*_URL` 就跑，没配就跳过，
+  不阻断发布。
+- **实测**：本机 MariaDB 12.3.3 与 PG 16.15 上各 3 条全过——2.94 的 `cmd_init`
+  NameError、`executemany` 缺失、2.96 的 `CONCAT` 拼接都在真库上验证过。
+- **测试**：404 不变（本版只接通路，不加用例）。
+- **版本**：契约 `2.96.0` → `2.97.0`；schema 仍为 `9`。
+
 ## 2.96.0（2026-11-06）
 
 **MariaDB 静默丢历史 + 错误流契约上锁**。一条数据正确性修复，加一组从零到有的断言。

@@ -30,3 +30,52 @@ jobs:
         run: python tools/check_docs.py
       - name: Run tests
         run: python -m unittest discover -s tests -v
+
+  # 后端集成测试单独一个 job：GitHub Actions 的 services 只在 Linux 上可用，
+  # 而主 job 要矩阵跑 Windows。不接进来的话，MySQL/PG 的两组集成用例永远 skip，
+  # 后端坏了 CI 照样绿——2.94.0 修的那三条断链就是这么漏过去的。
+  backend:
+    name: backend integration (mariadb + postgres)
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: wxg
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: wxg
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install psycopg (PostgreSQL backend dependency)
+        run: pip install "psycopg[binary]"
+      - name: MariaDB backend integration
+        env:
+          WXG_TEST_MYSQL_URL: mysql://root:root@127.0.0.1:3307/wxg
+        run: python -m unittest tests.test_mysql_backend -v
+      - name: PostgreSQL backend integration
+        env:
+          WXG_TEST_PG_URL: postgresql://postgres:postgres@127.0.0.1:5433/wxg
+        run: python -m unittest tests.test_pg_backend -v
