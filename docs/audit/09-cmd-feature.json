@@ -1,0 +1,783 @@
+{
+  "slice": "09-cmd-feature",
+  "modules": [
+    {
+      "path": "scripts/whyexist/commands_feature.py",
+      "loc": 722,
+      "role": "12 条 feature/change/work 命令的 handler：feature 元数据与条件重置、变更集开代、工单派发/领取/提交/裁决、只读概览；任务书写 678 行，实际 722 行"
+    },
+    {
+      "path": "scripts/whyexist/work.py",
+      "loc": 111,
+      "role": "工单 id、行读写、claim_token 校验、角色命令白名单、target_ids 边界与 evidence_ids 追加——本切片所有状态迁移的写原语"
+    },
+    {
+      "path": "scripts/whyexist/workflow.py",
+      "loc": 126,
+      "role": "8 条件链读取/置位、Ready 派生、blocked 解锁、feature 作用域（scope_ids）——本切片状态机的执行底座"
+    }
+  ],
+  "public_surface": [
+    {
+      "entry": "wxg feature-declare",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_feature.py:43-137",
+      "input": "--id（必填，[A-Za-z0-9._-]+）、--name、--statement、--acceptance、--constraints（JSON 数组或 @文件）、--coverage-epsilon（正浮点）、--drift-limit（非负整数）；flags --no-coverage/--conformance/--no-conformance",
+      "output": "stdout JSON：{feature_id, generation, accepted_only:true, work_seed:{created[],existed[],ready[]}}",
+      "side_effects": "写 features（新建或 upsert 并 generation+1）、conditions（8 行，仅 Accepted=1）、nodes（requirement:<id>:main，merge_attrs=True）、work_items（旧代全部 superseded 并清 token/assignee；新代由 work_seed 建 6 张）",
+      "exit_codes": "0 成功；2 Reject/参数错误（JSON error 写 stderr）"
+    },
+    {
+      "entry": "wxg feature-register",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_feature.py:140-232",
+      "input": "--id、--name、--spec（含 statement/acceptance/constraints 的 JSON 对象或 @文件）、--generation（可选，整数）",
+      "output": "stdout JSON：分支不一致——新建/新代 {feature_id,generation,accepted_only:true,conditions_untouched:false,requirement_written:true[,superseded_previous_generation]}；同代 {..,accepted_only:false,conditions_untouched:true,..}",
+      "side_effects": "写 features/conditions（新建或新代只置 Accepted）/nodes（requirement 正文）；同代只改 name/spec/requirement；新代 supersede 旧代工单并清 token；从不自动 seed",
+      "exit_codes": "0 成功；2 Reject/参数错误"
+    },
+    {
+      "entry": "wxg feature-list",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_feature.py:235-245",
+      "input": "无参数",
+      "output": "stdout JSON：{features:[{id,name,generation,conditions:{8 条件->0|1}}]}，按 id 排序",
+      "side_effects": "只读 features/conditions；任一 feature 条件行不齐会整条命令 Reject",
+      "exit_codes": "0 成功；2 feature 不存在/条件行不齐/后端错误"
+    },
+    {
+      "entry": "wxg feature-status",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_feature.py:248-338",
+      "input": "--id（必填）",
+      "output": "stdout JSON：feature/phase/conditions/work_items（含 target_count+target_sample[:5]，保留 claim_token）/bites/evidence/judge_history/changes/coverage/drift/constructions/stale/conformance/scope_size",
+      "side_effects": "只读 features/conditions/work_items/bites/judge_history/evidence/changes/nodes/feature_nodes；对 scope 内每个节点两次 get_node（N+1）",
+      "exit_codes": "0 成功；2 feature 不存在/条件行不齐"
+    },
+    {
+      "entry": "wxg change-open",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_feature.py:341-396",
+      "input": "--feature、--statement（必填）、--from-condition（choices=CONDITION_TO_KIND 六项）、--id（可选，默认 ch-<新代>）",
+      "output": "stdout JSON：{change, feature, from_generation, to_generation, from_condition, inherited[], reset[], work_seed{...}}",
+      "side_effects": "写 work_items（旧代全部 superseded，清 token/assignee）、features（generation+1）、conditions（新代 8 行：边界前继承=1、边界及之后=0、Accepted=1、Ready=0）、changes（affected_json 恒 '[]'）、work_items（seed 下游）",
+      "exit_codes": "0 成功；2 未 Ready/变更 id 已存在/参数错误"
+    },
+    {
+      "entry": "wxg change-diff",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_feature.py:399-453",
+      "input": "--feature（必填）、--from-generation（可选 int）",
+      "output": "stdout JSON：{feature, change, from_generation, to_generation, inherited_conditions, pending_conditions, added, removed, kept, code_anchors}",
+      "side_effects": "只读 features/changes/work_items(evidence_ids)/nodes",
+      "exit_codes": "0 成功；2 feature 不存在/基线 <1"
+    },
+    {
+      "entry": "wxg work-seed",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_feature.py:456-493",
+      "input": "--feature（必填）",
+      "output": "stdout JSON：{created[],existed[],ready[]}，元素为 {id,kind,status,depends_on}",
+      "side_effects": "写 work_items：缺的条件各建一张 work:<f>:g<gen>:<kind>，依赖上一条件工单；已存在的工单不改状态",
+      "exit_codes": "0 成功；2 feature 不存在/条件行不齐"
+    },
+    {
+      "entry": "wxg work-open",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_feature.py:496-504",
+      "input": "--feature、--kind（choices=WORK_KINDS）、--target-ids（逗号分隔/JSON 数组/@文件）",
+      "output": "stdout JSON：{work:{action:'insert'|'merge'|'update', id}}",
+      "side_effects": "写 work_items.target_ids（合并去重）或新建 ready 行；audit 一律 Reject；submitted/passed/failed 行不可再并入",
+      "exit_codes": "0 成功；2 audit kind/未知 kind/feature 不存在/状态不允许"
+    },
+    {
+      "entry": "wxg work-claim",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_feature.py:507-561",
+      "input": "--role（choices=ROLES）、--actor（或 WXG_ACTOR）、flags --allow-product-code/--brief",
+      "output": "stdout JSON：{work_item_id, kind, role, actor, claim_token, target_ids[], slice}；--brief 时 slice 只有 {summary:{targets,nodes,missing,patterns}}",
+      "side_effects": "写 work_items：status=claimed、assignee=role、claimed_by=actor、claim_token=uuid4hex、claimed_at=UTC；只挑当前 generation 的 ready 行（跨 feature，按 id 排序）；原子 UPDATE+rowcount",
+      "exit_codes": "0 成功；2 无 ready/角色不可领/缺 actor/implement-test 未授权"
+    },
+    {
+      "entry": "wxg work-finish",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_feature.py:564-582",
+      "input": "--token（必填）",
+      "output": "stdout JSON：{work_item_id, status:'submitted', audit_id, audit_status:'ready'}",
+      "side_effects": "写 work_items：本单 submitted+清 claim_token；创建/重置 audit 单 id=work:<f>:g<gen>:audit:<本单 id>，role=audit，target_ids/depends_on=[本单 id]",
+      "exit_codes": "0 成功；2 token 缺失/无效/单不在 claimed/evidence 越界"
+    },
+    {
+      "entry": "wxg work-judge",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_feature.py:620-705",
+      "input": "--id（本单或 audit 单）、--verdict{passed,failed}、--fail-reason、--role（默认 audit）、--actor",
+      "output": "passed：{verdict, condition, work_item_id, actor, legacy_claim, ready, conditions{8}}；failed：{verdict, condition, work_item_id, actor, legacy_claim, fail_reason, conditions_changed}",
+      "side_effects": "写 work_items（subject+audit 状态、judged_by/judged_at 仅从空写、fail_reason）、conditions（置真或从该条件起置假）、judge_history（每次一条）",
+      "exit_codes": "0 成功（passed 与 failed 都是 0）；2 非 audit 角色/缺 actor/自审/submitted 前置不满足/缺 fail-reason/evidence 或 coverage 不达标"
+    },
+    {
+      "entry": "wxg work-list",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_feature.py:708-714",
+      "input": "--feature（必填）",
+      "output": "stdout JSON：{feature, generation, work_items:[{id,kind,role,status,target_ids(JSON 字符串),depends_on(JSON 字符串),claim_token}]}",
+      "side_effects": "只读 features/work_items；不裁剪 target_ids，原样输出 claim_token",
+      "exit_codes": "0 成功；2 feature 不存在"
+    },
+    {
+      "entry": "whyexist.commands_feature.work_seed(conn, feature_id)",
+      "kind": "function",
+      "where": "scripts/whyexist/commands_feature.py:456-489",
+      "input": "已打开的 conn + feature_id",
+      "output": "dict {created[],existed[],ready[]}",
+      "side_effects": "同上 work-seed；被 feature-declare(:136)、change-open(:380)、reconcile 的 apply(:63) 复用",
+      "exit_codes": "抛 Reject（由调用方翻译成 2）"
+    },
+    {
+      "entry": "whyexist.commands_feature._require_write(conn, args, command)",
+      "kind": "function",
+      "where": "scripts/whyexist/commands_feature.py:717-720",
+      "input": "args.token + 命令名",
+      "output": "claimed 工单行 dict",
+      "side_effects": "无写入；校验 token 与 ROLES；被 commands_graph.py:11 与 commands_repo.py:664 导入使用（归属错位）",
+      "exit_codes": "抛 Reject"
+    },
+    {
+      "entry": "whyexist.commands_feature.record_judge_history(conn, subject, verdict, reason, actor, judged_at)",
+      "kind": "function",
+      "where": "scripts/whyexist/commands_feature.py:601-617",
+      "input": "被审工单行 + 裁决字段",
+      "output": "无返回",
+      "side_effects": "INSERT judge_history（id=jh:<uuid>，9 列与 JUDGE_HISTORY_COLUMNS 一致）",
+      "exit_codes": "抛异常由调用方处理"
+    },
+    {
+      "entry": "graph.sqlite:features",
+      "kind": "table",
+      "where": "scripts/whyexist/db.py:54-65",
+      "input": "id/name/generation/statement/acceptance_json/constraints_json/coverage_epsilon/drift_limit/conformance/created_at",
+      "output": "整行被 get_feature/status/seed/judge 读取",
+      "side_effects": "本切片新建（declare/register）或 upsert（declare）或 generation 更新（change-open/register）",
+      "exit_codes": "n/a"
+    },
+    {
+      "entry": "graph.sqlite:conditions",
+      "kind": "table",
+      "where": "scripts/whyexist/db.py:66-73",
+      "input": "(feature_id,generation,name,status,reason)",
+      "output": "condition_flags/current_phase/recompute_ready 读取",
+      "side_effects": "本切片写 8 行/代；judge 置位；旧代行永不删除",
+      "exit_codes": "n/a"
+    },
+    {
+      "entry": "graph.sqlite:work_items",
+      "kind": "table",
+      "where": "scripts/whyexist/db.py:74-94",
+      "input": "id/feature_id/generation/kind/role/target_ids/status/depends_on/assignee/claimed_by/claim_token/claimed_at/evidence_ids/fail_reason/judged_by/judged_at/created_at",
+      "output": "status/seed/claim/finish/judge/list 读取",
+      "side_effects": "本切片 insert/update 的主要表；claim_token 有唯一索引 :93",
+      "exit_codes": "n/a"
+    },
+    {
+      "entry": "graph.sqlite:judge_history",
+      "kind": "table",
+      "where": "scripts/whyexist/db.py:127-138",
+      "input": "id/work_item_id/feature_id/generation/kind/verdict/reason/actor/judged_at",
+      "output": "feature-status 与 doctor 读取（commands_misc.py:453-466）",
+      "side_effects": "只由 record_judge_history 追加，从不更新/删除",
+      "exit_codes": "n/a"
+    },
+    {
+      "entry": "graph.sqlite:changes",
+      "kind": "table",
+      "where": "scripts/whyexist/db.py:139-149",
+      "input": "id/feature_id/from_generation/to_generation/from_condition/statement/affected_json/created_at",
+      "output": "change-diff 与 feature-status、doctor 读取（commands_misc.py:468-494）",
+      "side_effects": "只由 change-open 写入；affected_json 恒 '[]'",
+      "exit_codes": "n/a"
+    },
+    {
+      "entry": "graph.sqlite:nodes（requirement 子集）",
+      "kind": "table",
+      "where": "scripts/whyexist/commands_feature.py:127-135,161-169",
+      "input": "id=requirement:<fid>:main / kind=requirement / name / attrs.statement / origin=declared",
+      "output": "feature-status 读 scope 节点的 construction/stale/代码锚点",
+      "side_effects": "declare/register 写入（merge_attrs=True，保留外部 attrs）",
+      "exit_codes": "n/a"
+    },
+    {
+      "entry": "文件产物（无）",
+      "kind": "file",
+      "where": "scripts/whyexist/commands_feature.py:1-722",
+      "input": "—",
+      "output": "—",
+      "side_effects": "12 条命令不创建/覆盖任何文件；export/ 与 references/ 均不触碰；唯一持久化是既有的 <root>/graph.sqlite（由 cli.py:66-69 检查、db.py:441-465 连接）",
+      "exit_codes": "n/a"
+    }
+  ],
+  "contracts": [
+    {
+      "id": "C1",
+      "statement": "feature-declare / feature-register 的 --id 只接受 [A-Za-z0-9._-]+，其他形式 Reject（退出码 2，JSON error 到 stderr）",
+      "evidence": ["scripts/whyexist/commands_feature.py:45-46", "scripts/whyexist/commands_feature.py:149-150"],
+      "status": "gap",
+      "note": "无任何测试；探针用 'bad id' 复现 Reject"
+    },
+    {
+      "id": "C2",
+      "statement": "feature-declare 要求 --acceptance/--constraints 为 JSON 数组、--statement 非空，且两者支持 @文件；不满足 Reject",
+      "evidence": ["scripts/whyexist/commands_feature.py:47-52", "scripts/whyexist/jsonio.py:34-59"],
+      "status": "gap",
+      "note": "@文件 只测过 target-ids（tests/test_wxg.py:884-892），declare 的数组校验无测试"
+    },
+    {
+      "id": "C3",
+      "statement": "coverage 策略解析：显式 --coverage-epsilon>0 优先；--no-coverage 置空；二者互斥 Reject；新建 declare 默认 ε=1.0；重声明不带参数保留旧策略",
+      "evidence": ["scripts/whyexist/commands_feature.py:53-58", "scripts/whyexist/commands_feature.py:68-75", "scripts/whyexist/commands_feature.py:92-96", "tests/test_wxg.py:1613-1626", "tests/test_wxg.py:1628-1640", "tests/test_wxg.py:1642-1654"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C4",
+      "statement": "coverage 策略开启时 work-judge(passed) 在该阶段覆盖未达标时 Reject，gate 同规则判 FAIL",
+      "evidence": ["scripts/whyexist/commands_feature.py:642-649", "scripts/whyexist/gates.py:81-121", "tests/test_wxg.py:1133-1156"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C5",
+      "statement": "--drift-limit 必须 ≥0；以 COALESCE 持久化——重声明不带该参数保留旧值；没有任何命令能清除已设置的 drift_limit",
+      "evidence": ["scripts/whyexist/commands_feature.py:59-61", "scripts/whyexist/commands_feature.py:107", "tests/test_wxg.py:1238-1244"],
+      "status": "partial",
+      "note": "校验有测试；保留语义只有探针（docs/audit/_probe_09.out.txt S2.2/S2.5），无断言"
+    },
+    {
+      "id": "C6",
+      "statement": "--conformance/--no-conformance 互斥；新建 declare 默认关闭；显式开启/关闭后重声明保留",
+      "evidence": ["scripts/whyexist/commands_feature.py:62-65", "scripts/whyexist/commands_feature.py:77-84", "tests/test_wxg.py:1758-1813"],
+      "status": "partial",
+      "note": "开启/关闭/保留有测试；互斥 Reject 只在探针 S1.6"
+    },
+    {
+      "id": "C7",
+      "statement": "feature-declare 每次调用都 generation+1（即使文本不变）；旧代工单全部 superseded 并清 claim_token/assignee；新代重建 8 行条件且只 Accepted=1；旧代条件与工单行保留",
+      "evidence": ["scripts/whyexist/commands_feature.py:85-126", "tests/test_wxg.py:270-297"],
+      "status": "covered",
+      "note": "supersede 清 token 只有探针/register 测试覆盖（tests/test_wxg.py:710-736）"
+    },
+    {
+      "id": "C8",
+      "statement": "declare/register 写 requirement:<fid>:main 节点（name 与 attrs.statement 跟随声明），merge_attrs=True 保留外部手写 attrs；重声明也会更新正文",
+      "evidence": ["scripts/whyexist/commands_feature.py:127-135", "scripts/whyexist/commands_feature.py:161-169", "tests/test_wxg.py:744-755", "tests/test_wxg.py:1028-1050"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C9",
+      "statement": "feature-declare 自动 work_seed：六张工单按 model-architecture→model-structure→interact→specify-test→implement-test→observe 建依赖链，只有首张 ready，其余 blocked；target_ids 为 seed 时的 scope（通常只有 requirement）",
+      "evidence": ["scripts/whyexist/commands_feature.py:136", "scripts/whyexist/commands_feature.py:456-489", "tests/test_wxg.py:270-297", "tests/test_wxg.py:1455-1475"],
+      "status": "partial",
+      "note": "有工单存在性断言；declare 后的链形状没有直接断言（链形状在 change-open 测试中间接覆盖）"
+    },
+    {
+      "id": "C10",
+      "statement": "feature-register 新建：只写 features（不带 coverage_epsilon/drift_limit/conformance 列）、conditions（只 Accepted=1）、requirement 节点；不派工，输出没有 work_seed；该 feature 的 coverage/drift 门禁从此为关闭状态",
+      "evidence": ["scripts/whyexist/commands_feature.py:172-191", "tests/test_wxg.py:757-769"],
+      "status": "partial",
+      "note": "条件/节点/代际有断言；coverage 关闭与 0 工单只在探针 S3.2-S3.4、E4.1-E4.3"
+    },
+    {
+      "id": "C11",
+      "statement": "feature-register 同代：只更新 name/spec 与 requirement 正文，conditions 完全不动（conditions_untouched:true）",
+      "evidence": ["scripts/whyexist/commands_feature.py:193-205", "tests/test_wxg.py:698-708"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C12",
+      "statement": "feature-register --generation：必须大于当前代，否则 Reject；旧代所有工单（含 claimed）superseded 并清 token；新代条件只 Accepted=1；不自动 seed；输出带 superseded_previous_generation",
+      "evidence": ["scripts/whyexist/commands_feature.py:207-232", "tests/test_wxg.py:710-742"],
+      "status": "partial",
+      "note": "<= 当前代的 Reject 无测试（探针 S3.6）"
+    },
+    {
+      "id": "C13",
+      "statement": "feature-list 输出 {features:[{id,name,generation,conditions}]} 按 id 排序；只要有一个 feature 的条件行不齐，整条命令 Reject（不是跳过该行）",
+      "evidence": ["scripts/whyexist/commands_feature.py:235-245", "scripts/whyexist/workflow.py:45-49"],
+      "status": "gap",
+      "note": "全部测试文件 0 次调用；探针 E1.1 复现 all-or-nothing"
+    },
+    {
+      "id": "C14",
+      "statement": "feature-status 固定字段集；work_items 用 target_count+target_sample(≤5) 代替完整 target_ids；phase=第一个为假的条件；evidence 列全部代、changes 列全部代、conformance 仅在开启时计算；claim_token 原样返回",
+      "evidence": ["scripts/whyexist/commands_feature.py:248-338", "scripts/whyexist/commands_feature.py:310-317", "tests/test_plan_cli.py:723-733", "tests/test_plan_cli.py:776-780"],
+      "status": "partial",
+      "note": "只有 target 裁剪与 phase 有断言；其余字段无断言"
+    },
+    {
+      "id": "C15",
+      "statement": "feature-status 与 gate 对 bite 的归属过滤不一致：gate 把「节点在作用域内但 bite 标记属于其他 feature」计入，status 只看「节点在作用域内且 bite 的 feature 为空或本 feature」，因此同一状态可能出现 status.bites=[] 而 gate FAIL",
+      "evidence": ["scripts/whyexist/commands_feature.py:257-272", "scripts/whyexist/commands_gates.py:166-187", "scripts/whyexist/gates.py:14-33"],
+      "status": "gap",
+      "note": "探针 S8 复现；coverage/drift 用的是 status 式过滤，gate 自己的 bites 检查用另一套"
+    },
+    {
+      "id": "C16",
+      "statement": "change-open 前置：feature 必须 Ready；--from-condition 只能是六个设计条件（argparse choices）。效果：generation+1、旧代工单 supersede、边界前条件继承为 1（reason 注明继承代）、边界及之后重置为 0、changes 行默认 id=ch-<新代>、自动 seed 下游",
+      "evidence": ["scripts/whyexist/commands_feature.py:341-396", "tests/test_wxg.py:1446-1475", "tests/test_wxg.py:1520-1533"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C17",
+      "statement": "change id 是全局命名空间：同一 id 在任意 feature 下已存在即 Reject；未收口前再次 change-open 由 Ready=0 拒绝",
+      "evidence": ["scripts/whyexist/commands_feature.py:342-351", "tests/test_wxg.py:1477-1489"],
+      "status": "partial",
+      "note": "跨 feature 冲突只在探针 S7.10；同 feature 重复走 Ready 分支"
+    },
+    {
+      "id": "C18",
+      "statement": "change-diff 基线：--from-generation > 当前代变更集的 from_generation > 当前代-1；基线<1 Reject；added/removed/kept 来自两代工单 evidence_ids，inherited/pending 只在匹配到当前代变更集时计算，code_anchors 只列带 repo+path 的节点",
+      "evidence": ["scripts/whyexist/commands_feature.py:399-453", "tests/test_wxg.py:1491-1518"],
+      "status": "partial",
+      "note": "只有 added/removed/anchors 有断言；基线回退、inherited/pending、未来代（探针 S7.9 返回 from_generation=9 不报错）无断言"
+    },
+    {
+      "id": "C19",
+      "statement": "change-diff 看不到 import-file 写过的节点：scan 路径刻意不追加 evidence_ids，只有 upsert-node/upsert-edge/bind 会追加",
+      "evidence": ["scripts/whyexist/commands_repo.py:216-217", "scripts/whyexist/work.py:103-111", "scripts/whyexist/commands_feature.py:416-423", "tests/test_wxg.py:1310-1321"],
+      "status": "gap",
+      "note": "测试只断言 scan 的 evidence_ids 为空；「因此 change-diff 看不到扫描节点」这个后果无断言/文档"
+    },
+    {
+      "id": "C20",
+      "statement": "work-seed 幂等：缺的条件各建一张 work:<f>:g<gen>:<kind>；依赖链只在「上一条件已置真且对应工单 passed」时建立；已存在工单不改状态；返回 created/existed/ready",
+      "evidence": ["scripts/whyexist/commands_feature.py:456-489", "tests/test_wxg.py:739-742"],
+      "status": "partial",
+      "note": "重跑幂等与 created/existed 形状只在探针 S6.22；测试单只覆盖 register 新代后的手动 seed"
+    },
+    {
+      "id": "C21",
+      "statement": "work-open 对 audit Reject；已存在 ready/claimed/blocked 工单时合并 target_ids（去重）并保持状态；submitted/passed/failed 工单不能并入；不存在的 kind 新建 ready 行（depends_on=[]）",
+      "evidence": ["scripts/whyexist/commands_feature.py:496-504", "scripts/whyexist/work.py:25-60", "tests/test_wxg.py:431-443", "tests/test_wxg.py:884-892"],
+      "status": "partial",
+      "note": "合并/去重/状态拒绝无直接断言；claimed 单可继续合并只在探针 S4.7"
+    },
+    {
+      "id": "C22",
+      "statement": "work-claim 前置：role 必须是 ROLES 且不能是 audit；implement-test 需 --allow-product-code；--actor 或 WXG_ACTOR 必填、1-80 个非空白字符；无 ready 时 Reject '没有可领的 ready 工单'",
+      "evidence": ["scripts/whyexist/commands_feature.py:507-537", "scripts/whyexist/workflow.py:12-20", "tests/test_wxg.py:465-479", "tests/test_wxg.py:527-567"],
+      "status": "partial",
+      "note": "WXG_ACTOR 环境变量路径无任何测试；actor 长度/空白校验只在探针 E2"
+    },
+    {
+      "id": "C23",
+      "statement": "work-claim 原子领取（UPDATE ... WHERE status='ready' + rowcount）并写 assignee=role、claimed_by=actor、claim_token=uuid4hex、claimed_at；只发当前 generation 的工单；返回完整 target_ids 与深度 1 切片",
+      "evidence": ["scripts/whyexist/commands_feature.py:515-560", "scripts/whyexist/db.py:93", "tests/test_wxg.py:1391-1402", "tests/test_wxg.py:444-463"],
+      "status": "partial",
+      "note": "SQLite 侧无并发断言；MySQL/PG 并发测试默认 skip（tests/test_mysql_backend.py:109-126 见 05 切片）"
+    },
+    {
+      "id": "C24",
+      "statement": "--brief 只把 slice 换成计数摘要，target_ids 仍全量返回（400 个 id ≈ 4.7KB；大仓 scan 可达 MB 级）",
+      "evidence": ["scripts/whyexist/commands_feature.py:539-552", "tests/test_wxg.py:1291-1297"],
+      "status": "gap",
+      "note": "测试只断言 slice 有 summary、没有 nodes；target_ids 体积无断言；探针 E3.1/E3.2"
+    },
+    {
+      "id": "C25",
+      "statement": "work-finish：需要有效 claimed token；本单 evidence_ids 必须落在 target_ids（否则 Reject）；置 submitted 并清 token；创建/重置 audit 单（id=work:<f>:g<gen>:audit:<本单 id>，target_ids/depends_on=[本单 id]，status=ready）",
+      "evidence": ["scripts/whyexist/commands_feature.py:564-582", "tests/test_wxg.py:444-463", "tests/test_wxg.py:710-736"],
+      "status": "partial",
+      "note": "audit 已存在时重置为 ready 的分支无测试；evidence 越界分支实际上不可达（所有写命令都先校验 target_ids）"
+    },
+    {
+      "id": "C26",
+      "statement": "work-judge 前置：role 必须 audit；actor 必填且不得等于被审单 claimed_by（claimed_by 为 NULL/空/legacy 时放行并返回 legacy_claim=true）；被审单必须 submitted；--id 可以是本单或 audit 单（用 depends_on 反查被审对象）",
+      "evidence": ["scripts/whyexist/commands_feature.py:585-630", "tests/test_wxg.py:527-567"],
+      "status": "partial",
+      "note": "legacy 放行与 audit-id 入口都只在探针（S6.7、S6.15），无测试"
+    },
+    {
+      "id": "C27",
+      "statement": "judge(passed)：subject 与 audit 同时置 passed、清 token/fail_reason、judged_by/judged_at 只从空写一次、写 judge_history、置对应条件、重算 Ready、解锁依赖已满足的 blocked 工单；返回 8 条件快照",
+      "evidence": ["scripts/whyexist/commands_feature.py:650-676", "tests/test_wxg.py:527-567", "tests/test_wxg.py:1102-1131"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C28",
+      "statement": "judge(passed) 的门槛：BehaviorPassed 需要同 generation、exit_code=0 且产物存在/hash 未变的 evidence；coverage 策略开启时该阶段 covered ≥ n_required",
+      "evidence": ["scripts/whyexist/commands_feature.py:635-649", "scripts/whyexist/evidence.py:19-35", "tests/test_wxg.py:822-835", "tests/test_wxg.py:1133-1156"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C29",
+      "statement": "judge(failed)：必须 --fail-reason；audit 置 failed（若存在）；subject 回 ready 并清 token/assignee、写 fail_reason；从该条件起其后条件（含 Ready）置 0；scan 等无对应条件的工单不改条件；写 judge_history",
+      "evidence": ["scripts/whyexist/commands_feature.py:677-696", "tests/test_wxg.py:324-333", "tests/test_wxg.py:836-847", "tests/test_wxg.py:1102-1131"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C30",
+      "statement": "judge_history 行格式：id=jh:<uuid>，列集合与 JUDGE_HISTORY_COLUMNS 一致，每次裁决一条、只增不删；kind 为被审工单 kind（含 scan）",
+      "evidence": ["scripts/whyexist/commands_feature.py:601-617", "scripts/wxg_contract.py:174-184", "tests/test_wxg.py:1102-1131"],
+      "status": "partial",
+      "note": "测试断言 verdict/reason/actor 序列；id 格式与列完整性无断言"
+    },
+    {
+      "id": "C31",
+      "statement": "work-list 只列当前 generation 的工单原始行：target_ids/depends_on 是 JSON 字符串，claim_token 原样输出，无状态过滤、无排序保证（ORDER BY id 有，但文档未承诺）",
+      "evidence": ["scripts/whyexist/commands_feature.py:708-714", "tests/test_wxg.py:350-351", "tests/test_wxg.py:1470-1473"],
+      "status": "partial",
+      "note": "两个测试只取 status/kind；输出其他字段无断言"
+    },
+    {
+      "id": "C32",
+      "statement": "只读命令 feature-list / feature-status / change-diff / work-list 不写任何表",
+      "evidence": ["scripts/whyexist/commands_feature.py:235-245", "scripts/whyexist/commands_feature.py:248-338", "scripts/whyexist/commands_feature.py:399-453", "scripts/whyexist/commands_feature.py:708-714"],
+      "status": "gap",
+      "note": "gate 有只读快照测试（tests/test_wxg.py:299-306），这四条没有"
+    },
+    {
+      "id": "C33",
+      "statement": "12 条命令都要求状态库已初始化：sqlite 下 graph.sqlite 不存在时直接退出 2 并输出 {'error':'状态库未初始化：先运行 `wxg init`'}，不创建目录",
+      "evidence": ["scripts/whyexist/cli.py:65-69", "tests/test_wxg.py:947-955"],
+      "status": "partial",
+      "note": "测试只覆盖 gate/work-seed/repo-list 三条"
+    },
+    {
+      "id": "C34",
+      "statement": "只读入口泄漏写凭证：work-list 的 SELECT 含 claim_token，feature-status 的 work_items 也保留 claim_token，任何调用方都能拿到别人未完成的 claim 令牌",
+      "evidence": ["scripts/whyexist/commands_feature.py:250-254", "scripts/whyexist/commands_feature.py:310-317", "scripts/whyexist/commands_feature.py:711"],
+      "status": "gap",
+      "note": "探针 S5.6/S5.7；02 切片 C24 也记到同一行为；无测试、无文档说明"
+    },
+    {
+      "id": "C35",
+      "statement": "work-claim 把 role 写进 assignee，finish/judge 都不清空；只有 supersede 与 reconcile 的 release-stale-claim 会清 assignee；claimed_by 才是 actor 记录",
+      "evidence": ["scripts/whyexist/commands_feature.py:528-532", "scripts/whyexist/commands_feature.py:571", "scripts/whyexist/commands_feature.py:653-655", "scripts/whyexist/commands_gates.py:68-74"],
+      "status": "gap",
+      "note": "探针 E5.1/E5.2：submitted/passed 之后 assignee 仍是 'model-architecture'；无测试"
+    },
+    {
+      "id": "C36",
+      "statement": "change-open 写入 changes.affected_json='[]'，代码里没有任何路径填充它，change-diff 也不读它",
+      "evidence": ["scripts/whyexist/commands_feature.py:375-379", "scripts/whyexist/commands_feature.py:401-406"],
+      "status": "gap",
+      "note": "探针 S7.4 显示恒 '[]'"
+    },
+    {
+      "id": "C37",
+      "statement": "judge(failed) 后重试单保留上一轮的 evidence_ids 与 claimed_by：重领不重置证据，失败证据会带进下一轮",
+      "evidence": ["scripts/whyexist/commands_feature.py:685-689"],
+      "status": "gap",
+      "note": "探针 S6.12/S6.14；无测试"
+    },
+    {
+      "id": "C38",
+      "statement": "audit 单从不参与 claim（role=audit 被 work-claim 拒绝），没有 token；judge(passed) 时 audit 单与 subject 同时写 judged_by/judged_at",
+      "evidence": ["scripts/whyexist/commands_feature.py:508-511", "scripts/whyexist/commands_feature.py:572-581", "scripts/whyexist/commands_feature.py:650-656", "tests/test_wxg.py:527-567"],
+      "status": "covered",
+      "note": ""
+    }
+  ],
+  "state_io": [
+    {
+      "target": "graph.sqlite:features",
+      "mode": "both",
+      "where": "scripts/whyexist/commands_feature.py:66,85-121,171-232,359；读：237,243,402,427"
+    },
+    {
+      "target": "graph.sqlite:conditions",
+      "mode": "both",
+      "where": "scripts/whyexist/commands_feature.py:122-126,179-183,219-223,360-374,693-696；读：243,322-323,343,427,459"
+    },
+    {
+      "target": "graph.sqlite:work_items",
+      "mode": "both",
+      "where": "scripts/whyexist/commands_feature.py:87-91,211-214,250-254,354-358,419,463-489,503,515-535,571-581,650-696,710-714"
+    },
+    {
+      "target": "graph.sqlite:judge_history",
+      "mode": "both",
+      "where": "写：scripts/whyexist/commands_feature.py:601-617；读：273-280"
+    },
+    {
+      "target": "graph.sqlite:changes",
+      "mode": "both",
+      "where": "写：scripts/whyexist/commands_feature.py:375-379；读：299-306,401-406"
+    },
+    {
+      "target": "graph.sqlite:nodes",
+      "mode": "both",
+      "where": "写 requirement：scripts/whyexist/commands_feature.py:127-135,161-169；读 construction/stale/锚点：289-298,437-441"
+    },
+    {
+      "target": "graph.sqlite:feature_nodes",
+      "mode": "read",
+      "where": "scripts/whyexist/workflow.py:104-105（经 scope_ids，commands_feature.py:256,290,295 调用）"
+    },
+    {
+      "target": "graph.sqlite:bites",
+      "mode": "read",
+      "where": "scripts/whyexist/commands_feature.py:257-272"
+    },
+    {
+      "target": "graph.sqlite:evidence",
+      "mode": "read",
+      "where": "scripts/whyexist/commands_feature.py:281-288,637（经 evidence.py:19-35）"
+    },
+    {
+      "target": "环境变量 WXG_ACTOR",
+      "mode": "read",
+      "where": "scripts/whyexist/workflow.py:12-20（经 commands_feature.py:514,623 调用）"
+    },
+    {
+      "target": "环境变量 WXG_DB_URL / 全局 --db-url",
+      "mode": "read",
+      "where": "scripts/whyexist/cli.py:55-61；scripts/whyexist/db.py:425-438（决定连接后端，所有命令共享）"
+    },
+    {
+      "target": "文件系统 <root>/graph.sqlite（存在性）",
+      "mode": "read",
+      "where": "scripts/whyexist/cli.py:66-69；本切片不创建其它文件，也不写 export/"
+    }
+  ],
+  "redundancy": [
+    {
+      "item": "commands_feature.py 顶部三个未使用 import：append_evidence、get_work_by_token、require_targets",
+      "signal": "本文件内除 import 行（:21,:23,:26）外 0 次引用",
+      "confidence": "high"
+    },
+    {
+      "item": "_require_write 定义在 commands_feature.py:717-720，却被 commands_graph.py:11 与 commands_repo.py:664 导入，wxg.py:120 再导出",
+      "signal": "职责属于 work.py，本模块自己从不调用它",
+      "confidence": "high"
+    },
+    {
+      "item": "两处不可达校验：work-open 的 kind ∈ WORK_KINDS（:500-501）、change-open 的 from_condition ∈ CONDITION_TO_KIND（:346-348）",
+      "signal": "argparse choices 已经先拒绝（scripts/wxg_contract.py:412,426；探针 E6.1/E6.2）",
+      "confidence": "high"
+    },
+    {
+      "item": "feature-declare 与 feature-register 各写一套 features INSERT/upsert + 8 条件 INSERT",
+      "signal": "commands_feature.py:102-126 与 174-183、210-223 三处近似复制，列集合还不一致",
+      "confidence": "high"
+    },
+    {
+      "item": "feature-status 与 cmd_gate 的 constructions/stale 两段循环逐字重复",
+      "signal": "commands_feature.py:289-298 vs commands_gates.py:205-215",
+      "confidence": "high"
+    },
+    {
+      "item": "bite 的 feature 归属过滤有三套实现且行为不一致",
+      "signal": "commands_feature.py:257-272、commands_gates.py:166-187、gates.py:14-33",
+      "confidence": "high"
+    },
+    {
+      "item": "work-claim 对每个依赖两次 get_work",
+      "signal": "commands_feature.py:525 同一表达式里的重复查询",
+      "confidence": "medium"
+    },
+    {
+      "item": "insert_work 一律先插 ready，再单独 UPDATE status",
+      "signal": "scripts/whyexist/work.py:30-43 + commands_feature.py:480",
+      "confidence": "medium"
+    },
+    {
+      "item": "changes.affected_json 恒为 '[]' 的死列",
+      "signal": "commands_feature.py:378 写死 '[]'，全仓无其它写入/读取",
+      "confidence": "high"
+    },
+    {
+      "item": "work_seed 返回 created/existed/ready 三份重叠视图",
+      "signal": "commands_feature.py:481-489 同一批行被列三次",
+      "confidence": "low"
+    },
+    {
+      "item": "assignee 与 role 同值，且 finish/judge 不清",
+      "signal": "commands_feature.py:529-531 写 role，:571/:653 只清 token；探针 E5",
+      "confidence": "medium"
+    },
+    {
+      "item": "feature-status 对 scope 内每个节点两次 get_node",
+      "signal": "commands_feature.py:289-298 两个完整循环，可合并为一次",
+      "confidence": "medium"
+    },
+    {
+      "item": "JUDGE_HISTORY_COLUMNS 与 db.py 的 judge_history DDL/迁移回填两处维护列定义",
+      "signal": "scripts/wxg_contract.py:174-184 vs scripts/whyexist/db.py:127-138,586-591",
+      "confidence": "medium"
+    },
+    {
+      "item": "测试用 force_ready 直接 UPDATE conditions 绕过状态机",
+      "signal": "tests/test_wxg.py:110-117；change-open 的 6 个测试都靠它造 Ready",
+      "confidence": "medium"
+    }
+  ],
+  "rewrite_partition": [
+    {
+      "module": "scripts/whyexist/commands_feature.py::feature-declare（43-137）",
+      "verdict": "refactor_in_place",
+      "reason": "契约基本清楚且 coverage/conformance 策略有测试，但策略解析与两套 SQL 缠在一起，参数校验分支无测试",
+      "risk": "策略字段被 gate/judge/status 读取，改持久化分支会影响旧库与 export 样例；先补 C1/C2 校验测试"
+    },
+    {
+      "module": "scripts/whyexist/commands_feature.py::feature-register（140-232）",
+      "verdict": "refactor_in_place",
+      "reason": "三个分支返回键不一致、与 declare 重复写 features/conditions；coverage 关闭是隐式行为，需要显式策略矩阵",
+      "risk": "代际推进与 token 清理牵动 doctor 的 conditions 校验与旧代工单；改错会让新代领到旧单"
+    },
+    {
+      "module": "scripts/whyexist/commands_feature.py::feature-list（235-245）",
+      "verdict": "rewrite",
+      "reason": "10 行、0 测试、all-or-nothing 失败模式；行为简单边界清楚，重写并补测试成本最低",
+      "risk": "输出 conditions 字典被可能的脚本消费；没有测试锚，形状变化不可见"
+    },
+    {
+      "module": "scripts/whyexist/commands_feature.py::feature-status（248-338）",
+      "verdict": "refactor_in_place",
+      "reason": "输出字段集是最大公开面，但实现里有 N+1、重复循环、evidence 不分代、token 泄漏四个独立问题",
+      "risk": "字段集必须 freeze（tools/verify_reports.py:224-227 消费 scope_size，agent 提示消费 phase/conditions）；改 bite 过滤会改 gate 语义"
+    },
+    {
+      "module": "scripts/whyexist/commands_feature.py::change-open（341-396）",
+      "verdict": "refactor_in_place",
+      "reason": "核心流程有 6 个测试，但死字段 affected_json、全局 id 命名空间、重复条件插入需要一并修",
+      "risk": "doctor 依赖 changes 行与继承条件（commands_misc.py:468-494）；改 id 规则会破坏已有库的变更集"
+    },
+    {
+      "module": "scripts/whyexist/commands_feature.py::change-diff（399-453）",
+      "verdict": "rewrite",
+      "reason": "只有 1 个测试，基线选择（未来代不报错）与 inherited/pending 语义未定义；函数小，重写并立契约更安全",
+      "risk": "输出键被 SKILL.md:67 与 agent 流程引用；重写前先补基线/空集/跨代测试"
+    },
+    {
+      "module": "scripts/whyexist/commands_feature.py::work_seed（456-489）",
+      "verdict": "refactor_in_place",
+      "reason": "依赖链是状态机核心，逻辑小但边界多（继承条件无单、prev 只在 passed 时设、双写状态），适合原地收拢并补链形状测试",
+      "risk": "declare/change-open/reconcile/serve 四处复用；改链规则会改变工单 id 与代际语义"
+    },
+    {
+      "module": "scripts/whyexist/commands_feature.py::work-open（496-504）",
+      "verdict": "keep",
+      "reason": "只做合并委托，行为窄；除死校验外没有结构问题",
+      "risk": "merge 的拒绝条件在 work.py:46-47；放宽会让 submitted/passed 单被改写"
+    },
+    {
+      "module": "scripts/whyexist/commands_feature.py::work-claim（507-561）",
+      "verdict": "keep",
+      "reason": "原子 UPDATE+rowcount 与 token 字段清楚，claim/actor/独立性有测试；slice 形状属 07 切片冻结项",
+      "risk": "跨 feature 选择、--brief 全量 target_ids、并发只在 MySQL 测试（默认 skip）三个契约还没定；改动会波及 agent 提示词"
+    },
+    {
+      "module": "scripts/whyexist/commands_feature.py::work-finish（564-582）",
+      "verdict": "keep",
+      "reason": "token 生命周期、submitted、audit 单 id 拼法都有测试；没有 role 校验但当前与 ROLES 等价",
+      "risk": "audit id 被 doctor/role-prompt 引用；改拼接会留下孤儿工单"
+    },
+    {
+      "module": "scripts/whyexist/commands_feature.py::work-judge（620-705）",
+      "verdict": "refactor_in_place",
+      "reason": "本切片最复杂的状态机，双 id、legacy 放行、COALESCE、两段 UPDATE 复制；主路径测试够，支路（audit-id、legacy）没有",
+      "risk": "状态转移表是 gate/doctor/serve 的输入，改动会静默改交付判定；先把转移表冻结再重构内部"
+    },
+    {
+      "module": "scripts/whyexist/commands_feature.py::work-list（708-714）",
+      "verdict": "rewrite",
+      "reason": "5 行、2 个断言只查 status、原样泄漏 claim_token，行为简单边界清楚",
+      "risk": "返回的 target_ids/depends_on 是 JSON 字符串（外部脚本可能按此解析）；改形状会破坏消费方"
+    },
+    {
+      "module": "scripts/whyexist/commands_feature.py::record_judge_history（601-617）",
+      "verdict": "keep",
+      "reason": "唯一写入口、列与契约一致、有历史测试",
+      "risk": "id 格式 jh:<uuid> 无断言；迁移回填用 jh:<work_item_id>，两种格式并存"
+    },
+    {
+      "module": "scripts/whyexist/commands_feature.py::_require_write（717-720）",
+      "verdict": "refactor_in_place",
+      "reason": "归属错位：定义在 feature 切片，被 graph/repo 命令导入；应移到 work.py 与其原语同处",
+      "risk": "低；但要同步改 commands_graph.py:11、commands_repo.py:664 与 wxg.py:120 的 re-export"
+    },
+    {
+      "module": "scripts/whyexist/commands_feature.py::work-judge 的状态转移表（585-705）",
+      "verdict": "freeze",
+      "reason": "每次裁决写入的 status/condition/judged_by/judge_history 组合是 gate、doctor、serve、reconcile 的输入，已由契约（GATE_RULES/AUDIT_RULES）固定；audit-id 与 legacy 两条支路没有测试，任何“顺手统一”都会改变交付判定",
+      "risk": "改转移会静默改变 PASS/FAIL、历史追溯与 Ready 派生；要动先在 tests 里把转移矩阵写死"
+    },
+    {
+      "module": "scripts/whyexist/commands_feature.py::feature-status 输出字段集（318-338）",
+      "verdict": "freeze",
+      "reason": "tools/verify_reports.py:224-227 消费 scope_size，agent 提示消费 phase/conditions/coverage；字段名与嵌套形状没有完整断言，重写会静默改外部读取方",
+      "risk": "改名/合并字段会破坏外部脚本与提示词；新增字段安全，删除或改类型不安全"
+    },
+    {
+      "module": "work_items 状态词表（ready/claimed/submitted/passed/failed/blocked/superseded）",
+      "verdict": "freeze",
+      "reason": "这些字符串由本切片写、由 reconcile/doctor/serve/role-prompt 读，且出现在库内已有数据与测试断言中；没有集中常量（散在字面量里）",
+      "risk": "任何改名都要迁移旧库并同步 commands_gates.py、commands_misc.py、tools/；先把词表提成常量再谈重构"
+    },
+    {
+      "module": "scripts/whyexist/work.py",
+      "verdict": "keep",
+      "reason": "薄原语、单一权威；require_* 与 target_match 语义清楚",
+      "risk": "require_role 依赖调用方传对命令名（import-repo 传 import-file 是 02 切片的问题）"
+    },
+    {
+      "module": "scripts/whyexist/workflow.py",
+      "verdict": "keep",
+      "reason": "条件链/Ready/作用域的唯一实现，被本切片与 gate/reconcile 共用",
+      "risk": "condition_flags 对条件行不齐直接 Reject，决定 feature-list/status 的 all-or-nothing 行为；scope_ids 的通配展开决定 coverage/drift 分母"
+    }
+  ],
+  "implicit_requirements": [
+    "feature-register 新建的 feature 永远没有 coverage 策略（coverage_epsilon NULL），之后再用 feature-declare 重声明也不会打开——「新 feature 默认开启覆盖」只在 declare 入口成立（探针 E4.2/E4.3）。",
+    "work-claim --brief 只裁剪 slice，target_ids 仍全量返回；scan 工单的上万 id 依旧会进 stdout（探针 E3.2：400 个 id = 4690 字符）。",
+    "work-claim 没有 --feature：按 role 在所有 feature 的当前代里挑 id 最小的一张 ready 工单（探针 S5.10），多 feature 并行只能靠工单 id 顺序。",
+    "work_items.assignee 被写成 role，且 finish/judge 都不清空；只有 supersede 与 reconcile 会清（探针 E5）。",
+    "claim 本身没有租约/过期：claimed_at 只被 reconcile 读，TTL 默认 3600 秒，且只在显式跑 reconcile/serve 时才回收（探针 S5.8/S5.9）。",
+    "--allow-product-code 对非 implement-test 角色静默无效，不报错（探针 S9.4）。",
+    "feature-list 是全体成功/全体失败：任一 feature 条件行不齐，整条命令 Reject（探针 E1.1），其它 feature 也看不到。",
+    "重声明会保留 requirement 节点上手写的 attrs（包括 attrs.bite），只覆盖 name 与 attrs.statement（探针 E8.1）。",
+    "change 的 id 是全局命名空间，不按 feature 隔离；跨 feature 同 id 直接 Reject（探针 S7.10）。",
+    "change-open 的 --statement 只校验“给了”，空白字符串也能通过（commands_feature.py:341-396 无内容校验）。",
+    "changes.affected_json 永远是 '[]'，没有任何代码或测试依赖它的内容（探针 S7.4）。",
+    "judge(failed) 之后重试单保留 evidence_ids 与 claimed_by：上一轮失败证据会带进下一轮（探针 S6.12/S6.14）。",
+    "feature-status 的 evidence 列表不按 generation 过滤，而 judge/gate 只认同代 evidence（commands_feature.py:281-288 vs evidence.py:19-35）。",
+    "change-diff 看不到 import-file 写出的节点：scan 路径刻意不追加 evidence_ids（commands_repo.py:216-217）。",
+    "audit 单从不被领取、没有 token；它只在 judge 时被同时置 passed/failed（commands_feature.py:572-581,650-656）。",
+    "work-open 允许在 claimed 工单上继续合并写入边界，合并后 finish 的 evidence 校验按新边界算（探针 S4.7）。",
+    "drift_limit 一旦设置无法清除：没有 --no-drift 或传 0 之外的关闭方式（探针 S2.5）。",
+    "旧代的 conditions/work_items/judge_history 永不删除，只 supersede；status 只展示当前代工单但展示全部代的 changes/evidence（探针 S2.3/S2.4）。",
+    "feature-declare 每调用一次就推进 generation，即使 statement/acceptance 完全没变（探针 S2.1）。",
+    "work-seed 的依赖链只在上一条件已真且对应工单 passed 时建立；change-open 继承来的条件没有工单，链从第一个缺失条件重新开始（探针 S7.6）。"
+  ],
+  "findings": [
+    "同一份状态库上 feature-status 与 gate 可以给出相反的咬合结论：bite 标记属于其他 feature 但节点在当前 feature 作用域内时，gate 计入并 FAIL，status 的 bites 列表为空（探针 S8.3/S8.4）；coverage/drift 又用 status 式过滤，门禁内部三套口径。",
+    "只读命令泄漏写凭证：work-list 与 feature-status 原样返回 claim_token（commands_feature.py:250-254,711；探针 S5.6/S5.7），任何能跑 CLI 的人都能接管未提交工单。",
+    "--brief 的承诺只兑现一半：slice 变成计数，但 target_ids 全量返回（探针 E3.2），大仓整仓 scan 依旧把 MB 级 id 列表塞回代理上下文。",
+    "两个 feature 入口的策略不对称：register 新建不走 coverage 默认，之后 declare 也保留关闭状态（探针 E4.3）；契约文本「新 feature 默认开启覆盖」只对 declare 成立。",
+    "claim 的租约语义不在 claim 里：claimed_at 只被 reconcile 读取，agent 崩了不会自动释放，必须有人跑 reconcile/serve（探针 S5.8）。",
+    "work_items.assignee 语义冗余且从不清理：它等于 role，finish/judge 后仍留着（探针 E5），和 claimed_by 形成两个“负责人”字段。",
+    "feature-list 的失败粒度太粗：一条 feature 的条件行缺失会让整条列表命令 Reject（探针 E1.1）。",
+    "commands_feature.py 有 3 个未用 import、1 个放错模块的共享 helper（_require_write）、2 个 argparse 之后不可达的校验、1 个恒空列（affected_json）——重写时可以无损删除，但都会改变源码形状，需与 02 切片的契约表同步。",
+    "work-judge 最关键的支路没有测试：audit-id 入口、legacy_claim 放行、audit 单已存在时的重置都只有探针（S6.7/S6.15）；MySQL/PG 只测了 declare+scan 一条链路（tests/test_mysql_backend.py:83-101、tests/test_pg_backend.py:85-104），redeclare 的 ON CONFLICT 翻译没有跨后端覆盖。",
+    "测试密度集中在主流程：feature-declare 被 72/85 个 test_wxg 用例间接触达，而 feature-list 0 次、change-diff 1 次、work-list 2 次；断言层级更薄（很多用例只取 status/conditions）。"
+  ],
+  "open_questions": [
+    "register 路径没有 coverage 默认是设计还是遗漏？如果是有意，两种入口的策略矩阵应该写进契约；如果不是，修它会改变已登记 feature 的门禁结果。",
+    "work-claim 要不要 --feature？现在的跨 feature 选择会让多 feature 并行时的领取结果由 id 字典序决定。",
+    "--brief 要不要连 target_ids 一起裁剪（例如只给 count + hash）？不裁剪的话文档里“省上下文”的理由不成立。",
+    "claim_token 出现在只读命令里是调试便利还是安全缺陷？如果保留，是否至少只给前缀/哈希；如果收回，role-prompt 与测试工具要同步改。",
+    "status 与 gate 的咬合过滤要不要抽成唯一实现？统一意味着改 gate 的判定结果（当前 gate 更宽），这是行为变更不是重构。",
+    "change-diff 的基线允许未来代（--from-generation 9 不报错，探针 S7.9），要不要收紧；scan 写出的节点算不算“变更”也需要先定义。",
+    "assignee 列还有存在价值吗？role 列已经是同值，agent 身份在 claimed_by；删列会影响 MySQL/PG 迁移脚本（db.py:516-583）。",
+    "judge 的 legacy 放行（claimed_by 为空即允许自审）要不要保留？如果保留，audit-id 入口是否应该成为唯一入口，以减少两条路径的测试面。",
+    "changes.affected_json 是保留给未来字段级 diff，还是直接删列？当前它是纯死字段，但删列要改 schema 版本与迁移。"
+  ]
+}

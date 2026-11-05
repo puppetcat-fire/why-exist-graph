@@ -86,18 +86,35 @@ class WxgTestCase(unittest.TestCase):
         self.cli("init")
         self.cli("repo-add", "--id", "demo", "--path", str(self.repo))
 
-    def declare(self, feature="feat-x", statement="创建订单。", acceptance=None, constraints=None):
-        return self.cli(
+    def declare(self, feature="feat-x", statement="创建订单。", acceptance=None, constraints=None,
+                coverage_epsilon=None, drift_limit=None, no_coverage=True):
+        args = [
             "feature-declare",
             "--id", feature,
             "--name", f"演示 {feature}",
             "--statement", statement,
             "--acceptance", json.dumps(acceptance or ["返回成功"], ensure_ascii=False),
             "--constraints", json.dumps(constraints or ["不改产品代码"], ensure_ascii=False),
-        )
+        ]
+        if coverage_epsilon is not None:
+            args += ["--coverage-epsilon", str(coverage_epsilon)]
+        elif no_coverage:
+            args += ["--no-coverage"]
+        if drift_limit is not None:
+            args += ["--drift-limit", str(drift_limit)]
+        return self.cli(*args)
 
     def status(self, feature):
         return self.cli("feature-status", "--id", feature)
+
+    def force_ready(self, feature):
+        conn = self.db()
+        conn.execute(
+            "UPDATE conditions SET status=1 WHERE feature_id=? AND generation=(SELECT generation FROM features WHERE id=?)",
+            (feature, feature),
+        )
+        conn.commit()
+        conn.close()
 
     def open_targets(self, feature, kind, patterns):
         return self.cli("work-open", "--feature", feature, "--kind", kind, "--target-ids", json.dumps(patterns, ensure_ascii=False))
@@ -143,7 +160,7 @@ class WxgTestCase(unittest.TestCase):
             return {
                 table: [tuple(row) for row in conn.execute(f"SELECT * FROM {table} ORDER BY 1").fetchall()]
                 for table in ("meta", "repos", "nodes", "edges", "features", "conditions",
-                              "work_items", "feature_nodes", "evidence", "bites")
+                              "work_items", "feature_nodes", "evidence", "bites", "judge_history", "changes")
             }
         finally:
             conn.close()
@@ -238,6 +255,9 @@ class WxgTestCase(unittest.TestCase):
         result = self.cli("gate", "--feature", "feat-full", "--json")
         self.assertEqual(result["result"], "PASS", result)
         self.assertTrue(result["evidence_ok"])
+        reconciled = self.cli("reconcile", "--feature", "feat-full")
+        self.assertEqual(reconciled["actions"], [])
+        self.assertTrue(reconciled["converged"], reconciled)
         status = self.status("feat-full")
         self.assertEqual(status["conditions"]["Ready"], 1)
 
@@ -402,7 +422,7 @@ class WxgTestCase(unittest.TestCase):
         token = conn.execute("SELECT claim_token FROM work_items WHERE id='work:feat-doc:g1:model-architecture'").fetchone()
         self.assertIsNone(token[0])
         version = conn.execute("SELECT value FROM meta WHERE key='contract_version'").fetchone()
-        self.assertEqual(version[0], "0.4.1")
+        self.assertEqual(version[0], "2.92.0")
         conn.close()
         gate_after = self.cli("gate", "--feature", "feat-doc", "--json")
         self.assertEqual(gate_after["result"], "PASS")
@@ -497,8 +517,8 @@ class WxgTestCase(unittest.TestCase):
 
     def test_contract_json_is_serializable(self):
         contract = self.cli("contract", "--json")
-        self.assertEqual(contract["version"], "0.4.1")
-        self.assertEqual(contract["schema_version"], 3)
+        self.assertEqual(contract["version"], "2.92.0")
+        self.assertEqual(contract["schema_version"], 9)
         self.assertIn("evidence-record", contract["commands"])
         self.assertEqual(contract["commands"]["work-claim"]["options"][1]["type"], "str")
         self.assertEqual(contract["evidence_required_conditions"], ["BehaviorPassed"])
@@ -629,19 +649,34 @@ class WxgTestCase(unittest.TestCase):
         conn.close()
 
         migrated = self.cli("init")
-        self.assertEqual(migrated["schema_version"], 3)
+        self.assertEqual(migrated["schema_version"], 9)
         conn = sqlite3.connect(db)
         columns = {row[1] for row in conn.execute("PRAGMA table_info(work_items)")}
         evidence_columns = {row[1] for row in conn.execute("PRAGMA table_info(evidence)")}
+        feature_columns = {row[1] for row in conn.execute("PRAGMA table_info(features)")}
+        self.assertIn("conformance", feature_columns)
+        bite_columns = {row[1] for row in conn.execute("PRAGMA table_info(bites)")}
+        node_columns = {row[1] for row in conn.execute("PRAGMA table_info(nodes)")}
+        history = conn.execute(
+            "SELECT work_item_id, verdict, actor FROM judge_history WHERE work_item_id='work:old:g1:scan'"
+        ).fetchall()
         row = conn.execute(
             "SELECT claimed_by, judged_by FROM work_items WHERE id='work:old:g1:scan'"
         ).fetchone()
         conn.close()
-        self.assertTrue({"claimed_by", "judged_by", "judged_at"}.issubset(columns))
+        self.assertTrue({"claimed_by", "judged_by", "judged_at", "claimed_at"}.issubset(columns))
         self.assertIn("generation", evidence_columns)
+        self.assertIn("coverage_epsilon", feature_columns)
+        self.assertIn("drift_limit", feature_columns)
+        self.assertTrue({"generation", "phase"}.issubset(bite_columns))
+        self.assertIn("stale", node_columns)
+        self.assertEqual(history, [("work:old:g1:scan", "passed", "legacy")])
         self.assertEqual(row, ("legacy", "legacy"))
         doctor = self.cli("doctor", expect=1)
         self.assertIn("legacy-identity", doctor["by_check"])
+        # legacy 身份只能报给人看，不能自动修（修了就等于伪造审计身份）
+        self.assertIn("legacy-identity", doctor["unfixable_checks"])
+        self.assertEqual(0, doctor["fixable_count"])
 
     # ---------------- 0.4.0 回归：门禁/注册/幂等/可用性
 
@@ -1013,6 +1048,847 @@ class WxgTestCase(unittest.TestCase):
         node = self.cli("get", "--id", "requirement:feat-regattr:main")["node"]
         self.assertEqual(node["attrs"]["statement"], "第三代")
         self.assertEqual(node["attrs"]["x_note"], "保留")
+
+
+    # ---------------- 0.5.0 回归：咬合计数化 / 失败历史 / 覆盖 / 模式
+
+    def test_gate_counts_latest_bite_per_node_only(self):
+        self.init_repo()
+        self.declare("feat-latest")
+        other = "use_case:feat-latest:tmp"
+        conn = self.db()
+        conn.row_factory = sqlite3.Row
+        try:
+            wxg.upsert_node(conn, {"id": other, "kind": "use_case", "name": "临时"})
+            conn.commit()
+        finally:
+            conn.close()
+        # 跨节点 KEEP 不再抵消 UNNECESSARY
+        self.bite("requirement:feat-latest:main", "UNNECESSARY", feature="feat-latest", reason="多余")
+        self.bite(other, "KEEP", feature="feat-latest", reason="别处需要")
+        gate = self.cli("gate", "--feature", "feat-latest", "--json", expect=1)
+        self.assertEqual(gate["result"], "FAIL")
+        self.assertIn("UNNECESSARY/HOLLOW", gate["reason"])
+        # 同一节点较新的 KEEP 才能反证
+        self.bite("requirement:feat-latest:main", "KEEP", feature="feat-latest", reason="修正")
+        gate = self.cli("gate", "--feature", "feat-latest", "--json", expect=1)
+        self.assertNotIn("UNNECESSARY/HOLLOW", gate["reason"])
+        latest = {item["node"]: item["verdict"] for item in gate["latest_verdicts"]}
+        self.assertEqual(latest["requirement:feat-latest:main"], "KEEP")
+
+    def test_sample_is_feature_scoped_and_requires_source(self):
+        self.init_repo()
+        self.declare("feat-sample")
+        self.import_scan("feat-sample")
+        sampled = self.cli("sample", "--feature", "feat-sample", "--seed", "7")
+        self.assertEqual(sampled["source"], "feature")
+        self.assertGreaterEqual(sampled["candidates"], 1)
+        scope = self.status("feat-sample")["scope_size"]
+        self.assertLessEqual(sampled["candidates"], scope)
+        repo_sampled = self.cli("sample", "--repo", "demo", "--seed", "7")
+        self.assertEqual(repo_sampled["source"], "repo")
+        bad = self.cli("sample", "--seed", "7", expect=2)
+        self.assertIn("二选一", bad["error"])
+
+    def test_bite_records_phase_and_generation(self):
+        self.init_repo()
+        self.declare("feat-phase")
+        result = self.bite("requirement:feat-phase:main", "KEEP", feature="feat-phase")
+        self.assertEqual(result["phase"], "ArchitectureReconciled")
+        self.assertEqual(result["generation"], 1)
+        status = self.status("feat-phase")
+        self.assertEqual(status["bites"][0]["phase"], "ArchitectureReconciled")
+
+    def test_judge_history_keeps_failures_and_clears_stale_reason(self):
+        self.init_repo()
+        self.declare("feat-hist")
+        arch = self.claim("model-architecture")
+        self.finish(arch["claim_token"])
+        self.judge(arch["work_item_id"], verdict="failed", reason="结构缺失")
+        status = self.status("feat-hist")
+        self.assertEqual(status["judge_history"][-1]["verdict"], "failed")
+        self.assertEqual(status["judge_history"][-1]["reason"], "结构缺失")
+        arch2 = self.claim("model-architecture")
+        self.finish(arch2["claim_token"])
+        self.judge(arch2["work_item_id"])
+        conn = self.db()
+        try:
+            fail_reason = conn.execute(
+                "SELECT fail_reason FROM work_items WHERE id=?", (arch2["work_item_id"],)
+            ).fetchone()[0]
+            rows = conn.execute(
+                "SELECT verdict, actor FROM judge_history WHERE work_item_id=? ORDER BY rowid",
+                (arch2["work_item_id"],),
+            ).fetchall()
+        finally:
+            conn.close()
+        self.assertIsNone(fail_reason, "judge(passed) 必须清空陈旧 fail_reason")
+        self.assertEqual([row[0] for row in rows], ["failed", "passed"])
+        self.assertEqual([row[1] for row in rows], ["auditor-1", "auditor-1"])
+        doctor = self.cli("doctor")
+        self.assertTrue(doctor["ok"])
+        self.assertNotIn("judge-history-missing", doctor["by_check"])
+        self.assertNotIn("judge-history-work-missing", doctor["by_check"])
+
+    def test_coverage_policy_blocks_judge_until_scope_covered(self):
+        self.init_repo()
+        self.declare("feat-cov", coverage_epsilon=0.05)
+        self.import_scan("feat-cov")
+        self.open_targets("feat-cov", "model-architecture", ["requirement:feat-cov:main"])
+        arch = self.claim("model-architecture")
+        self.finish(arch["claim_token"])
+        rejected = self.cli(
+            "work-judge", "--id", arch["work_item_id"], "--verdict", "passed",
+            "--role", "audit", "--actor", "auditor-1", expect=2,
+        )
+        self.assertIn("咬合覆盖未达标", rejected["error"])
+        cov = self.cli("coverage", "--feature", "feat-cov")
+        self.assertTrue(cov["enforced"])
+        self.assertFalse(cov["phases"][0]["met"])
+        self.assertGreater(cov["phases"][0]["n_required"], 0)
+        nodes = self.cli("find")["nodes"]
+        self.assertGreaterEqual(len(nodes), cov["phases"][0]["n_required"])
+        for node in nodes:
+            self.bite(node["id"], "KEEP", feature="feat-cov")
+        cov = self.cli("coverage", "--feature", "feat-cov")
+        self.assertTrue(cov["phases"][0]["met"], cov)
+        self.judge(arch["work_item_id"])
+        self.assertEqual(self.status("feat-cov")["conditions"]["ArchitectureReconciled"], 1)
+
+    def test_coverage_defaults_when_policy_off(self):
+        self.init_repo()
+        self.declare("feat-covdef")
+        cov = self.cli("coverage", "--feature", "feat-covdef")
+        self.assertFalse(cov["enforced"])
+        self.assertEqual(cov["epsilon"], 1.0)
+        self.assertEqual(cov["scope_size"], 1)
+        self.assertEqual(cov["phases"][0]["n_required"], 0)
+        self.assertTrue(cov["phases"][0]["met"])
+
+    def test_pattern_requires_justification_and_attachment(self):
+        self.init_repo()
+        self.declare("feat-pat")
+        self.open_targets("feat-pat", "model-architecture", ["pattern:feat-pat:*", "component:feat-pat:*"])
+        arch = self.claim("model-architecture")
+        token = arch["claim_token"]
+        self.upsert(token, {"id": "pattern:feat-pat:repo", "kind": "pattern", "name": "Repository", "attrs": {}})
+        self.upsert(token, {"id": "component:feat-pat:app", "kind": "component", "name": "服务"})
+        self.finish(token)
+        self.judge(arch["work_item_id"])
+        gate = self.cli("gate", "--feature", "feat-pat", "--json", expect=1)
+        self.assertIn("模式有限应用", gate["reason"])
+        conn = self.db()
+        conn.row_factory = sqlite3.Row
+        try:
+            wxg.upsert_node(conn, {
+                "id": "pattern:feat-pat:repo", "kind": "pattern", "name": "Repository",
+                "attrs": {
+                    "applicability": "多个写路径复用同一持久化逻辑",
+                    "not_applicable": "只有一处 CRUD 时不引入",
+                    "alternative": "直接调用 ORM",
+                },
+            })
+            wxg.upsert_edge(conn, {"src": "component:feat-pat:app", "dst": "pattern:feat-pat:repo", "kind": "applies"})
+            conn.commit()
+        finally:
+            conn.close()
+        gate = self.cli("gate", "--feature", "feat-pat", "--json", expect=1)
+        self.assertNotIn("模式有限应用", gate["reason"])
+        self.assertIn("条件未齐", gate["reason"])
+        exported = self.cli("export", "--feature", "feat-pat")
+        arch_md = (Path(exported["dir"]) / "04-架构.md").read_text(encoding="utf-8")
+        self.assertIn("pattern:feat-pat:repo", arch_md)
+
+    def test_pattern_without_applies_edge_fails_gate(self):
+        self.init_repo()
+        self.declare("feat-pat2")
+        self.open_targets("feat-pat2", "model-architecture", ["pattern:feat-pat2:*"])
+        arch = self.claim("model-architecture")
+        token = arch["claim_token"]
+        self.upsert(token, {"id": "pattern:feat-pat2:repo", "kind": "pattern", "name": "Repository", "attrs": {
+            "applicability": "有多个写路径", "not_applicable": "单一 CRUD 不引入",
+        }})
+        self.finish(token)
+        self.judge(arch["work_item_id"])
+        gate = self.cli("gate", "--feature", "feat-pat2", "--json", expect=1)
+        self.assertIn("模式有限应用", gate["reason"])
+        self.assertFalse(gate["patterns"][0]["attached"])
+
+
+    # ---------------- 0.6.0 回归：漂移门禁 / applies 校验 / 大图输出 / 调度
+
+    def test_drift_limit_blocks_gate_above_threshold(self):
+        self.init_repo()
+        self.declare("feat-drift", drift_limit=0)
+        self.import_scan("feat-drift")
+        node = self.cli("find", "--kind", "classifier")["nodes"][0]["id"]
+        self.bite(node, "UNMAPPED", feature="feat-drift")
+        gate = self.cli("gate", "--feature", "feat-drift", "--json", expect=1)
+        self.assertIn("结构性漂移", gate["reason"])
+        self.assertEqual(gate["drift"]["count"], 1)
+        self.assertTrue(gate["drift"]["enforced"])
+        # 上限 1 时不因漂移拦门（仍会因条件未齐失败）；节点已存在，bite 会把它挂进新 feature 作用域
+        self.declare("feat-drift2", drift_limit=1)
+        node2 = self.cli("find", "--kind", "classifier")["nodes"][0]["id"]
+        self.bite(node2, "UNMAPPED", feature="feat-drift2")
+        gate = self.cli("gate", "--feature", "feat-drift2", "--json", expect=1)
+        self.assertNotIn("结构性漂移", gate["reason"])
+        self.assertIn("条件未齐", gate["reason"])
+
+    def test_declare_validates_drift_limit(self):
+        self.init_repo()
+        bad = self.cli(
+            "feature-declare", "--id", "feat-bad", "--name", "x", "--statement", "s",
+            "--acceptance", "[]", "--constraints", "[]", "--drift-limit", "-1", expect=2,
+        )
+        self.assertIn("drift-limit", bad["error"])
+
+    def test_applies_edge_requires_design_element_to_pattern(self):
+        self.init_repo()
+        self.declare("feat-applies")
+        self.open_targets("feat-applies", "model-architecture", [
+            "pattern:feat-applies:*", "component:feat-applies:*", "classifier:feat-applies:*",
+        ])
+        arch = self.claim("model-architecture")
+        token = arch["claim_token"]
+        self.upsert(token, {"id": "pattern:feat-applies:p1", "kind": "pattern", "name": "Repository", "attrs": {
+            "applicability": "多个写路径", "not_applicable": "单一 CRUD 不用",
+        }})
+        self.upsert(token, {"id": "component:feat-applies:app", "kind": "component", "name": "服务"})
+        self.upsert(token, {"id": "classifier:feat-applies:repo", "kind": "classifier", "name": "OrderRepo"})
+        wrong = self.cli(
+            "upsert-edge", "--token", token,
+            "--data", json.dumps({"src": "pattern:feat-applies:p1", "dst": "component:feat-applies:app", "kind": "applies"}),
+            expect=2,
+        )
+        self.assertIn("applies 的 src", wrong["error"])
+        wrong_dst = self.cli(
+            "upsert-edge", "--token", token,
+            "--data", json.dumps({"src": "classifier:feat-applies:repo", "dst": "component:feat-applies:app", "kind": "applies"}),
+            expect=2,
+        )
+        self.assertIn("applies 的 dst", wrong_dst["error"])
+        self.edge(token, "classifier:feat-applies:repo", "pattern:feat-applies:p1", "applies")
+        self.finish(token)
+        self.judge(arch["work_item_id"])
+        gate = self.cli("gate", "--feature", "feat-applies", "--json", expect=1)
+        self.assertNotIn("模式有限应用", gate["reason"])
+
+    def test_find_and_slice_support_limit(self):
+        self.init_repo()
+        self.declare("feat-limit")
+        self.import_scan("feat-limit")
+        found = self.cli("find", "--limit", "1")
+        self.assertEqual(len(found["nodes"]), 1)
+        self.assertGreater(found["total"], 1)
+        self.assertTrue(found["truncated"])
+        all_ids = [node["id"] for node in self.cli("find")["nodes"]]
+        sliced = self.cli("slice", "--ids", json.dumps(all_ids), "--limit", "1")
+        self.assertEqual(len(sliced["nodes"]), 1)
+        self.assertGreater(sliced["nodes_total"], 1)
+        self.assertTrue(sliced["truncated"])
+
+    def test_work_claim_brief_omits_slice_bodies(self):
+        self.init_repo()
+        self.declare("feat-brief")
+        claimed = self.cli("work-claim", "--role", "model-architecture", "--actor", "agent-arch", "--brief")
+        self.assertIn("summary", claimed["slice"])
+        self.assertNotIn("nodes", claimed["slice"])
+        self.assertGreater(claimed["slice"]["summary"]["nodes"], 0)
+
+    def test_coverage_next_is_first_unmet_phase(self):
+        self.init_repo()
+        self.declare("feat-next", coverage_epsilon=0.05)
+        cov = self.cli("coverage", "--feature", "feat-next")
+        self.assertEqual(cov["next"], cov["phases"][0]["phase"])
+        self.assertFalse(cov["phases"][0]["met"])
+        self.bite("requirement:feat-next:main", "KEEP", feature="feat-next")
+        cov = self.cli("coverage", "--feature", "feat-next")
+        self.assertTrue(cov["phases"][0]["met"], cov)
+        self.assertEqual(cov["next"], cov["phases"][1]["phase"])
+
+    def test_import_does_not_grow_scan_evidence_ids(self):
+        self.init_repo()
+        self.declare("feat-scan-ev")
+        scan, _ = self.import_scan("feat-scan-ev")
+        conn = self.db()
+        try:
+            evidence_ids = json.loads(conn.execute(
+                "SELECT evidence_ids FROM work_items WHERE id=?", (scan["work_item_id"],)
+            ).fetchone()[0])
+        finally:
+            conn.close()
+        self.assertEqual(evidence_ids, [])
+
+
+    # ---------------- 0.7.0 回归：reconcile / 施工标记 / WAL
+
+    def test_reconcile_dry_run_is_read_only_and_idempotent(self):
+        self.init_repo()
+        self.declare("feat-rec")
+        db = self.root / "graph.sqlite"
+        before = hashlib.sha256(db.read_bytes()).hexdigest()
+        first = self.cli("reconcile", "--feature", "feat-rec", expect=1)
+        second = self.cli("reconcile", "--feature", "feat-rec", expect=1)
+        after = hashlib.sha256(db.read_bytes()).hexdigest()
+        self.assertEqual(first, second, "reconcile 必须幂等")
+        self.assertEqual(first["actions"], [])
+        self.assertFalse(first["converged"])
+        self.assertEqual(before, after, "dry-run reconcile 不得写状态库")
+
+    def test_reconcile_apply_seeds_missing_ticket(self):
+        self.init_repo()
+        self.declare("feat-seed")
+        conn = self.db()
+        conn.execute("DELETE FROM work_items WHERE id='work:feat-seed:g1:model-structure'")
+        conn.commit()
+        conn.close()
+        dry = self.cli("reconcile", "--feature", "feat-seed", expect=1)
+        self.assertIn("seed-ticket", [action["action"] for action in dry["actions"]])
+        applied = self.cli("reconcile", "--feature", "feat-seed", "--apply", expect=1)
+        self.assertIn("seed-ticket", applied["applied"])
+        conn = self.db()
+        row = conn.execute("SELECT status FROM work_items WHERE id='work:feat-seed:g1:model-structure'").fetchone()
+        conn.close()
+        self.assertEqual(row[0], "blocked")
+        again = self.cli("reconcile", "--feature", "feat-seed", "--apply", expect=1)
+        self.assertNotIn("seed-ticket", [action["action"] for action in again["actions"]])
+
+    def test_reconcile_releases_stale_claim(self):
+        self.init_repo()
+        self.declare("feat-claim")
+        claimed = self.claim("model-architecture")
+        conn = self.db()
+        conn.execute(
+            "UPDATE work_items SET claimed_at='2020-01-01T00:00:00Z' WHERE id=?", (claimed["work_item_id"],)
+        )
+        conn.commit()
+        conn.close()
+        dry = self.cli("reconcile", "--feature", "feat-claim", expect=1)
+        self.assertIn("release-stale-claim", [action["action"] for action in dry["actions"]])
+        applied = self.cli("reconcile", "--feature", "feat-claim", "--apply", expect=1)
+        self.assertIn("release-stale-claim", applied["applied"])
+        stale = self.cli("work-finish", "--token", claimed["claim_token"], expect=2)
+        self.assertIn("claim_token", stale["error"])
+        reclaimed = self.claim("model-architecture")
+        self.assertTrue(reclaimed["claim_token"])
+
+    def test_reconcile_unblocks_after_dependency_passed(self):
+        self.init_repo()
+        self.declare("feat-unblock")
+        arch = self.claim("model-architecture")
+        self.finish(arch["claim_token"])
+        self.judge(arch["work_item_id"])
+        conn = self.db()
+        conn.execute("UPDATE work_items SET status='blocked' WHERE id='work:feat-unblock:g1:model-structure'")
+        conn.commit()
+        conn.close()
+        dry = self.cli("reconcile", "--feature", "feat-unblock", expect=1)
+        self.assertIn("unblock", [action["action"] for action in dry["actions"]])
+        applied = self.cli("reconcile", "--feature", "feat-unblock", "--apply", expect=1)
+        self.assertIn("unblock", applied["applied"])
+
+    def test_claim_writes_claimed_at_and_wal_enabled(self):
+        self.init_repo()
+        self.declare("feat-claim-ts")
+        claimed = self.claim("model-architecture")
+        conn = self.db()
+        claimed_at = conn.execute(
+            "SELECT claimed_at FROM work_items WHERE id=?", (claimed["work_item_id"],)
+        ).fetchone()[0]
+        journal = conn.execute("PRAGMA journal_mode").fetchone()[0]
+        conn.close()
+        self.assertTrue(claimed_at)
+        self.assertEqual(journal.lower(), "wal")
+
+    def test_construction_marker_blocks_gate_and_can_be_cleared(self):
+        self.init_repo()
+        self.declare("feat-cons")
+        node_id = "operation:feat-cons:op"
+        conn = self.db()
+        conn.row_factory = sqlite3.Row
+        try:
+            wxg.upsert_node(conn, {"id": node_id, "kind": "operation", "name": "op", "attrs": {"construction": True}})
+            conn.commit()
+        finally:
+            conn.close()
+        self.bite(node_id, "KEEP", feature="feat-cons")
+        gate = self.cli("gate", "--feature", "feat-cons", "--json", expect=1)
+        self.assertIn("施工中", gate["reason"])
+        self.assertEqual(gate["constructions"], [node_id])
+        conn = self.db()
+        conn.row_factory = sqlite3.Row
+        try:
+            wxg.upsert_node(conn, {"id": node_id, "kind": "operation", "name": "op", "attrs": {"construction": False}})
+            conn.commit()
+        finally:
+            conn.close()
+        gate = self.cli("gate", "--feature", "feat-cons", "--json", expect=1)
+        self.assertNotIn("施工中", gate["reason"])
+        self.assertEqual(gate["constructions"], [])
+
+    def test_construction_attr_must_be_bool(self):
+        self.init_repo()
+        self.declare("feat-cons2")
+        self.open_targets("feat-cons2", "model-architecture", ["operation:feat-cons2:*"])
+        arch = self.claim("model-architecture")
+        bad = self.cli(
+            "upsert-node", "--token", arch["claim_token"],
+            "--data", json.dumps({"id": "operation:feat-cons2:op", "kind": "operation", "name": "op",
+                                  "attrs": {"construction": "yes"}}),
+            expect=2,
+        )
+        self.assertIn("construction", bad["error"])
+
+
+    # ---------------- 0.8.0 回归：变更集
+
+    def test_change_open_requires_ready(self):
+        self.init_repo()
+        self.declare("feat-ch0")
+        bad = self.cli(
+            "change-open", "--feature", "feat-ch0", "--statement", "改设计",
+            "--from-condition", "StructureReconciled", expect=2,
+        )
+        self.assertIn("Ready", bad["error"])
+
+    def test_change_open_inherits_and_seeds_downstream(self):
+        self.init_repo()
+        self.declare("feat-ch1")
+        self.force_ready("feat-ch1")
+        opened = self.cli(
+            "change-open", "--feature", "feat-ch1", "--statement", "改持久化边界",
+            "--from-condition", "StructureReconciled",
+        )
+        self.assertEqual(opened["to_generation"], 2)
+        self.assertEqual(opened["inherited"], ["ArchitectureReconciled"])
+        status = self.status("feat-ch1")
+        self.assertEqual(status["conditions"]["ArchitectureReconciled"], 1)
+        self.assertEqual(status["conditions"]["StructureReconciled"], 0)
+        self.assertEqual(status["conditions"]["Ready"], 0)
+        self.assertEqual(len(status["changes"]), 1)
+        listed = self.cli("work-list", "--feature", "feat-ch1")
+        by_kind = {item["kind"]: item["status"] for item in listed["work_items"]}
+        self.assertEqual(by_kind["model-structure"], "ready")
+        self.assertEqual(by_kind["interact"], "blocked")
+        reconcile = self.cli("reconcile", "--feature", "feat-ch1", expect=1)
+        self.assertNotIn("seed-ticket", [action["action"] for action in reconcile["actions"]])
+
+    def test_change_open_rejects_second_while_open(self):
+        self.init_repo()
+        self.declare("feat-ch2")
+        self.force_ready("feat-ch2")
+        self.cli(
+            "change-open", "--feature", "feat-ch2", "--statement", "第一次",
+            "--from-condition", "ArchitectureReconciled",
+        )
+        bad = self.cli(
+            "change-open", "--feature", "feat-ch2", "--statement", "第二次",
+            "--from-condition", "ArchitectureReconciled", expect=2,
+        )
+        self.assertIn("Ready", bad["error"])
+
+    def test_change_diff_lists_written_nodes_and_anchors(self):
+        self.init_repo()
+        self.declare("feat-ch3")
+        self.open_targets("feat-ch3", "model-architecture", ["classifier:feat-ch3:*"])
+        arch = self.claim("model-architecture")
+        self.upsert(arch["claim_token"], {
+            "id": "classifier:feat-ch3:old", "kind": "classifier", "name": "Old",
+            "repo": "demo", "path": "old.py", "symbol": "Old",
+        })
+        self.finish(arch["claim_token"])
+        self.force_ready("feat-ch3")
+        self.cli(
+            "change-open", "--feature", "feat-ch3", "--statement", "换实现",
+            "--from-condition", "ArchitectureReconciled",
+        )
+        self.open_targets("feat-ch3", "model-architecture", ["classifier:feat-ch3:new"])
+        arch2 = self.claim("model-architecture")
+        self.upsert(arch2["claim_token"], {
+            "id": "classifier:feat-ch3:new", "kind": "classifier", "name": "New",
+            "repo": "demo", "path": "new.py", "symbol": "New",
+        })
+        self.finish(arch2["claim_token"])
+        diff = self.cli("change-diff", "--feature", "feat-ch3")
+        self.assertEqual(diff["to_generation"], 2)
+        self.assertIn("classifier:feat-ch3:new", diff["added"])
+        self.assertIn("classifier:feat-ch3:old", diff["removed"])
+        anchors = {item["node"]: item["path"] for item in diff["code_anchors"]}
+        self.assertEqual(anchors["classifier:feat-ch3:new"], "new.py")
+
+    def test_change_from_late_condition_inherits_all_earlier(self):
+        self.init_repo()
+        self.declare("feat-ch4")
+        self.force_ready("feat-ch4")
+        opened = self.cli(
+            "change-open", "--feature", "feat-ch4", "--statement", "只改行为",
+            "--from-condition", "BehaviorPassed",
+        )
+        self.assertEqual(
+            opened["inherited"],
+            ["ArchitectureReconciled", "StructureReconciled", "InteractionsReconciled",
+             "TestsSpecified", "TestsImplemented"],
+        )
+        self.assertEqual(opened["reset"], ["BehaviorPassed"])
+
+    def test_doctor_flags_change_inheritance_drift(self):
+        self.init_repo()
+        self.declare("feat-ch5")
+        self.force_ready("feat-ch5")
+        self.cli(
+            "change-open", "--feature", "feat-ch5", "--statement", "改结构",
+            "--from-condition", "StructureReconciled",
+        )
+        conn = self.db()
+        conn.execute(
+            "UPDATE conditions SET status=0 WHERE feature_id='feat-ch5' AND generation=2 "
+            "AND name='ArchitectureReconciled'"
+        )
+        conn.commit()
+        conn.close()
+        doctor = self.cli("doctor", expect=1)
+        self.assertIn("change-inheritance", doctor["by_check"])
+
+
+    # ---------------- 0.9.0 回归：回扫断言
+
+    def only_orderrepo_shop(self):
+        return SHOP_PY.split("\n\ndef create_order")[0] + "\n"
+
+    def test_import_marks_stale_nodes_when_symbol_removed(self):
+        self.init_repo()
+        self.declare("feat-stale")
+        scan, _ = self.import_scan("feat-stale")
+        node = "operation:demo:shop.py:create_order"
+        self.assertFalse(bool(self.cli("get", "--id", node)["node"]["stale"]))
+        (self.repo / "shop.py").write_text(self.only_orderrepo_shop(), encoding="utf-8")
+        prepared = self.cli(
+            "import-file", "--file", str(self.repo / "shop.py"), "--feature", "feat-stale", "--prepare"
+        )
+        self.assertGreaterEqual(prepared["stale_candidates"], 1)
+        written = self.cli("import-file", "--file", str(self.repo / "shop.py"), "--token", scan["claim_token"])
+        self.assertGreaterEqual(written["stale_marked"], 1)
+        self.assertIn(node, written["stale_nodes"])
+        self.assertTrue(bool(self.cli("get", "--id", node)["node"]["stale"]))
+        status = self.status("feat-stale")
+        self.assertIn(node, status["stale"])
+        gate = self.cli("gate", "--feature", "feat-stale", "--json", expect=1)
+        self.assertIn("stale", gate["reason"])
+        (self.repo / "shop.py").write_text(SHOP_PY, encoding="utf-8")
+        self.cli("import-file", "--file", str(self.repo / "shop.py"), "--feature", "feat-stale", "--prepare")
+        self.cli("import-file", "--file", str(self.repo / "shop.py"), "--token", scan["claim_token"])
+        self.assertFalse(bool(self.cli("get", "--id", node)["node"]["stale"]))
+        gate = self.cli("gate", "--feature", "feat-stale", "--json", expect=1)
+        self.assertNotIn("stale", gate["reason"])
+
+    def test_sync_reports_missing_and_new_read_only(self):
+        self.init_repo()
+        self.declare("feat-sync")
+        self.import_scan("feat-sync")
+        db = self.root / "graph.sqlite"
+        before = hashlib.sha256(db.read_bytes()).hexdigest()
+        (self.repo / "shop.py").write_text(self.only_orderrepo_shop(), encoding="utf-8")
+        (self.repo / "extra.py").write_text("class Extra:\n    def run(self):\n        return 1\n", encoding="utf-8")
+        report = self.cli("sync", "--repo", "demo")
+        self.assertIn("operation:demo:shop.py:create_order", report["missing"])
+        self.assertTrue(any(node.startswith("classifier:demo:extra.py:Extra") for node in report["new"]))
+        # changed 里 unmapped 节点（len/range 等聚合）行号变化也算变化，单独计数
+        self.assertIn("changed_unmapped_count", report)
+        for item in report["changed"]:
+            self.assertIn("unmapped", item)
+        self.assertEqual(before, hashlib.sha256(db.read_bytes()).hexdigest(), "sync 不得写状态库")
+        zero = self.cli("sync", "--repo", "demo", "--limit", "0")
+        self.assertEqual(zero["missing"], [])
+        self.assertGreater(zero["missing_count"], 0)
+
+    def test_sync_rejects_unregistered_repo(self):
+        self.init_repo()
+        bad = self.cli("sync", "--repo", "nope", expect=2)
+        self.assertIn("未登记", bad["error"])
+
+
+    # ---------------- 1.0.0 回归：默认覆盖策略
+
+    def test_new_feature_defaults_coverage_on(self):
+        self.init_repo()
+        self.cli(
+            "feature-declare", "--id", "feat-default", "--name", "默认", "--statement", "s",
+            "--acceptance", "[]", "--constraints", "[]",
+        )
+        status = self.status("feat-default")
+        self.assertTrue(status["coverage"]["enforced"])
+        self.assertEqual(status["coverage"]["epsilon"], 1.0)
+        self.assertEqual(status["coverage"]["phases"][0]["n_required"], 0)
+        arch = self.claim("model-architecture")
+        self.finish(arch["claim_token"])
+        self.judge(arch["work_item_id"])
+        self.assertEqual(self.status("feat-default")["conditions"]["ArchitectureReconciled"], 1)
+
+    def test_no_coverage_flag_and_conflict(self):
+        self.init_repo()
+        conflict = self.cli(
+            "feature-declare", "--id", "feat-nc", "--name", "x", "--statement", "s",
+            "--acceptance", "[]", "--constraints", "[]",
+            "--no-coverage", "--coverage-epsilon", "1.0", expect=2,
+        )
+        self.assertIn("互斥", conflict["error"])
+        self.cli(
+            "feature-declare", "--id", "feat-nc", "--name", "x", "--statement", "s",
+            "--acceptance", "[]", "--constraints", "[]", "--no-coverage",
+        )
+        self.assertFalse(self.status("feat-nc")["coverage"]["enforced"])
+
+    def test_redeclare_preserves_explicit_coverage_policy(self):
+        self.init_repo()
+        self.declare("feat-keep", coverage_epsilon=0.5)
+        self.cli(
+            "feature-declare", "--id", "feat-keep", "--name", "再次", "--statement", "s2",
+            "--acceptance", "[]", "--constraints", "[]",
+        )
+        self.assertEqual(self.status("feat-keep")["coverage"]["epsilon"], 0.5)
+        self.cli(
+            "feature-declare", "--id", "feat-keep", "--name", "关闭", "--statement", "s3",
+            "--acceptance", "[]", "--constraints", "[]", "--no-coverage",
+        )
+        self.assertFalse(self.status("feat-keep")["coverage"]["enforced"])
+
+
+    # ---------------- 1.1.0 回归：常驻控制器
+
+    def test_serve_once_without_apply_is_read_only(self):
+        self.init_repo()
+        self.declare("feat-serve")
+        conn = self.db()
+        conn.execute("DELETE FROM work_items WHERE id='work:feat-serve:g1:model-structure'")
+        conn.commit()
+        conn.close()
+        db = self.root / "graph.sqlite"
+        before = hashlib.sha256(db.read_bytes()).hexdigest()
+        summary = self.cli("serve", "--once")
+        after = hashlib.sha256(db.read_bytes()).hexdigest()
+        self.assertEqual(before, after, "serve --once 默认不得写状态库")
+        self.assertEqual(summary["pass"], 1)
+        feature = summary["features"][0]
+        self.assertEqual(feature["feature"], "feat-serve")
+        self.assertIn("seed-ticket", [action["action"] for action in feature["actions"]])
+        self.assertEqual(feature["applied"], [])
+        self.assertFalse(feature["converged"])
+
+    def test_serve_once_apply_seeds_missing_ticket(self):
+        self.init_repo()
+        self.declare("feat-serve2")
+        conn = self.db()
+        conn.execute("DELETE FROM work_items WHERE id='work:feat-serve2:g1:model-structure'")
+        conn.commit()
+        conn.close()
+        summary = self.cli("serve", "--once", "--apply")
+        feature = summary["features"][0]
+        self.assertIn("seed-ticket", feature["applied"])
+        conn = self.db()
+        row = conn.execute(
+            "SELECT status FROM work_items WHERE id='work:feat-serve2:g1:model-structure'"
+        ).fetchone()
+        conn.close()
+        self.assertEqual(row[0], "blocked")
+
+    def test_serve_validates_interval(self):
+        self.init_repo()
+        self.declare("feat-serve3")
+        bad = self.cli("serve", "--once", "--interval", "0", expect=2)
+        self.assertIn("interval", bad["error"])
+
+
+    # ---------------- 1.3.0 回归：设计-代码一致性
+
+    def test_conformance_reports_anchor_structure_and_tests(self):
+        self.init_repo()
+        self.declare("feat-conf")
+        conn = self.db()
+        conn.row_factory = sqlite3.Row
+        try:
+            f = "feat-conf"
+
+            def node(nid, kind, **kwargs):
+                wxg.upsert_node(conn, {"id": nid, "kind": kind, "feature_id": f, **kwargs})
+
+            def edge(src, dst, kind):
+                wxg.upsert_edge(conn, {"src": src, "dst": dst, "kind": kind})
+
+            node(f"use_case:{f}:uc", "use_case", name="uc")
+            node(f"component:{f}:a", "component", name="A")
+            node(f"component:{f}:b", "component", name="B")
+            node(f"component:{f}:c", "component", name="C")
+            node("operation:demo:a.py:A.run", "operation", name="A.run", repo="demo", path="a.py", symbol="A.run")
+            node("operation:demo:b.py:B.run", "operation", name="B.run", repo="demo", path="b.py", symbol="B.run")
+            node("operation:demo:c.py:C.run", "operation", name="C.run", repo="demo", path="c.py", symbol="C.run")
+            node(f"testcase:{f}:t", "testcase", name="t")
+            edge(f"use_case:{f}:uc", "operation:demo:a.py:A.run", "maps_to")
+            edge(f"component:{f}:a", "operation:demo:a.py:A.run", "maps_to")
+            edge(f"component:{f}:b", "operation:demo:b.py:B.run", "maps_to")
+            edge(f"component:{f}:c", "operation:demo:c.py:C.run", "maps_to")
+            edge(f"component:{f}:a", f"component:{f}:b", "depends")
+            edge("operation:demo:a.py:A.run", "operation:demo:b.py:B.run", "calls")
+            edge(f"testcase:{f}:t", f"use_case:{f}:uc", "verifies")
+            conn.commit()
+            report = self.cli("conformance", "--feature", f)
+            self.assertEqual(report["violations"], 0, report)
+            self.assertFalse(report["enforced"])
+            # 未声明耦合：A 调用 C，但没有 depends/associates
+            edge("operation:demo:a.py:A.run", "operation:demo:c.py:C.run", "calls")
+            conn.commit()
+            report = self.cli("conformance", "--feature", f)
+            self.assertEqual(report["structural"]["undeclared_count"], 1)
+            # 缺锚点：component D 没有 maps_to
+            node(f"component:{f}:d", "component", name="D")
+            conn.commit()
+            report = self.cli("conformance", "--feature", f)
+            self.assertIn(f"component:{f}:d", report["anchors"]["missing"])
+            # 缺测试覆盖：删掉 verifies
+            conn.execute(
+                "DELETE FROM edges WHERE kind='verifies' AND src=? AND dst=?",
+                (f"testcase:{f}:t", f"use_case:{f}:uc"),
+            )
+            conn.commit()
+            report = self.cli("conformance", "--feature", f)
+            self.assertIn(f"use_case:{f}:uc", report["tests"]["missing"])
+        finally:
+            conn.close()
+
+    def test_conformance_gate_opt_in(self):
+        self.init_repo()
+        self.cli(
+            "feature-declare", "--id", "feat-cg", "--name", "cg", "--statement", "s",
+            "--acceptance", "[]", "--constraints", "[]", "--no-coverage", "--conformance",
+        )
+        conn = self.db()
+        conn.row_factory = sqlite3.Row
+        try:
+            wxg.upsert_node(conn, {
+                "id": "component:feat-cg:orphan", "kind": "component", "name": "孤儿组件",
+                "feature_id": "feat-cg",
+            })
+            conn.commit()
+        finally:
+            conn.close()
+        gate = self.cli("gate", "--feature", "feat-cg", "--json", expect=1)
+        self.assertIn("一致性", gate["reason"])
+        self.assertIn("component:feat-cg:orphan", gate["conformance"]["anchors"]["missing"])
+        # 补锚点后，一致性不再是最先触发的原因
+        conn = self.db()
+        conn.row_factory = sqlite3.Row
+        try:
+            wxg.upsert_node(conn, {
+                "id": "operation:demo:cg.py:run", "kind": "operation", "name": "run",
+                "repo": "demo", "path": "cg.py", "symbol": "run", "feature_id": "feat-cg",
+            })
+            wxg.upsert_edge(conn, {
+                "src": "component:feat-cg:orphan", "dst": "operation:demo:cg.py:run", "kind": "maps_to",
+            })
+            conn.commit()
+        finally:
+            conn.close()
+        gate = self.cli("gate", "--feature", "feat-cg", "--json", expect=1)
+        self.assertNotIn("一致性", gate["reason"])
+        self.assertIn("条件未齐", gate["reason"])
+
+    def test_conformance_flag_preserved_and_disabled(self):
+        self.init_repo()
+        self.cli(
+            "feature-declare", "--id", "feat-cf", "--name", "cf", "--statement", "s",
+            "--acceptance", "[]", "--constraints", "[]", "--no-coverage", "--conformance",
+        )
+        self.assertTrue(self.status("feat-cf")["conformance"]["enforced"])
+        self.cli(
+            "feature-declare", "--id", "feat-cf", "--name", "cf2", "--statement", "s2",
+            "--acceptance", "[]", "--constraints", "[]",
+        )
+        self.assertTrue(self.status("feat-cf")["conformance"]["enforced"])
+        self.cli(
+            "feature-declare", "--id", "feat-cf", "--name", "cf3", "--statement", "s3",
+            "--acceptance", "[]", "--constraints", "[]", "--no-conformance",
+        )
+        self.assertFalse(self.status("feat-cf")["conformance"]["enforced"])
+
+
+    def test_conformance_resolves_unique_unmapped_calls_heuristically(self):
+        self.init_repo()
+        self.declare("feat-heur")
+        conn = self.db()
+        conn.row_factory = sqlite3.Row
+        try:
+            f = "feat-heur"
+
+            def node(nid, kind, **kwargs):
+                wxg.upsert_node(conn, {"id": nid, "kind": kind, "feature_id": f, **kwargs})
+
+            def edge(src, dst, kind):
+                wxg.upsert_edge(conn, {"src": src, "dst": dst, "kind": kind})
+
+            node(f"component:{f}:a", "component", name="A")
+            node(f"component:{f}:b", "component", name="B")
+            node("operation:demo:a.py:A.run", "operation", name="A.run", repo="demo", path="a.py", symbol="A.run")
+            node("operation:demo:b.py:helper", "operation", name="helper", repo="demo", path="b.py", symbol="helper")
+            node(
+                "operation:demo:a.py:@9:helper", "operation", name="helper",
+                repo="demo", path="a.py", symbol="@9:helper", unmapped=1,
+            )
+            edge(f"component:{f}:a", "operation:demo:a.py:A.run", "maps_to")
+            edge(f"component:{f}:b", "operation:demo:b.py:helper", "maps_to")
+            edge(f"component:{f}:a", f"component:{f}:b", "depends")
+            edge("operation:demo:a.py:A.run", "operation:demo:a.py:@9:helper", "calls")
+            conn.commit()
+            report = self.cli("conformance", "--feature", f)
+            self.assertEqual(report["structural"]["missing_backing_count"], 0, report)
+            self.assertEqual(report["structural"]["resolved_heuristically"], 1)
+        finally:
+            conn.close()
+
+    def test_maps_to_write_validation(self):
+        self.init_repo()
+        self.declare("feat-mapv")
+        conn = self.db()
+        conn.row_factory = sqlite3.Row
+        try:
+            f = "feat-mapv"
+            wxg.upsert_node(conn, {"id": f"use_case:{f}:uc", "kind": "use_case", "name": "uc", "feature_id": f})
+            wxg.upsert_node(conn, {
+                "id": "operation:demo:v.py:run", "kind": "operation", "name": "run",
+                "repo": "demo", "path": "v.py", "symbol": "run", "feature_id": f,
+            })
+            wxg.upsert_node(conn, {"id": f"component:{f}:x", "kind": "component", "name": "X", "feature_id": f})
+            with self.assertRaises(wxg.Reject):
+                wxg.upsert_edge(conn, {"src": "operation:demo:v.py:run", "dst": f"use_case:{f}:uc", "kind": "maps_to"})
+            with self.assertRaises(wxg.Reject):
+                wxg.upsert_edge(conn, {"src": f"use_case:{f}:uc", "dst": f"component:{f}:x", "kind": "maps_to"})
+            wxg.upsert_edge(conn, {"src": f"use_case:{f}:uc", "dst": "operation:demo:v.py:run", "kind": "maps_to"})
+            conn.commit()
+        finally:
+            conn.close()
+
+    def test_conformance_reports_code_orphans(self):
+        self.init_repo()
+        self.declare("feat-orph")
+        conn = self.db()
+        conn.row_factory = sqlite3.Row
+        try:
+            f = "feat-orph"
+            wxg.upsert_node(conn, {
+                "id": "operation:demo:o.py:run", "kind": "operation", "name": "run",
+                "repo": "demo", "path": "o.py", "symbol": "run", "feature_id": f,
+            })
+            conn.commit()
+            report = self.cli("conformance", "--feature", f)
+            self.assertIn("operation:demo:o.py:run", report["anchors"]["code_orphans"])
+            wxg.upsert_node(conn, {"id": f"component:{f}:c", "kind": "component", "name": "C", "feature_id": f})
+            wxg.upsert_edge(conn, {
+                "src": f"component:{f}:c", "dst": "operation:demo:o.py:run", "kind": "maps_to",
+            })
+            conn.commit()
+            report = self.cli("conformance", "--feature", f)
+            self.assertNotIn("operation:demo:o.py:run", report["anchors"]["code_orphans"])
+        finally:
+            conn.close()
 
 
 if __name__ == "__main__":

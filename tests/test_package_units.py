@@ -1,0 +1,753 @@
+"""包内纯函数层的直接单测：不经过 CLI subprocess。
+
+覆盖 jsonio / work / db 方言转换 / graph 校验 / evidence。
+这些函数是命令层的地基，之前只被 CLI 测试间接覆盖。
+"""
+
+from __future__ import annotations
+
+import hashlib
+import sqlite3
+import sys
+import unittest
+from pathlib import Path
+
+SKILL = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(SKILL / "scripts"))
+
+from whyexist import db, evidence, gates, graph, jsonio, work  # noqa: E402
+from whyexist import commands_repo  # noqa: E402
+from whyexist import workflow as wf  # noqa: E402
+from whyexist.contract import C  # noqa: E402
+from whyexist.errors import Reject  # noqa: E402
+from whyexist.temp import temp_dir  # noqa: E402
+
+
+class JsonIoTest(unittest.TestCase):
+    def test_dumps_is_sorted(self):
+        self.assertEqual('{"a": 1, "b": 2}', jsonio.dumps({"b": 2, "a": 1}))
+
+    def test_loads_empty_returns_default(self):
+        self.assertEqual([], jsonio.loads("", []))
+        self.assertEqual({}, jsonio.loads(None, {}))
+
+    def test_loads_passes_through_containers(self):
+        self.assertEqual({"a": 1}, jsonio.loads({"a": 1}, None))
+
+    def test_loads_bad_json_raises_reject(self):
+        with self.assertRaises(Reject):
+            jsonio.loads("{bad", None)
+
+    def test_load_json_arg_from_file_with_bom(self):
+        with temp_dir() as tmp:
+            path = Path(tmp) / "a.json"
+            path.write_text('{"x": 1}', encoding="utf-8-sig")
+            self.assertEqual({"x": 1}, jsonio.load_json_arg("@" + str(path)))
+
+    def test_load_json_arg_missing_file_raises(self):
+        with self.assertRaises(Reject):
+            jsonio.load_json_arg("@/nonexistent/nope.json")
+
+    def test_load_json_arg_error_mentions_expected_shape(self):
+        with self.assertRaises(Reject) as ctx:
+            jsonio.load_json_arg("component:x:y")
+        self.assertIn("期望数组/对象字面量", str(ctx.exception))
+
+    def test_load_json_arg_bad_file_names_the_file(self):
+        with temp_dir() as tmp:
+            path = Path(tmp) / "bad.json"
+            path.write_text("{not json", encoding="utf-8")
+            with self.assertRaises(Reject) as ctx:
+                jsonio.load_json_arg("@" + str(path))
+            self.assertIn("bad.json", str(ctx.exception))
+
+    def test_load_id_list_accepts_comma_separated(self):
+        self.assertEqual(["a", "b"], jsonio.load_id_list("a, b"))
+        self.assertEqual(["a"], jsonio.load_id_list('["a"]'))
+        self.assertEqual([], jsonio.load_id_list("   "))
+        with self.assertRaises(Reject):
+            jsonio.load_id_list('{"a": 1}')
+
+    def test_load_id_list_rejects_json_string(self):
+        with self.assertRaises(Reject):
+            jsonio.load_id_list('"nope"')
+
+    def test_new_token_is_32_hex(self):
+        token = jsonio.new_token()
+        self.assertEqual(32, len(token))
+        self.assertTrue(all(c in "0123456789abcdef" for c in token))
+
+    def test_utc_now_ends_with_z(self):
+        self.assertTrue(jsonio.utc_now().endswith("Z"))
+
+
+class WorkTargetTest(unittest.TestCase):
+    def test_work_id_format(self):
+        self.assertEqual(
+            "work:f:g1:model-architecture",
+            work.work_id("f", 1, "model-architecture"),
+        )
+
+    def test_target_match_exact_and_wildcard(self):
+        self.assertTrue(work.target_match("a:b", "a:b"))
+        self.assertTrue(work.target_match("a:*", "a:b"))
+        self.assertFalse(work.target_match("a:*", "b:c"))
+
+    def test_target_match_rejects_non_string(self):
+        self.assertFalse(work.target_match("a:*", None))
+
+    def test_require_targets_accepts_exact_and_prefix(self):
+        item = {"target_ids": jsonio.dumps(["a:b", "c:*"])}
+        work.require_targets(item, ["a:b", "c:d"])
+
+    def test_require_targets_rejects_outside(self):
+        item = {"target_ids": jsonio.dumps(["a:b"])}
+        with self.assertRaises(Reject):
+            work.require_targets(item, ["a:z"])
+
+    def test_require_role_rejects_unlisted_command(self):
+        item = {"role": "scan"}
+        with self.assertRaises(Reject):
+            work.require_role(item, "work-judge")
+
+    def test_require_role_allows_its_own_command(self):
+        item = {"role": "scan"}
+        work.require_role(item, C.ROLES["scan"][0])
+
+
+class DbTranslateTest(unittest.TestCase):
+    def test_mysql_translate_insert_or_ignore(self):
+        out = db._mysql_translate("INSERT OR IGNORE INTO t (a) VALUES (?)")
+        self.assertIn("INSERT IGNORE INTO", out)
+        self.assertNotIn("OR IGNORE", out)
+
+    def test_mysql_translate_conflict_do_nothing(self):
+        out = db._mysql_translate("INSERT OR IGNORE INTO t (a) VALUES (?)")
+        self.assertNotIn("ON CONFLICT", out)
+
+    def test_mysql_translate_excluded_to_values(self):
+        out = db._mysql_translate(
+            "ON CONFLICT(id) DO UPDATE SET value=excluded.value"
+        )
+        self.assertIn("ON DUPLICATE KEY UPDATE", out)
+        self.assertIn("VALUES(value)", out)
+
+    def test_pg_translate_on_conflict_do_nothing(self):
+        out = db._pg_translate("INSERT OR IGNORE INTO t (a) VALUES (?)")
+        self.assertIn("ON CONFLICT DO NOTHING", out)
+        self.assertIn("%s", out)
+
+    def test_named_params_replaces_in_order(self):
+        sql, params = db._named_params(
+            "SELECT * FROM t WHERE a=:a AND b=:b", {"a": 1, "b": 2}
+        )
+        self.assertEqual("SELECT * FROM t WHERE a=? AND b=?", sql)
+        self.assertEqual((1, 2), params)
+
+    def test_named_params_missing_raises(self):
+        with self.assertRaises(Reject):
+            db._named_params("SELECT :x", {})
+
+
+class GraphCheckTest(unittest.TestCase):
+    def test_check_kind_rejects_unknown(self):
+        with self.assertRaises(Reject):
+            graph.check_kind("nope")
+
+    def test_check_kind_accepts_contract_kind(self):
+        graph.check_kind(C.NODE_KINDS[0]["kind"])
+
+    def test_check_node_id_requires_matching_prefix(self):
+        with self.assertRaises(Reject):
+            graph.check_node_id("component", "operation:x")
+
+    def test_check_node_id_rejects_illegal_chars(self):
+        with self.assertRaises(Reject):
+            graph.check_node_id("component", "component:a b")
+
+    def test_check_attrs_allows_x_prefix(self):
+        self.assertEqual(
+            {"x_custom": "v"}, graph.check_attrs("component", {"x_custom": "v"})
+        )
+
+    def test_check_attrs_rejects_unknown_key(self):
+        with self.assertRaises(Reject):
+            graph.check_attrs("component", {"nope": 1})
+
+    def test_edge_id_format(self):
+        self.assertEqual("edge:depends:a:b", graph.edge_id("depends", "a", "b"))
+
+
+class SqlDialectTest(unittest.TestCase):
+    META_UPSERT = (
+        "INSERT INTO meta(key, value) VALUES(?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+    )
+
+    def test_mysql_meta_upsert_is_valid(self):
+        out = db._mysql_translate(self.META_UPSERT)
+        self.assertIn("meta(`key`, `value`)", out)
+        self.assertIn("ON DUPLICATE KEY UPDATE", out)
+        self.assertIn("`value`=VALUES(value)", out)
+        self.assertNotIn("ON CONFLICT", out)
+        self.assertNotIn("excluded.", out)
+
+    def test_mysql_meta_select_quotes_identifiers(self):
+        out = db._mysql_translate("SELECT value FROM meta WHERE key=?")
+        self.assertEqual("SELECT `value` FROM meta WHERE `key`=?", out)
+
+    def test_mysql_insert_or_ignore_without_conflict(self):
+        out = db._mysql_translate("INSERT OR IGNORE INTO judge_history(id) VALUES(?)")
+        self.assertIn("INSERT IGNORE INTO", out)
+        self.assertNotIn("ON CONFLICT", out)
+
+    def test_mysql_multiline_conflict_still_translates(self):
+        sql = (
+            "INSERT INTO meta(key, value) VALUES(?, ?)\n"
+            "  ON CONFLICT(key)\n  DO UPDATE SET value=excluded.value"
+        )
+        out = db._mysql_translate(sql)
+        self.assertIn("ON DUPLICATE KEY UPDATE", out)
+        self.assertNotIn("ON CONFLICT", out)
+
+    def test_pg_insert_or_ignore_appends_on_conflict(self):
+        out = db._pg_translate("INSERT OR IGNORE INTO judge_history(id) VALUES(?)")
+        self.assertTrue(out.endswith("ON CONFLICT DO NOTHING"))
+        self.assertIn("%s", out)
+        self.assertNotIn("?", out)
+
+    def test_pg_strips_trailing_semicolon_before_appending(self):
+        out = db._pg_translate("INSERT OR IGNORE INTO t (a) VALUES(?);")
+        self.assertIn("VALUES(%s) ON CONFLICT DO NOTHING", out)
+        self.assertNotIn("; ON CONFLICT", out)
+
+
+class NamedParamsEdgeTest(unittest.TestCase):
+    def test_repeated_placeholder_collects_each_occurrence(self):
+        sql, params = db._named_params("SELECT * FROM t WHERE a=:x OR b=:x", {"x": 7})
+        self.assertEqual("SELECT * FROM t WHERE a=? OR b=?", sql)
+        self.assertEqual((7, 7), params)
+
+    def test_placeholder_in_string_literal_is_a_known_limitation(self):
+        # :name 出现在字符串字面量里也会被当成占位符；当前 schema 不依赖这种写法，
+        # 这里把它记成已知限制，避免以后误以为支持。
+        with self.assertRaises(Reject):
+            db._named_params("SELECT ':x'", {})
+
+
+class WorkStateTest(unittest.TestCase):
+    """工单状态机直接打 SQLite 内存库。"""
+
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        self.conn.executescript(db.SCHEMA_SQL)
+        self.conn.execute(
+            "INSERT INTO features (id, name, generation, statement, created_at) "
+            "VALUES ('f', 'F', 1, 's', '2026-01-01T00:00:00Z')"
+        )
+
+    def tearDown(self):
+        self.conn.close()
+
+    def _insert(self, kind="scan", targets=None, depends_on=None):
+        return work.insert_work(
+            self.conn, "f", 1, kind, targets or ["a:*"], depends_on or []
+        )
+
+    def test_insert_new_work_item(self):
+        result = self._insert(kind="model-architecture", targets=["component:x:*"])
+        self.assertEqual("insert", result["action"])
+        item = work.get_work(self.conn, result["id"])
+        self.assertEqual("ready", item["status"])
+        self.assertEqual(["component:x:*"], jsonio.loads(item["target_ids"], []))
+
+    def test_insert_merge_appends_new_targets_without_duplicates(self):
+        self._insert(kind="scan", targets=["a:x"])
+        result = work.insert_work(
+            self.conn, "f", 1, "scan", ["a:x", "a:y"], None, merge=True
+        )
+        self.assertEqual("merge", result["action"])
+        item = work.get_work(self.conn, result["id"])
+        self.assertEqual(["a:x", "a:y"], jsonio.loads(item["target_ids"], []))
+
+    def test_insert_merge_rejects_passed_item(self):
+        result = self._insert(kind="scan")
+        self.conn.execute(
+            "UPDATE work_items SET status='passed' WHERE id=?", (result["id"],)
+        )
+        with self.assertRaises(Reject):
+            work.insert_work(self.conn, "f", 1, "scan", ["a:y"], None, merge=True)
+
+    def test_insert_without_merge_replaces_targets(self):
+        self._insert(kind="scan", targets=["a:x"])
+        result = self._insert(kind="scan", targets=["a:y"])
+        self.assertEqual("update", result["action"])
+        item = work.get_work(self.conn, result["id"])
+        self.assertEqual(["a:y"], jsonio.loads(item["target_ids"], []))
+
+    def test_require_token_missing_raises(self):
+        with self.assertRaises(Reject):
+            work.require_token(self.conn, "")
+
+    def test_require_token_unknown_raises(self):
+        with self.assertRaises(Reject):
+            work.require_token(self.conn, "nope")
+
+    def test_require_token_rejects_non_claimed(self):
+        wid = self._insert(kind="scan")["id"]
+        self.conn.execute("UPDATE work_items SET claim_token='t1' WHERE id=?", (wid,))
+        with self.assertRaises(Reject):
+            work.require_token(self.conn, "t1")
+
+    def test_require_token_returns_claimed_item(self):
+        wid = self._insert(kind="scan")["id"]
+        self.conn.execute(
+            "UPDATE work_items SET status='claimed', claim_token='t1' WHERE id=?",
+            (wid,),
+        )
+        item = work.require_token(self.conn, "t1")
+        self.assertEqual(wid, item["id"])
+
+    def test_append_evidence_deduplicates(self):
+        wid = self._insert(kind="scan")["id"]
+        item = work.get_work(self.conn, wid)
+        work.append_evidence(self.conn, item, ["n1", "n2"])
+        work.append_evidence(self.conn, item, ["n2", "n3"])
+        stored = jsonio.loads(work.get_work(self.conn, wid)["evidence_ids"], [])
+        self.assertEqual(["n1", "n2", "n3"], stored)
+
+    def test_get_work_by_token(self):
+        wid = self._insert(kind="scan")["id"]
+        self.conn.execute("UPDATE work_items SET claim_token='t9' WHERE id=?", (wid,))
+        self.assertEqual(wid, work.get_work_by_token(self.conn, "t9")["id"])
+
+
+class WorkflowStateTest(unittest.TestCase):
+    """条件链与就绪派生直接打 SQLite 内存库。"""
+
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        self.conn.executescript(db.SCHEMA_SQL)
+        self.conn.execute(
+            "INSERT INTO features (id, name, generation, statement, created_at) "
+            "VALUES ('f', 'F', 1, 's', '2026-01-01T00:00:00Z')"
+        )
+        for name in C.CONDITIONS:
+            self.conn.execute(
+                "INSERT INTO conditions (feature_id, generation, name, status) "
+                "VALUES (?,?,?,?)",
+                ("f", 1, name, 0),
+            )
+
+    def tearDown(self):
+        self.conn.close()
+
+    def _feature(self):
+        return wf.ensure_feature(self.conn, "f")
+
+    def _insert_work(self, wid, status, depends_on):
+        self.conn.execute(
+            "INSERT INTO work_items "
+            "(id, feature_id, generation, kind, role, target_ids, status, depends_on, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                wid,
+                "f",
+                1,
+                "scan",
+                "scan",
+                "[]",
+                status,
+                jsonio.dumps(depends_on),
+                "2026-01-01T00:00:00Z",
+            ),
+        )
+
+    def test_ensure_feature_missing_raises(self):
+        with self.assertRaises(Reject):
+            wf.ensure_feature(self.conn, "nope")
+
+    def test_condition_flags_requires_complete_chain(self):
+        self.conn.execute("DELETE FROM conditions WHERE name='Ready'")
+        with self.assertRaises(Reject):
+            wf.condition_flags(self.conn, self._feature())
+
+    def test_current_phase_returns_first_false_condition(self):
+        self.conn.execute("UPDATE conditions SET status=1 WHERE name='Accepted'")
+        self.assertEqual(
+            "ArchitectureReconciled", wf.current_phase(self.conn, self._feature())
+        )
+
+    def test_current_phase_ready_when_all_true(self):
+        self.conn.execute("UPDATE conditions SET status=1")
+        self.assertEqual("Ready", wf.current_phase(self.conn, self._feature()))
+
+    def test_recompute_ready_sets_one_when_all_true(self):
+        self.conn.execute("UPDATE conditions SET status=1 WHERE name != 'Ready'")
+        self.assertEqual(1, wf.recompute_ready(self.conn, "f", 1))
+        row = self.conn.execute(
+            "SELECT status FROM conditions WHERE name='Ready'"
+        ).fetchone()
+        self.assertEqual(1, row["status"])
+
+    def test_recompute_ready_sets_zero_when_one_missing(self):
+        self.conn.execute("UPDATE conditions SET status=1 WHERE name != 'Ready'")
+        self.conn.execute("UPDATE conditions SET status=0 WHERE name='BehaviorPassed'")
+        self.assertEqual(0, wf.recompute_ready(self.conn, "f", 1))
+
+    def test_refresh_blocked_unblocks_when_dependency_passed(self):
+        self._insert_work("w1", "passed", [])
+        self._insert_work("w2", "blocked", ["w1"])
+        wf.refresh_blocked(self.conn, "f", 1)
+        row = self.conn.execute(
+            "SELECT status FROM work_items WHERE id='w2'"
+        ).fetchone()
+        self.assertEqual("ready", row["status"])
+
+    def test_refresh_blocked_keeps_blocked_when_dependency_open(self):
+        self._insert_work("w1", "claimed", [])
+        self._insert_work("w2", "blocked", ["w1"])
+        wf.refresh_blocked(self.conn, "f", 1)
+        row = self.conn.execute(
+            "SELECT status FROM work_items WHERE id='w2'"
+        ).fetchone()
+        self.assertEqual("blocked", row["status"])
+
+    def test_scope_ids_merges_feature_nodes_requirements_and_wildcards(self):
+        self.conn.execute(
+            "INSERT INTO nodes (id, kind, name) VALUES ('component:x:a','component','A')"
+        )
+        self.conn.execute(
+            "INSERT INTO nodes (id, kind, name) VALUES ('operation:x:b','operation','B')"
+        )
+        self.conn.execute(
+            "INSERT INTO nodes (id, kind, name) VALUES ('requirement:f:r1','requirement','R')"
+        )
+        self.conn.execute(
+            "INSERT INTO feature_nodes (feature_id, node_id) VALUES ('f','component:x:a')"
+        )
+        self._insert_work("w9", "ready", [])
+        self.conn.execute(
+            "UPDATE work_items SET target_ids=? WHERE id='w9'",
+            (jsonio.dumps(["operation:*"]),),
+        )
+        ids = wf.scope_ids(self.conn, "f")
+        self.assertIn("component:x:a", ids)
+        self.assertIn("operation:x:b", ids)
+        self.assertIn("requirement:f:r1", ids)
+
+
+class CoverageMathTest(unittest.TestCase):
+    def test_zero_scope_returns_covered(self):
+        self.assertEqual(0, gates._required_coverage(0, 1.0, 1.0, 0, 0.1))
+
+    def test_nonpositive_epsilon_returns_covered(self):
+        self.assertEqual(3, gates._required_coverage(10, 1.0, 1.0, 3, 0.0))
+
+    def test_already_met_returns_covered(self):
+        self.assertEqual(9, gates._required_coverage(10, 1.0, 1.0, 9, 0.1))
+
+    def test_finds_minimal_satisfying_m(self):
+        self.assertEqual(9, gates._required_coverage(10, 1.0, 1.0, 0, 0.1))
+
+    def test_caps_at_scope_size(self):
+        self.assertEqual(10, gates._required_coverage(10, 10.0, 10.0, 0, 0.01))
+
+    def test_truncate_limits(self):
+        self.assertEqual([1, 2], gates._truncate([1, 2, 3], 2))
+
+
+class CoverageReportTest(unittest.TestCase):
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        self.conn.executescript(db.SCHEMA_SQL)
+        self.conn.execute(
+            "INSERT INTO features (id, name, generation, statement, created_at) "
+            "VALUES ('f', 'F', 1, 's', '2026-01-01T00:00:00Z')"
+        )
+        for name in C.CONDITIONS:
+            self.conn.execute(
+                "INSERT INTO conditions (feature_id, generation, name, status) "
+                "VALUES (?,?,?,?)",
+                ("f", 1, name, 0),
+            )
+        self.conn.execute(
+            "INSERT INTO nodes (id, kind, name) VALUES ('component:x:a','component','A')"
+        )
+        self.conn.execute(
+            "INSERT INTO feature_nodes (feature_id, node_id) VALUES ('f','component:x:a')"
+        )
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_empty_bites_report_all_phases(self):
+        feature = wf.ensure_feature(self.conn, "f")
+        report = gates.coverage_report(self.conn, feature)
+        self.assertEqual(1, report["scope_size"])
+        self.assertTrue(report["phases"])
+        for phase in report["phases"]:
+            self.assertEqual(0, phase["covered"])
+            self.assertGreaterEqual(phase["n_required"], 0)
+        if report["unmet"]:
+            self.assertEqual(report["unmet"][0], report["next"])
+        else:
+            self.assertIsNone(report["next"])
+
+    def test_strict_epsilon_requires_coverage(self):
+        feature = wf.ensure_feature(self.conn, "f")
+        report = gates.coverage_report(self.conn, feature, epsilon=0.001)
+        for phase in report["phases"]:
+            self.assertGreaterEqual(phase["n_required"], 1)
+            self.assertFalse(phase["met"])
+        self.assertEqual(report["unmet"][0], report["next"])
+
+    def test_drift_report_empty(self):
+        feature = wf.ensure_feature(self.conn, "f")
+        report = gates.drift_report(self.conn, feature)
+        self.assertEqual(0, report["count"])
+        self.assertFalse(report["enforced"])
+
+
+class ConformanceTest(unittest.TestCase):
+    """设计-代码一致性报告的四类差异。"""
+
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        self.conn.executescript(db.SCHEMA_SQL)
+        self.conn.execute(
+            "INSERT INTO features (id, name, generation, statement, created_at) "
+            "VALUES ('f','F',1,'s','2026-01-01T00:00:00Z')"
+        )
+        for name in C.CONDITIONS:
+            self.conn.execute(
+                "INSERT INTO conditions (feature_id, generation, name, status) "
+                "VALUES (?,?,?,?)",
+                ("f", 1, name, 0),
+            )
+
+    def tearDown(self):
+        self.conn.close()
+
+    def _node(self, nid, kind, name, repo=None, path=None):
+        self.conn.execute(
+            "INSERT INTO nodes (id, kind, name, repo, path) VALUES (?,?,?,?,?)",
+            (nid, kind, name, repo, path),
+        )
+        self.conn.execute(
+            "INSERT INTO feature_nodes (feature_id, node_id) VALUES ('f', ?)", (nid,)
+        )
+
+    def _edge(self, src, dst, kind):
+        self.conn.execute(
+            "INSERT INTO edges (id, src, dst, kind) VALUES (?,?,?,?)",
+            (f"{kind}:{src}:{dst}", src, dst, kind),
+        )
+
+    def _report(self, limit: int = 50):
+        feature = wf.ensure_feature(self.conn, "f")
+        return gates.conformance_report(self.conn, feature, limit=limit)
+
+    def test_empty_scope_has_no_violations(self):
+        report = self._report()
+        self.assertEqual(0, report["violations"])
+        self.assertEqual(0, report["anchors"]["design_nodes"])
+
+    def test_design_element_without_anchor_is_reported(self):
+        self._node("component:demo:a", "component", "A")
+        report = self._report()
+        self.assertEqual(["component:demo:a"], report["anchors"]["missing"])
+        self.assertEqual(1, report["violations"])
+
+    def test_anchor_to_code_node_with_repo_path_clears_missing(self):
+        self._node("component:demo:a", "component", "A")
+        self._node("operation:demo:r:x", "operation", "x", repo="r", path="p.py")
+        self._edge("component:demo:a", "operation:demo:r:x", "maps_to")
+        report = self._report()
+        self.assertNotIn("component:demo:a", report["anchors"]["missing"])
+
+    def test_code_operation_without_design_coverage_is_orphan(self):
+        self._node("operation:demo:r:x", "operation", "x", repo="r", path="p.py")
+        report = self._report()
+        self.assertEqual(1, report["anchors"]["code_orphan_count"])
+        # 孤立代码只报告，不算 violation
+        self.assertEqual(0, report["violations"])
+
+    def test_depends_without_code_backing(self):
+        self._node("component:demo:a", "component", "A")
+        self._node("component:demo:b", "component", "B")
+        self._node("operation:demo:r:x", "operation", "x", repo="r", path="p.py")
+        self._node("operation:demo:r:y", "operation", "y", repo="r", path="p.py")
+        self._edge("component:demo:a", "operation:demo:r:x", "maps_to")
+        self._edge("component:demo:b", "operation:demo:r:y", "maps_to")
+        self._edge("component:demo:a", "component:demo:b", "depends")
+        report = self._report()
+        self.assertEqual(1, report["structural"]["missing_backing_count"])
+        self.assertEqual(1, report["violations"])
+
+    def test_undeclared_call_between_design_units(self):
+        self._node("component:demo:a", "component", "A")
+        self._node("component:demo:b", "component", "B")
+        self._node("operation:demo:r:x", "operation", "x", repo="r", path="p.py")
+        self._node("operation:demo:r:y", "operation", "y", repo="r", path="p.py")
+        self._edge("component:demo:a", "operation:demo:r:x", "maps_to")
+        self._edge("component:demo:b", "operation:demo:r:y", "maps_to")
+        self._edge("operation:demo:r:x", "operation:demo:r:y", "calls")
+        report = self._report()
+        self.assertEqual(1, report["structural"]["undeclared_count"])
+        self.assertEqual(
+            "component:demo:a", report["structural"]["undeclared"][0]["from"]
+        )
+
+    def test_declared_depends_suppresses_undeclared(self):
+        self._node("component:demo:a", "component", "A")
+        self._node("component:demo:b", "component", "B")
+        self._node("operation:demo:r:x", "operation", "x", repo="r", path="p.py")
+        self._node("operation:demo:r:y", "operation", "y", repo="r", path="p.py")
+        self._edge("component:demo:a", "operation:demo:r:x", "maps_to")
+        self._edge("component:demo:b", "operation:demo:r:y", "maps_to")
+        self._edge("operation:demo:r:x", "operation:demo:r:y", "calls")
+        self._edge("component:demo:a", "component:demo:b", "depends")
+        report = self._report()
+        self.assertEqual(0, report["structural"]["undeclared_count"])
+        self.assertEqual(0, report["violations"])
+
+    def test_depends_with_evidence_is_backed(self):
+        # derive 写入的 depends 带 x_evidence（来源文件对），这本身就是代码依据
+        self._node("component:demo:a", "component", "A")
+        self._node("component:demo:b", "component", "B")
+        self.conn.execute(
+            "INSERT INTO edges (id, src, dst, kind, attrs_json) VALUES (?,?,?,?,?)",
+            (
+                "depends:a:b",
+                "component:demo:a",
+                "component:demo:b",
+                "depends",
+                jsonio.dumps({"x_evidence": [["flask/app.py", "flask/sansio/app.py"]]}),
+            ),
+        )
+        report = self._report()
+        self.assertEqual(0, report["structural"]["missing_backing_count"])
+
+    def test_use_case_without_verifies_is_missing_test(self):
+        self._node("use_case:demo:u", "use_case", "U")
+        self._node("operation:demo:r:x", "operation", "x", repo="r", path="p.py")
+        self._edge("use_case:demo:u", "operation:demo:r:x", "maps_to")
+        report = self._report()
+        self.assertEqual(1, report["tests"]["missing_count"])
+        self.assertEqual(1, report["violations"])
+
+    def test_verified_use_case_is_not_missing(self):
+        self._node("use_case:demo:u", "use_case", "U")
+        self._node("component:demo:a", "component", "A")
+        self._edge("component:demo:a", "use_case:demo:u", "verifies")
+        report = self._report()
+        self.assertEqual(0, report["tests"]["missing_count"])
+
+    def test_orphan_split_by_derived_contains(self):
+        self._node("component:demo:a", "component", "A")
+        self.conn.execute(
+            "UPDATE nodes SET origin='derived' WHERE id='component:demo:a'"
+        )
+        self._node("operation:demo:r:x", "operation", "x", repo="r", path="p.py")
+        self._node("operation:demo:r:y", "operation", "y", repo="r", path="p.py")
+        self._edge("component:demo:a", "operation:demo:r:x", "contains")
+        report = self._report()
+        self.assertEqual(2, report["anchors"]["code_orphan_count"])
+        self.assertEqual(1, report["anchors"]["unanchored_count"])
+        self.assertEqual(1, report["anchors"]["truly_orphan_count"])
+
+    def test_hint_when_derived_components_lack_anchors(self):
+        self._node("component:demo:a", "component", "A")
+        self.conn.execute(
+            "UPDATE nodes SET origin='derived' WHERE id='component:demo:a'"
+        )
+        self._node("operation:demo:r:x", "operation", "x", repo="r", path="p.py")
+        report = self._report()
+        self.assertIn("hint", report)
+        self.assertIn("derived", report["hint"])
+
+    def test_no_hint_when_components_are_anchored(self):
+        self._node("component:demo:a", "component", "A")
+        self._node("operation:demo:r:x", "operation", "x", repo="r", path="p.py")
+        self._edge("component:demo:a", "operation:demo:r:x", "maps_to")
+        report = self._report()
+        self.assertNotIn("hint", report)
+
+    def test_truncate_limits_list_but_keeps_count(self):
+        for i in range(3):
+            self._node(f"component:demo:c{i}", "component", f"C{i}")
+        report = self._report(limit=1)
+        self.assertEqual(1, len(report["anchors"]["missing"]))
+        self.assertEqual(3, report["anchors"]["missing_count"])
+        self.assertTrue(report["truncated"])
+
+
+class RelativeImportTest(unittest.TestCase):
+    """相对导入解析：derive 的 depends 全靠它。"""
+
+    def _repo(self, tmp: Path, files: dict[str, str]) -> Path:
+        for rel, body in files.items():
+            path = tmp / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8")
+        return tmp
+
+    def test_from_dot_import_name(self):
+        with temp_dir() as tmp:
+            self._repo(tmp, {
+                "pkg/__init__.py": "",
+                "pkg/mod.py": "from . import helper",
+                "pkg/helper.py": "",
+            })
+            pairs = commands_repo._import_file_pairs(Path(tmp))
+            self.assertIn(("pkg/mod.py", "pkg/helper.py"), pairs)
+
+    def test_from_dot_module_import_name(self):
+        with temp_dir() as tmp:
+            self._repo(tmp, {
+                "pkg/__init__.py": "",
+                "pkg/json/__init__.py": "",
+                "pkg/mod.py": "from .json import dumps",
+            })
+            pairs = commands_repo._import_file_pairs(Path(tmp))
+            self.assertIn(("pkg/mod.py", "pkg/json/__init__.py"), pairs)
+
+    def test_from_dotdot_import(self):
+        with temp_dir() as tmp:
+            self._repo(tmp, {
+                "pkg/__init__.py": "",
+                "pkg/base.py": "",
+                "pkg/sub/__init__.py": "",
+                "pkg/sub/impl.py": "from ..base import thing",
+            })
+            pairs = commands_repo._import_file_pairs(Path(tmp))
+            self.assertIn(("pkg/sub/impl.py", "pkg/base.py"), pairs)
+
+    def test_absolute_import_still_works(self):
+        with temp_dir() as tmp:
+            self._repo(tmp, {
+                "pkg/__init__.py": "",
+                "pkg/target.py": "",
+                "pkg/mod.py": "import pkg.target",
+            })
+            pairs = commands_repo._import_file_pairs(Path(tmp))
+            self.assertIn(("pkg/mod.py", "pkg/target.py"), pairs)
+
+
+class EvidenceTest(unittest.TestCase):
+    def test_sha256_file_matches_hashlib(self):
+        with temp_dir() as tmp:
+            path = Path(tmp) / "x.bin"
+            path.write_bytes(b"hello")
+            self.assertEqual(
+                hashlib.sha256(b"hello").hexdigest(), evidence.sha256_file(path)
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,759 @@
+{
+  "slice": "16-docs-release",
+  "modules": [
+    {
+      "path": "README.md",
+      "loc": 185,
+      "role": "面向使用者的门面：定位、特性清单、安装/快速开始/自检命令、仓库结构、已知边界、版本声明"
+    },
+    {
+      "path": "SKILL.md",
+      "loc": 492,
+      "role": "模型看的技能描述：frontmatter 触发描述 + 手写快速开始/工作流/已知边界/文件表 + 由契约生成的 main 块"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "loc": 1550,
+      "role": "113 条版本记录（0.1.0~2.92.0），承载契约版本、schema、测试数、每版动因与取舍"
+    },
+    {
+      "path": "VERSION",
+      "loc": 2,
+      "role": "单行版本源（2.92.0）；被 build_release、check_docs、publish_github 读取"
+    },
+    {
+      "path": "references/contract.md",
+      "loc": 345,
+      "role": "完整契约视图（full 生成块：条件顺序/角色/命令/咬合/覆盖/调谐/变更集/回扫/conformance/导出规则）"
+    },
+    {
+      "path": "references/design.md",
+      "loc": 2151,
+      "role": "110 节演进记录与已知边界论证；是历史叙事，不能由代码重新生成"
+    },
+    {
+      "path": "references/patterns.md",
+      "loc": 764,
+      "role": "设计模式目录与有限应用原则；gate 对 pattern 强制字段的建模示例与判定口径"
+    },
+    {
+      "path": "references/quality.md",
+      "loc": 77,
+      "role": "提交质量门清单（可复现/可追溯/契约一致/通用安全/变更记录）"
+    },
+    {
+      "path": "references/export-sample/feat-demo/",
+      "loc": 90,
+      "role": "6 份导出样例（01/02/04/05/07/测试规格），verify 每次重新生成并逐字节比对"
+    },
+    {
+      "path": "docs/HANDOFF.md",
+      "loc": 118,
+      "role": "交接文档：当前状态表、能力地图、两层验证怎么跑、改东西的七步顺序、最容易踩的边界、下一步方向"
+    },
+    {
+      "path": "docs/PRODUCT-PLAN.md",
+      "loc": 196,
+      "role": "产品方案：设计期编译器定位、四条命题、三层模型、能力设计、P0-P6 路线图与进度"
+    },
+    {
+      "path": "tools/build_release.py",
+      "loc": 145,
+      "role": "确定性打包：固定 zip 时间戳/权限/排序，产出 zip + manifest.json + archive.sha256，并校验 VERSION 与契约版本一致"
+    },
+    {
+      "path": "tools/verify_release.py",
+      "loc": 119,
+      "role": "发布包独立运行验证：解压最新 zip 到临时目录，只调包内 wxg.py 走最短路径到 gate PASS"
+    },
+    {
+      "path": "tools/preflight.py",
+      "loc": 132,
+      "role": "发布前串联六步（测试/文档一致性/文档完整性/契约校验/状态库体检/报告自洽），--release 再加打包与包验证"
+    },
+    {
+      "path": "tools/check_docs.py",
+      "loc": 108,
+      "role": "文档完整性：VERSION / CONTRACT_VERSION / CHANGELOG 最新条目三者一致、CHANGELOG 版本连续、design.md 节号连续"
+    },
+    {
+      "path": "tools/doc_flow.py",
+      "loc": 123,
+      "role": "只按 SKILL.md 的最短路径原样执行命令序列，验证文档与实现不脱节的唯一 oracle"
+    },
+    {
+      "path": "tools/verify_reports.py",
+      "loc": 246,
+      "role": "同一状态库上 plan/cycles/conformance/impact/feature-status 的数字互洽（6 条交叉断言）"
+    },
+    {
+      "path": "tools/publish_github.py",
+      "loc": 301,
+      "role": "建仓/设 remote/打 tag/推分支/发 GitHub Release/上传 zip；只用标准库 urllib 与 git"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "loc": 31,
+      "role": "push/PR 在 ubuntu+windows × py3.10/3.12/3.13 上跑 wxg verify + 全量 unittest"
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "loc": 31,
+      "role": "tag v* 触发：verify + 全量测试 + build_release + softprops/action-gh-release 上传 zip"
+    },
+    {
+      "path": "dist/v2.82.0…v2.92.0/manifest.json",
+      "loc": 339,
+      "role": "11 份发布清单：version / contract_version / schema / 63 个文件哈希 / zip 大小与 SHA-256 / install target"
+    }
+  ],
+  "public_surface": [
+    {
+      "entry": "README.md",
+      "kind": "file",
+      "where": "README.md:1-185",
+      "input": "人读",
+      "output": "定位、特性清单、安装方式、快速开始、自检命令、仓库结构、已知边界、版本号",
+      "side_effects": "无（纯阅读入口）",
+      "exit_codes": "—"
+    },
+    {
+      "entry": "SKILL.md frontmatter description / whenToUse",
+      "kind": "file",
+      "where": "SKILL.md:1-11",
+      "input": "DSH 技能加载器与模型的路由判断",
+      "output": "技能触发描述（决定这个技能何时被调用）；name 由 verify 强制为 why-exist-graph",
+      "side_effects": "无；但描述就是模型能看到的全部摘要，内容缺项会直接导致能力不可发现",
+      "exit_codes": "—"
+    },
+    {
+      "entry": "SKILL.md main 契约块",
+      "kind": "file",
+      "where": "SKILL.md:113-343",
+      "input": "scripts/wxg_contract.py 渲染（main_contract_markdown）",
+      "output": "8 条件顺序、8 角色允许命令、50 命令表（用途/关键参数/写入列）、咬合判决、gate 规则、覆盖/调谐/变更集/回扫/conformance/后端/serve/审计/导出/21 条不变量",
+      "side_effects": "wxg contract --write SKILL.md --section main 会真实覆写块内内容；块外正文不被触碰",
+      "exit_codes": "wxg verify 发现漂移 → 1"
+    },
+    {
+      "entry": "references/contract.md full 契约块",
+      "kind": "file",
+      "where": "references/contract.md:6-344",
+      "input": "同一契约（full_contract_markdown）",
+      "output": "与 SKILL main 块同源但更完整：属性键、边 kind、表列、导出规则全文、契约版本与 schema 行",
+      "side_effects": "wxg contract --write references/contract.md --section full 覆写块内",
+      "exit_codes": "verify 漂移 → 1"
+    },
+    {
+      "entry": "references/export-sample/feat-demo/{01-需求,02-用例,04-架构,05-类图,07-数据流,测试规格}.md",
+      "kind": "file",
+      "where": "references/export-sample/feat-demo/01-需求.md:1-18",
+      "input": "scripts/gen_sample.py 构造的 feat-demo 最小完整图",
+      "output": "6 份导出视图；每份带 frontmatter（generation/feature_id/来源: wxg-export/说明），正文是 markdown 表",
+      "side_effects": "gen_sample.py --write 会 rmtree 后 copytree 覆写 references/export-sample/feat-demo（scripts/gen_sample.py:107-112）",
+      "exit_codes": "verify 发现样例过期 → 1"
+    },
+    {
+      "entry": "VERSION",
+      "kind": "file",
+      "where": "VERSION:1",
+      "input": "人工维护",
+      "output": "单行 semver 样式版本号（当前 2.92.0）",
+      "side_effects": "无",
+      "exit_codes": "—"
+    },
+    {
+      "entry": "python tools/build_release.py [--skill DIR] [--out DIR] [--version V]",
+      "kind": "cli",
+      "where": "tools/build_release.py:122-140",
+      "input": "技能目录（默认仓库根）、输出目录（默认 dist/v<version>）、版本（默认读 VERSION）",
+      "output": "stdout JSON：version/contract_version/schema_version/archive{path,size,sha256}/files/out",
+      "side_effects": "创建 out 目录并写入 why-exist-graph-<v>.zip、manifest.json、archive.sha256；读取 scripts/wxg_contract.py 取契约版本；不检查 git 是否干净、不记录提交号",
+      "exit_codes": "0 成功；1 版本与契约不一致或缺少发布文件（SystemExit 字符串）"
+    },
+    {
+      "entry": "python tools/verify_release.py [--zip PATH]",
+      "kind": "cli",
+      "where": "tools/verify_release.py:51-114",
+      "input": "zip 路径；省略时按 mtime 取 dist/v*/ 下最新",
+      "output": "人读行：解压 → 包内结构断言（有 wxg.py、无 tools/、有 SKILL.md）→ up → 最短路径 → gate PASS + 退出码 0",
+      "side_effects": "在系统临时目录解压；跑 up 会在 <tmp>/../demo-repo 建示例仓，收尾 rmtree tmp 与 tmp.parent/demo-repo（verify_release.py:112-114）",
+      "exit_codes": "0 PASS；1 FAIL/断言失败；找不到 zip → 1"
+    },
+    {
+      "entry": "python tools/preflight.py [--release]",
+      "kind": "cli",
+      "where": "tools/preflight.py:51-127",
+      "input": "--release 决定是否追加打包与包验证",
+      "output": "每步一行 ok/失败尾 15 行 + 末行 preflight PASS 汇总",
+      "side_effects": "跑全量 unittest；建两个临时状态库；--release 时写 dist/v<version>/ 并解压验证；删除 <tmp>/demo-repo（preflight.py:96,111）",
+      "exit_codes": "0 全通过；1 任一步失败（SystemExit(1)）"
+    },
+    {
+      "entry": "python tools/check_docs.py",
+      "kind": "cli",
+      "where": "tools/check_docs.py:85-103",
+      "input": "无",
+      "output": "人读：CHANGELOG 条数与区间、design.md 节数与区间、问题清单或 PASS",
+      "side_effects": "只读 VERSION / scripts/wxg_contract.py / CHANGELOG.md / references/design.md",
+      "exit_codes": "0 通过；1 有问题"
+    },
+    {
+      "entry": "python tools/doc_flow.py",
+      "kind": "cli",
+      "where": "tools/doc_flow.py:47-118",
+      "input": "无（按 SKILL.md 最短路径硬编码）",
+      "output": "人读：[1]~[6] 段进度与断言结果，末行 PASS",
+      "side_effects": "临时状态库 + demo 仓 + export 目录；结束时 rmtree 临时目录",
+      "exit_codes": "0 全通过；1 任一步命令失败或断言失败"
+    },
+    {
+      "entry": "python tools/verify_reports.py (--root R --feature F | --repo P)",
+      "kind": "cli",
+      "where": "tools/verify_reports.py:84-110",
+      "input": "已有状态库（root+feature），或源码仓（--repo 时自动 init/scan/derive）",
+      "output": "人读：仓画像 + 最多 6 条 ok/FAIL/skip 断言 + 汇总",
+      "side_effects": "--repo 模式建临时库并写入扫描/derive 结果；直接读 graph.sqlite（verify_reports.py:112-144）",
+      "exit_codes": "0 全一致；1 至少一条不一致；2 Reject（如 feature 不存在）"
+    },
+    {
+      "entry": "python tools/publish_github.py [--dry-run] [--no-release] ...",
+      "kind": "cli",
+      "where": "tools/publish_github.py:147-296",
+      "input": "GITHUB_TOKEN 或 GH_TOKEN 环境变量；--owner/--repo/--version/--tag/--branch/--allow-dirty 等",
+      "output": "--dry-run 打印计划 JSON；否则人读进度行，最后 JSON {repo,commit,tag,release,next}",
+      "side_effects": "改 .git remote；git tag；git push 分支与 tag；GitHub API 建仓/设 topics/建 Release/上传 zip；必要时本地先 build_release",
+      "exit_codes": "0 成功；1 fatal（缺 token、树脏、API 失败、git 失败）"
+    },
+    {
+      "entry": "dist/v<version>/manifest.json",
+      "kind": "file",
+      "where": "dist/v2.92.0/manifest.json:1-339",
+      "input": "build_release 生成",
+      "output": "version / contract_version / schema_version / python_requires / generated_at / source.repo / archive{size,sha256} / install.target / 63 条 file{path,size,sha256}",
+      "side_effects": "被写入；无 commit 字段，无法回指源码版本",
+      "exit_codes": "—"
+    },
+    {
+      "entry": ".github/workflows/ci.yml",
+      "kind": "file",
+      "where": ".github/workflows/ci.yml:1-31",
+      "input": "push 到 main、任意 pull_request",
+      "output": "6 个矩阵 job（ubuntu/windows × py3.10/3.12/3.13），各跑 wxg verify + unittest discover",
+      "side_effects": "无本地副作用；不跑 check_docs / doc_flow / preflight / verify_release",
+      "exit_codes": "—（CI 语义）"
+    },
+    {
+      "entry": ".github/workflows/release.yml",
+      "kind": "file",
+      "where": ".github/workflows/release.yml:1-31",
+      "input": "push tag v*",
+      "output": "GitHub Release，附件为 dist/**/why-exist-graph-*.zip",
+      "side_effects": "仓库写权限；在 CI 里重新构建 zip（不复用本地 dist）",
+      "exit_codes": "—（CI 语义）"
+    }
+  ],
+  "contracts": [
+    {
+      "id": "C1",
+      "statement": "SKILL.md 的 main 契约块与 wxg_contract.py 渲染结果逐字节一致；手改块内内容会被 wxg verify 报漂移（退出码 1）",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:269-287",
+        "tests/test_wxg.py:481-501"
+      ],
+      "status": "covered",
+      "note": "测试拷一份技能目录、插入一行再跑 verify，断言输出含“过期”且退出码非 0；这是文档体系里唯一被测试直接守住的契约"
+    },
+    {
+      "id": "C2",
+      "statement": "references/contract.md 的 full 契约块同样与契约渲染逐字节一致",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:274-287",
+        "scripts/wxg_contract.py:1-6"
+      ],
+      "status": "partial",
+      "note": "verify 循环检查两个文件，但测试只篡改 SKILL.md（tests/test_wxg.py:491）；full 块的负例（改 contract.md 能否被抓到）没有测试"
+    },
+    {
+      "id": "C3",
+      "statement": "references/export-sample/feat-demo 的 6 份文件等于 gen_sample.py 实时导出的结果（verify 每次重新生成并逐字节比对）",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:330-346",
+        "scripts/gen_sample.py:38-116"
+      ],
+      "status": "partial",
+      "note": "本次实跑重生成：6/6 与仓库样例字节相同（docs/audit/_probe_16.py）；正例每次 verify 都走，负例（篡改样例）无测试"
+    },
+    {
+      "id": "C4",
+      "statement": "VERSION、CONTRACT_VERSION、CHANGELOG 最新条目三者一致，否则发布前检查失败",
+      "evidence": [
+        "tools/check_docs.py:28-45",
+        "tools/preflight.py:70-73"
+      ],
+      "status": "gap",
+      "note": "实跑 check_docs.py PASS（113 条，0.1.0~2.92.0）；unittest 对 tools/ 零引用，CI 也不跑 check_docs，所以版本漂移只会在有人手动 preflight 时被发现"
+    },
+    {
+      "id": "C5",
+      "statement": "CHANGELOG 版本条目连续、无重复、最新在前；references/design.md 的编号节连续无缺号（附节不带数字）",
+      "evidence": [
+        "tools/check_docs.py:48-82"
+      ],
+      "status": "gap",
+      "note": "实跑 PASS：CHANGELOG 113 条、design.md 110 节；这条行为只存在于手工脚本里，任何一次手改标题格式都可能静默绕过"
+    },
+    {
+      "id": "C6",
+      "statement": "build_release 拒绝 VERSION 与 CONTRACT_VERSION 不一致的发布（发布版本必须等于契约版本）",
+      "evidence": [
+        "tools/build_release.py:80-86"
+      ],
+      "status": "gap",
+      "note": "构造性保护，没有测试；因为 CONTRACT_VERSION 在 .py 里，每次发版都必须改代码文件（见冗余 R2）"
+    },
+    {
+      "id": "C7",
+      "statement": "同一份源码重复构建得到相同 zip SHA-256（固定条目时间戳 2026-10-29、权限 0644、条目排序）",
+      "evidence": [
+        "tools/build_release.py:37",
+        "tools/build_release.py:89-101"
+      ],
+      "status": "gap",
+      "note": "本次把 v2.92.0 重建到 docs/audit/_build16，SHA-256 与 dist/v2.92.0/archive.sha256 相同（8bcdc484…）；没有任何测试断言确定性，固定时间戳这个前提也没写进文档"
+    },
+    {
+      "id": "C8",
+      "statement": "发布 zip 能脱离源码仓独立运行：解压后只调包内 scripts/wxg.py，up → 最短路径 → gate PASS（退出码 0）",
+      "evidence": [
+        "tools/verify_release.py:66-111",
+        "tools/preflight.py:120-124"
+      ],
+      "status": "gap",
+      "note": "本次实跑对 dist/v2.92.0 的 zip PASS；但只有 preflight --release 会串它，CI 与 release.yml 都不跑，unittest 也不覆盖"
+    },
+    {
+      "id": "C9",
+      "statement": "发布包恰好 63 个文件，含 SKILL.md/VERSION/CHANGELOG.md/references/scripts/tests，不含 tools/、README.md、docs/ 与 __pycache__",
+      "evidence": [
+        "tools/build_release.py:33-38",
+        "tools/verify_release.py:73-75",
+        "dist/v2.92.0/manifest.json:20-339"
+      ],
+      "status": "partial",
+      "note": "“不含 tools/”被 verify_release 断言；整个排除规则与 63 这个数字没有任何断言或文档，且“不含 docs/”与 CHANGELOG 2.92.0 的发布内容直接冲突（见 finding F3）"
+    },
+    {
+      "id": "C10",
+      "statement": "wxg verify 不需要已初始化的状态库，也不创建 .why-exist/（零副作用）",
+      "evidence": [
+        "scripts/whyexist/cli.py:62-65",
+        "tests/test_wxg.py:873-882"
+      ],
+      "status": "covered",
+      "note": "测试直接断言目录不存在；SKILL.md:79 的承诺与实现一致"
+    },
+    {
+      "id": "C11",
+      "statement": "SKILL.md 写的最短路径（up → import-file --prepare → scan 链 → 六阶段 → evidence → observe → gate → export）能原样从零走到 gate PASS",
+      "evidence": [
+        "SKILL.md:83-102",
+        "tools/doc_flow.py:47-116"
+      ],
+      "status": "partial",
+      "note": "本次实跑 doc_flow.py PASS（六步全绿）；它是文档-实现一致性的唯一 oracle，但它是手工脚本，unittest 里没有任何用例读 SKILL.md 的正文"
+    },
+    {
+      "id": "C12",
+      "statement": "README / CONTRIBUTING / HANDOFF / quality 里写的版本号、用例数、行数、脚本数与实际一致",
+      "evidence": [
+        "README.md:58",
+        "README.md:117",
+        "README.md:139",
+        "README.md:179",
+        "CONTRIBUTING.md:16",
+        "docs/HANDOFF.md:14",
+        "references/quality.md:8"
+      ],
+      "status": "gap",
+      "note": "全部不符：README 写 79 个用例（实际 test_wxg.py 85，全量 381）、版本 2.67.0（实际 2.92.0）、wxg.py 181 行（实际 176）；CONTRIBUTING 写 104；HANDOFF 写 2.91.0；quality 写 2.42.0 与 357"
+    },
+    {
+      "id": "C13",
+      "statement": "CI 在 ubuntu + windows × Python 3.10/3.12/3.13 上跑 wxg verify 与全量 unittest，任一失败即红",
+      "evidence": [
+        ".github/workflows/ci.yml:11-30"
+      ],
+      "status": "gap",
+      "note": "工作流文件本身没有测试；本环境无法执行 Actions。它不跑 check_docs / doc_flow / preflight / verify_release，所以“CI 绿”不等于文档体系绿"
+    },
+    {
+      "id": "C14",
+      "statement": "推送 v* tag 会触发 Release 工作流：先 verify + 全量测试，再确定性打包并把 zip 附到 GitHub Release",
+      "evidence": [
+        ".github/workflows/release.yml:3-30"
+      ],
+      "status": "gap",
+      "note": "git ls-remote 实测 origin 只有 v0.4.0 / v0.4.1 两个 tag，origin/main = b8c6d7b；2.x 的 11 个 dist 从未走过这条路径，也没有任何 tag"
+    },
+    {
+      "id": "C15",
+      "statement": "publish_github.py 能建仓、设 remote、打 tag、推分支与 tag、创建 Release 并上传 zip；缺 token 或工作树脏时拒绝执行",
+      "evidence": [
+        "tools/publish_github.py:53-58",
+        "tools/publish_github.py:117-121",
+        "tools/publish_github.py:220-296"
+      ],
+      "status": "gap",
+      "note": "零测试、需要网络与 token；当前工作树有 38 项未提交改动（git status --porcelain 实测），按 :117-120 会被直接拒绝——这也解释了为什么 2.x 从未发布"
+    },
+    {
+      "id": "C16",
+      "statement": "gate PASS 退出码 0、FAIL 退出码 1；verify/doctor 按 ok 映射 0/1；apply 按 ok、reconcile 按 converged 映射 0/1；可预期拒绝与未捕获异常一律 stderr JSON + 2",
+      "evidence": [
+        "scripts/whyexist/cli.py:87-105",
+        "tests/test_wxg.py:500"
+      ],
+      "status": "partial",
+      "note": "PASS 路径由测试 helper 的 expect=0 间接覆盖；FAIL 只断言“非 0”（test_wxg.py:500），精确值 1 没有断言；2 的错误分支只覆盖少数命令"
+    },
+    {
+      "id": "C17",
+      "statement": "wxg export --feature F 在 <root>/export/F/ 写 6 份只读视图，每份带 generation/feature_id/来源/说明 的 frontmatter",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:22-78",
+        "tests/test_wxg.py:264-268",
+        "tools/doc_flow.py:110-113"
+      ],
+      "status": "partial",
+      "note": "端到端测试只断言目录与 07 的一行；6 文件数由 doc_flow 断言；frontmatter 头在契约的导出表里没有定义，只被样例字节钉住"
+    },
+    {
+      "id": "C18",
+      "statement": "发布产物可回指到生成它的源码版本（清单里应能定位到提交）",
+      "evidence": [
+        "tools/build_release.py:104-116",
+        "dist/v2.92.0/manifest.json:1-12"
+      ],
+      "status": "gap",
+      "note": "manifest 只有 version/generated_at/source.repo='.'，没有 commit；build 也不要求工作树干净，所以 11 个 zip 无法映射到任何提交"
+    }
+  ],
+  "state_io": [
+    {
+      "target": "dist/v<version>/why-exist-graph-<version>.zip",
+      "mode": "write",
+      "where": "tools/build_release.py:89-101"
+    },
+    {
+      "target": "dist/v<version>/manifest.json",
+      "mode": "write",
+      "where": "tools/build_release.py:104-117"
+    },
+    {
+      "target": "dist/v<version>/archive.sha256",
+      "mode": "write",
+      "where": "tools/build_release.py:118"
+    },
+    {
+      "target": "references/export-sample/feat-demo/*（6 份）",
+      "mode": "write",
+      "where": "scripts/gen_sample.py:107-112"
+    },
+    {
+      "target": "SKILL.md 契约块 / references/contract.md 契约块",
+      "mode": "write",
+      "where": "scripts/whyexist/commands_misc.py:250-259"
+    },
+    {
+      "target": "<root>/export/<feature>/*.md",
+      "mode": "write",
+      "where": "scripts/whyexist/commands_misc.py:25-33"
+    },
+    {
+      "target": "系统临时目录 wxg-* / wxg-sample-* / doc-flow-* / preflight-*",
+      "mode": "both",
+      "where": "scripts/whyexist/temp.py:1-42；tools/doc_flow.py:48；tools/preflight.py:84,99；tools/verify_release.py:67"
+    },
+    {
+      "target": "<root>.parent/demo-repo（up 建的示例仓）",
+      "mode": "write",
+      "where": "scripts/whyexist/commands_repo.py:75-84"
+    },
+    {
+      "target": "<系统临时目录>/demo-repo（被无条件删除）",
+      "mode": "write",
+      "where": "tools/preflight.py:96",
+      "note": "同一条清理在 tools/preflight.py:111 与 tools/verify_release.py:114 重复；目标在各自 root 之外"
+    },
+    {
+      "target": ".git/config（remote origin）与 refs/tags/v<version>",
+      "mode": "write",
+      "where": "tools/publish_github.py:220-237"
+    },
+    {
+      "target": "GitHub REST API（仓库/topics/Release/asset）",
+      "mode": "write",
+      "where": "tools/publish_github.py:193-286"
+    },
+    {
+      "target": "环境变量 WXG_DB_URL",
+      "mode": "write",
+      "where": "scripts/whyexist/cli.py:58",
+      "note": "进程内全局副作用，不恢复；Engine(db_url=) 同样写（scripts/whyexist/engine.py:47-48）"
+    },
+    {
+      "target": "环境变量 GITHUB_TOKEN / GH_TOKEN",
+      "mode": "read",
+      "where": "tools/publish_github.py:53-58"
+    },
+    {
+      "target": "环境变量 WXG_SKILL_DIR",
+      "mode": "read",
+      "where": "scripts/whyexist/commands_misc.py:271",
+      "note": "只被测试用；文档零提及"
+    },
+    {
+      "target": "环境变量 PYTHONUTF8 / PYTHONIOENCODING",
+      "mode": "write",
+      "where": "tools/preflight.py:23；tools/doc_flow.py:23；tools/verify_release.py:25；tools/verify_reports.py:29",
+      "note": "只写子进程环境，不改当前进程"
+    },
+    {
+      "target": "graph.sqlite（只读打开）",
+      "mode": "read",
+      "where": "tools/verify_reports.py:112-144"
+    },
+    {
+      "target": "CHANGELOG.md（解析版本标题与 Release notes）",
+      "mode": "read",
+      "where": "tools/check_docs.py:36-67；tools/publish_github.py:123-133"
+    },
+    {
+      "target": "VERSION",
+      "mode": "read",
+      "where": "tools/build_release.py:129；tools/check_docs.py:30；tools/publish_github.py:49-50"
+    }
+  ],
+  "redundancy": [
+    {
+      "item": "版本号有 5 份代码副本 + 4 份文档副本：VERSION、CONTRACT_VERSION（scripts/wxg_contract.py）、whyexist.__version__（scripts/whyexist/__init__.py:49，停在 2.23.0 且无人读）、tests/test_wxg.py:520 的硬编码断言、README:179、HANDOFF:14、quality.md:72、PRODUCT-PLAN:178",
+      "signal": "同一个数字要人肉同步 9 处；本次实测只有 4 处一致（VERSION / 契约 / tests/test_wxg.py:520 / CHANGELOG），其余 5 处全落后",
+      "confidence": "high"
+    },
+    {
+      "item": "每次版本 bump 都必然改动 wxg_contract.py 与 tests/test_wxg.py 这两个“非版本文件”",
+      "signal": "对比 11 份 manifest：每一对相邻版本都同时改了 scripts/wxg_contract.py 与 tests/test_wxg.py，即使实际行为没变（v2.90→2.91→2.92 没有动 scripts/whyexist/*）",
+      "confidence": "high"
+    },
+    {
+      "item": "refactor-lab/ 被 40+ 行文档引用，但目录在仓库里不存在",
+      "signal": "HANDOFF:52 把 `python refactor-lab/run_all.py` 列为“怎么验证”的第一条命令；PRODUCT-PLAN:187-190 整张验证表指向 refactor-lab/verify_*.py；CHANGELOG 与 design.md 里还有 30+ 处；`Test-Path refactor-lab` 为假",
+      "confidence": "high"
+    },
+    {
+      "item": "两条并存的发布路径：tools/publish_github.py（本地 API + git push）与 .github/workflows/release.yml（tag 触发 CI 打包发布）",
+      "signal": "两者都会对同一个 tag 创建 Release 并上传 asset；publish_github 先推 tag 再建 Release，会与 CI 的 action-gh-release 竞争；CONTRIBUTING:52-66 同时介绍两条，没说哪条是权威",
+      "confidence": "high"
+    },
+    {
+      "item": "v2.90.0 / v2.91.0 / v2.92.0 三个“发布”的运行时行为完全相同",
+      "signal": "相邻 manifest 差异只有 CHANGELOG.md / VERSION / references/*.md / wxg_contract.py / tests/test_wxg.py；两者都不含 docs/，而这三个版本的内容正是 docs 与 refactor-lab",
+      "confidence": "high"
+    },
+    {
+      "item": "测试数量有四个互相矛盾的副本：README:139（79）、CONTRIBUTING:16（104）、quality.md:8,73（357）、README:58/117 与 HANDOFF:15,99（381）",
+      "signal": "实测 unittest discover = 381，tests/test_wxg.py = 85；四个数字都不是笔误，是四个时代留下的快照",
+      "confidence": "high"
+    },
+    {
+      "item": "契约内容被渲染两份：SKILL.md 的 main 块与 references/contract.md 的 full 块",
+      "signal": "由同一契约生成、由 verify 双向比对，属于 I1 的有意设计；但每条规则文本都有两个可读副本，改措辞时要刷新两处",
+      "confidence": "low"
+    },
+    {
+      "item": "tools/preflight.py 的模块 docstring 描述 4 步，实现跑 6 步",
+      "signal": "tools/preflight.py:4 写“测试 + 文档一致性 + verify + doctor”，实际是测试/文档一致性/文档完整性/契约校验/状态库体检/报告自洽",
+      "confidence": "medium"
+    },
+    {
+      "item": "导出文件名编号 01/02/04/05/07 缺 03/06",
+      "signal": "contract 的 EXPORT_FILES 与 6 份样例都用缺号命名，没有任何文档解释 03/06 去哪了；读文档的人会以为导出不全",
+      "confidence": "medium"
+    },
+    {
+      "item": "README 与 SKILL.md 各自维护一份“已知边界”",
+      "signal": "README:161-175 有 13 条，SKILL:433-458 有 24 条，内容部分重叠（coverage、drift、conformance、变更集、回扫各出现两次），只有 SKILL 那份被文档流程引用",
+      "confidence": "medium"
+    },
+    {
+      "item": "docs/HANDOFF.md 与 docs/PRODUCT-PLAN.md 各自维护状态表（版本/测试数/里程碑）",
+      "signal": "HANDOFF:12-17 与 PRODUCT-PLAN:169-180 记录同一批事实，数值互相不一致（2.91 vs 2.67；381 vs 381；refactor-lab 三个脚本 vs 不存在）",
+      "confidence": "high"
+    },
+    {
+      "item": "<tmp>/demo-repo 的清理逻辑在三个脚本里各写一遍，且删的是各自 root 之外的共享临时目录",
+      "signal": "tools/preflight.py:96、tools/preflight.py:111、tools/verify_release.py:114 都是 `shutil.rmtree(tmp.parent / 'demo-repo')`",
+      "confidence": "medium"
+    }
+  ],
+  "rewrite_partition": [
+    {
+      "module": "README.md",
+      "verdict": "refactor_in_place",
+      "reason": "结构、特性清单与已知边界本身仍然准确（逐条对照 50 命令与测试后没发现虚构能力），错的只有数字与版本：2.67.0、79 个用例、181 行",
+      "risk": "这些数字没有机器校验，改完还会再烂；必须同时把 README 纳入 check_docs，否则只修一次等于没修"
+    },
+    {
+      "module": "SKILL.md",
+      "verdict": "refactor_in_place",
+      "reason": "正文（快速开始、26 条工作流、24 条边界）与实际行为一致，且被 doc_flow 端到端验证；问题在 frontmatter 描述只覆盖 38/50 个能力，plan/brief/blind-check/impact/cycles 等迭代出来的核心能力在模型侧不可发现",
+      "risk": "契约块是生成物不能手改；描述文案若改成“生成”需要新的渲染器与 verify 分支，改动会触及 I1"
+    },
+    {
+      "module": "references/contract.md",
+      "verdict": "keep",
+      "reason": "纯生成物，verify 逐字节比对；内容完整且与代码一致（本次 verify PASS）",
+      "risk": "手工改会被下次 contract --write 覆盖；这是特性不是缺陷"
+    },
+    {
+      "module": "references/design.md",
+      "verdict": "freeze",
+      "reason": "110 节演进叙事，记录的是“当时为什么这么选”，无法从代码重建；check_docs 只校验节号连续，语义无人守",
+      "risk": "其中 20+ 处引用已不存在的 refactor-lab 脚本与目录；重写会丢掉唯一的设计决策史，所以只冻结不重写"
+    },
+    {
+      "module": "references/patterns.md",
+      "verdict": "keep",
+      "reason": "内容是 gate 对 pattern 的强制口径（applicability/not_applicable/applies）的说明，与代码一致；只在标题里带了一个过时的 0.5.0 标签",
+      "risk": "无测试约束措辞；与 gate 实现漂移时只能靠人读发现"
+    },
+    {
+      "module": "references/quality.md",
+      "verdict": "rewrite",
+      "reason": "清单本身有价值，但它复制了版本号与用例数（2.42.0 / 357，都过期），又自称“已知边界只在 SKILL 维护一处”——按它自己的原则，这些副本就该删掉，只留可执行检查项与指针",
+      "risk": "删掉数字后，提交者失去“当前期望值”这个参照；应改为指向 check_docs/verify 的输出而不是写死"
+    },
+    {
+      "module": "references/export-sample/feat-demo/",
+      "verdict": "keep",
+      "reason": "确定性夹具，本次重生成 6/6 字节一致，verify 每次都会重跑；它同时也是导出格式（含 frontmatter 头）的唯一事实标准",
+      "risk": "格式细节（表头文案、frontmatter 字段）只存在于样例里，没有契约条目；改导出器必须同时刷新样例，否则 verify 红"
+    },
+    {
+      "module": "docs/HANDOFF.md",
+      "verdict": "refactor_in_place",
+      "reason": "结构对路（当前状态/能力地图/验证/顺序/边界/下一步），但验证章节的第一条命令指向不存在的 refactor-lab/run_all.py，版本写 2.91.0，design.md 写 109 节（实际 110）",
+      "risk": "“下一步方向”四条是唯一成文的未完成需求，重写时容易丢；应保留原意只换失效引用"
+    },
+    {
+      "module": "docs/PRODUCT-PLAN.md",
+      "verdict": "refactor_in_place",
+      "reason": "它是唯一写“产品定位与不做清单”的文档，四条命题仍成立；但进度表停在 2.67.0/dist/v2.67.0，P6 声称的 refactor-lab 三个脚本不存在，且 §8“不做非 Python 导入器”与 HANDOFF 的“最大缺口”互相矛盾",
+      "risk": "“明确不做”的条目一旦被改，会反向影响是否该做多语言导入器这个最大的路线判断，需要产品决策而不是编辑"
+    },
+    {
+      "module": "tools/build_release.py",
+      "verdict": "refactor_in_place",
+      "reason": "确定性打包已实测可复现（重建 SHA 相同）、版本校验到位；缺的是 manifest 里没有 commit、也不检查工作树是否干净，导致产物不可追溯",
+      "risk": "加 commit 字段会让所有历史 manifest 的字段集不一致；加 clean-tree 检查会让当前这套未提交工作流无法打包"
+    },
+    {
+      "module": "tools/verify_release.py",
+      "verdict": "keep",
+      "reason": "本次对 dist/v2.92.0 实跑 PASS；断言的是“包能独立跑”这个真正重要的性质，而不是文件清单",
+      "risk": "收尾会删 <系统临时>/demo-repo（root 之外）；按 mtime 选最新包在多版本并存时不稳"
+    },
+    {
+      "module": "tools/preflight.py",
+      "verdict": "refactor_in_place",
+      "reason": "六步串联有效（本次实跑 PASS，381 用例 183s），但 docstring 与步骤不符、清理 <tmp>/demo-repo 越界、且不检查 README/HANDOFF 这类最常漂移的文档",
+      "risk": "它是唯一会把所有检查串起来的地方；改它等于改发布门，必须先把工具本身纳入测试"
+    },
+    {
+      "module": "tools/check_docs.py",
+      "verdict": "refactor_in_place",
+      "reason": "三处版本一致 + CHANGELOG 连续 + design 节号连续都实现得干净，但覆盖面只到 4 个文件，恰好漏掉实际漂移最严重的 README/HANDOFF/PRODUCT-PLAN/quality",
+      "risk": "扩到 README 会让当前仓库立刻变红（版本 2.67.0），所以要么先修文档，要么让它成为软检查"
+    },
+    {
+      "module": "tools/doc_flow.py",
+      "verdict": "keep",
+      "reason": "它是“文档承诺 vs 实现”的唯一自动化 oracle，本次 PASS；按 SKILL 原样跑而不是按测试的正确顺序跑，这个设计值得保留",
+      "risk": "它硬编码了最短路径步骤，SKILL 改流程就得同步改它；不能进发布包（依赖 whyexist.temp 与源码仓结构）"
+    },
+    {
+      "module": "tools/verify_reports.py",
+      "verdict": "keep",
+      "reason": "6 条交叉断言抓的是命令之间自相矛盾，本次 preflight 里 PASS；它是唯一验证“多个只读命令说法一致”的地方",
+      "risk": "依赖具体输出字段名（plan.level/bottleneck、conformance 的 orphan 计数），字段改名会静默变成 skip 而不是报错"
+    },
+    {
+      "module": "tools/publish_github.py",
+      "verdict": "freeze",
+      "reason": "300 行、零测试、需要 token 与网络、与 release.yml 职责重叠，且因为当前工作树是脏的而从未在 2.x 上成功执行；在弄清“发布到底走哪条路”之前不能动",
+      "risk": "冻结等于保留一条会与 CI 抢 Release 的路径；若直接删，首次建仓/发布的唯一脚本就没了，需要先确认 GitHub 仓库与 Release 由谁维护"
+    },
+    {
+      "module": ".github/workflows/ci.yml",
+      "verdict": "refactor_in_place",
+      "reason": "矩阵与两条命令都对，但只跑 verify + unittest；文档一致性（check_docs）、文档可执行性（doc_flow）、发布包可用性（verify_release）都不在 CI 里",
+      "risk": "加 preflight 会把 183s 测试再跑一遍；应改成复用同一份测试结果或分 job"
+    },
+    {
+      "module": ".github/workflows/release.yml",
+      "verdict": "refactor_in_place",
+      "reason": "tag → verify → build → release 的主干正确，但缺 check_docs 与 verify_release，也没有与 publish_github 的分工说明",
+      "risk": "在 CI 里重建 zip 而不校验本地 dist 的 SHA，会让“可复现”这个承诺在发布路径上失去检验"
+    },
+    {
+      "module": "dist/v2.82.0…v2.92.0/",
+      "verdict": "freeze",
+      "reason": "已发布的历史产物，重建只会得到相同的 zip（v2.92.0 已验证），但 manifest 不可追溯、2.90-2.92 内容重复；它们是不可变证据，不该原地重写",
+      "risk": "dist/ 被 .gitignore 忽略，这些产物只存在于这台机器；换环境即丢失"
+    },
+    {
+      "module": "VERSION + CHANGELOG.md",
+      "verdict": "keep",
+      "reason": "CHANGELOG 是 113 次迭代唯一的完整记录，格式被 check_docs 与 publish_github 双向依赖；VERSION 是三个工具的唯一锚点",
+      "risk": "两者与 CONTRACT_VERSION/测试硬编码构成 5 处副本，任何一处漏改都靠 check_docs 兜底，而 check_docs 不在 CI 里"
+    }
+  ],
+  "implicit_requirements": [
+    "导出文件头是固定文本：`---` + generation + feature_id + `来源: wxg-export` + `说明: 缺的 id 留空，不从任何旧文档补句。`。契约的导出表只定义列，没定义这个头；改它会让 verify 直接红。",
+    "`up` 返回的 next[0] 必须包含 `import-file … --prepare` 字样——doc_flow.py:54-58 按这个字符串断言，改文案会破坏文档一致性检查。",
+    "发布包里必须没有 tools/ 目录（verify_release.py:74 断言）；这一条把“工具不随包分发”变成了硬约束，而不是打包脚本里的实现细节。",
+    "zip 的条目时间戳固定为 2026-10-29、权限 0644、create_system=3（build_release.py:37,96-99）。这是“可复现构建”的全部实现基础，没有任何文档说明。",
+    "`up` 会在 <root> 的父目录创建 demo-repo（commands_repo.py:75-78）；preflight/verify_release 会删掉 <临时根>/demo-repo。两个动作都发生在各自 root 之外，共享系统临时目录。",
+    "CLI 的可预期拒绝一律走 stderr 紧凑 JSON + 退出码 2，argparse 用法错误除外；成功路径是 stdout JSON（indent=2）或纯文本（role-prompt/contract）。",
+    "verify 会检查技能目录里存在 references/design.md、references/contract.md、references/quality.md、tests/test_wxg.py、CHANGELOG.md（commands_misc.py:327-329）；少一个文件包就自检失败。",
+    "`contract --write` 的相对路径基准是技能根，不是 cwd（commands_misc.py:250-256）；从任意目录调用都能改到仓库文件。",
+    "CHANGELOG 的标题格式 `## x.y.z（YYYY-MM-DD）` 与 design.md 的 `## N. ` 编号格式都是被解析的接口（check_docs.py:20-21），不是纯排版。",
+    "publish_github 的 Release 正文是从 CHANGELOG 里截取对应版本段（publish_github.py:123-133）；章节层级写错不会报错，只会发一个空正文。",
+    "dist/ 与 *.zip 被 .gitignore 忽略（.gitignore:15-17），发布产物不进版本库是既定策略，不是遗漏。",
+    "安装目标路径字符串 `<workspace>/.dsh/skills/why-exist-graph` 同时出现在 manifest 的 install.target 与 README/SKILL 的说明里；改目录名要三处同改。"
+  ],
+  "findings": [
+    "发布链在 0.4.1 之后断掉：git ls-remote 显示 origin 只有 v0.4.0/v0.4.1 两个 tag，origin/main = b8c6d7b（本地 HEAD）；工作树里的 2.92.0、113 条 CHANGELOG、11 个 dist 全部未提交。README:72/180 让用户“从 GitHub Releases 下载 zip”，那条路径只能装到 0.4.1。",
+    "模型侧看到的技能是旧版：~/.dsh/skills/why-exist-graph/VERSION = 1.4.0，契约块里只有 38 个命令，缺 plan/brief/blind-check/patch/apply/impact/cycles/conflicts/derive/promote/import-repo/up 共 12 个；而它的 frontmatter description 与仓库 2.92.0 的字节完全相同（SKILL.md:1-11），所以从描述上无法察觉自己落后。",
+    "dist/v2.90.0、v2.91.0、v2.92.0 的运行时行为完全相同：相邻 manifest 只差 VERSION/CHANGELOG/contract/design/contract.py/tests，没有动 scripts/whyexist/*；而这三个版本声称的内容（refactor-lab、run_all、HANDOFF）都不在包里——build_release 只收 references/scripts/tests，docs/ 从不进包（11 个 zip 实测 docs/=False、README=False）。",
+    "版本号是 9 处副本、只有 3 处一致：README:179 = 2.67.0、HANDOFF:14 = 2.91.0、quality.md:72 = 2.42.0、whyexist/__init__.py:49 = 2.23.0，而 VERSION/CONTRACT_VERSION/CHANGELOG = 2.92.0。唯一能发现这种漂移的 check_docs.py 不在 CI 里，CI 只跑 verify + unittest。",
+    "发布工具链零自动化测试：tests/ 里没有任何一处引用 tools/*.py（grep 全仓 0 命中）；build_release 的确定性、check_docs 的版本对账、preflight 的串联、verify_release 的包可用性，全靠人记得手动跑。本次实跑这三条都 PASS（preflight 381 用例 183s、doc_flow PASS、verify_release PASS、重建 zip SHA 一致），说明它们能用，只是没人守。",
+    "refactor-lab/ 不存在，却被 40+ 行文档引用：HANDOFF:52 把 `python refactor-lab/run_all.py` 写成“怎么验证”的第一条，PRODUCT-PLAN:187-190 的验证表整张指向 refactor-lab/verify_change|controller|sync.py，CHANGELOG/design.md 还有 30+ 处。交接文档的主验证入口是死的。",
+    "发布产物不可追溯：manifest 只有 version/generated_at/source.repo='.'，没有 commit，build_release 也不检查工作树是否干净——11 个 zip 无法映射到任何提交，而它们恰好是在从未提交的树上构建的。",
+    "preflight 与 verify_release 会删各自 root 之外的目录：preflight.py:96,111 与 verify_release.py:114 都执行 rmtree(<系统临时>/demo-repo)。任何在 %TEMP%/demo-repo 放了东西的进程都会被误删；这是把 up 的副作用清理写成了全局假设。",
+    "路线图两处自相矛盾：PRODUCT-PLAN:165 写“不做非 Python 的自动导入器”，HANDOFF:111 写“更多语言的导入器：这是最大缺口”。同一份仓库对“最大的未完成需求”给出相反结论。",
+    "文档体系里真正可信的资产是三块：生成块（SKILL main / contract.md full，verify 逐字节比对，且有测试）、导出样例（重生成 6/6 字节一致）、SKILL 最短路径（doc_flow 端到端 PASS）。这三块可以原地保留。",
+    "负载是四份手写文档的元数据：README/HANDOFF/PRODUCT-PLAN/quality 各写一份版本或用例数，四处全都过期；而它们记录的“当前状态”在 CHANGELOG 与 VERSION 里已经有权威副本。过期文档比没文档危险，因为 README:179 会让人以为在用 2.67.0。",
+    "版本号是发布计数器而不是语义版本：113 个条目每个小版本只 +0.1.0，每逢 .9 就进位到下个大版本（0.9.0→1.0.0、1.9.0→2.0.0），全程只有 0.4.1 一个补丁号；113 个版本全部落在 2026-10-28~11-02 六天内（11-02 一天 90 个），没有任何 tag 与之对应。",
+    "测试数量四个数字：README 79（test_wxg.py，实际 85）、CONTRIBUTING 104、quality 357、README/HANDOFF/CHANGELOG 381（实测 381）。CHANGELOG 每版都写“测试 381 不变”，反而成了唯一准确的记录。"
+  ],
+  "open_questions": [
+    "docs/ 到底算不算发布物？CHANGELOG 2.92.0 说这版“加一份 docs/HANDOFF.md”，但 build_release 的 INCLUDE_DIRS 不含 docs/，11 个 zip 里都没有它。若 docs 该进包，打包规则要改；若不该，2.92.0 的发布说明就是错的。",
+    "~/.dsh/skills/why-exist-graph 的 1.4.0 是谁、按什么流程装的？仓库里没有同步脚本，README 只说“git clone 或解压 zip”，而 GitHub 上只有 0.4.1。",
+    "publish_github.py 还要不要留？它与 release.yml 重复且会抢同一个 tag 的 Release；若答案是“发布只走 tag + CI”，这个脚本应删；若要保留“首次建仓”能力，应缩到只做建仓，不碰 Release。",
+    "refactor-lab/ 是本次审计环境缺失，还是已经被删掉？如果是删掉，40+ 处引用要一起清，且 HANDOFF 的“两层验证”只剩一层（preflight），真实仓验证（flask 1186 节点那类证据）就没有可复现入口了。",
+    "每版 +0.1.0、每 10 个进一个大版本（0.9→1.0、1.9→2.0），这是刻意的发布节奏还是自动迭代留下的副作用？如果对外发布只发生在真正的里程碑，版本号应该在发布时收敛，否则用户无法从版本号判断兼容性。",
+    "README/quality/CONTRIBUTING 里的数字（用例数、行数、脚本数）应该手改，还是由 CHANGELOG/测试输出自动生成？手改已被证明会过期四处；自动生成需要一个新的渲染步骤与 verify 分支。"
+  ]
+}

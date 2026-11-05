@@ -1,0 +1,653 @@
+{
+  "slice": "04-db-schema",
+  "modules": [
+    {
+      "path": "scripts/whyexist/db.py",
+      "loc": 618,
+      "role": "状态库 schema（SQLite/MySQL/PG 三份 DDL）、连接、ensure_db、init_db、migrate_schema、方言翻译与完整性错误判定"
+    },
+    {
+      "path": "scripts/whyexist/cli.py",
+      "loc": 115,
+      "role": "本片只取连接时机（L66-70）与 commit 边界（L74-93）"
+    },
+    {
+      "path": "scripts/whyexist/commands_repo.py",
+      "loc": 737,
+      "role": "本片只取建库入口 cmd_init（L44-59）与 cmd_up 的自建连接/提交（L62-127）"
+    },
+    {
+      "path": "scripts/whyexist/commands_misc.py",
+      "loc": 619,
+      "role": "本片只取 doctor 对 meta 版本与表内引用完整性的检查/修复（L355-600）"
+    },
+    {
+      "path": "scripts/wxg.py",
+      "loc": 181,
+      "role": "schema 常量与 db helper 的 re-export 面（L31-49）"
+    },
+    {
+      "path": "scripts/wxg_mysql.py",
+      "loc": 904,
+      "role": "MariaDB/MySQL 客户端；含第二份完整性错误判定 is_integrity_error（L116-157）"
+    }
+  ],
+  "public_surface": [
+    {
+      "entry": "wxg init",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_repo.py:44-59",
+      "input": "全局 --root（默认 cwd/.why-exist）、WXG_DB_URL 或全局 --db-url",
+      "output": "stdout JSON：{root, db, backend, schema_version: 9, contract_version, migrated: {<变更键>: <计数>}}",
+      "side_effects": "sqlite：创建 root 目录与 graph.sqlite、12 张表、7 个索引，写 meta 两键；init_db 在返回前自行 commit（db.py:615）",
+      "exit_codes": "0 成功；2 Reject 或任意异常（非 sqlite 后端当前抛 NameError，见 C22）"
+    },
+    {
+      "entry": "wxg up",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_repo.py:62-127",
+      "input": "--root/--feature/--repo/--path/--template",
+      "output": "stdout JSON：{root, template, repo, feature, gate_result, gate, next[]}",
+      "side_effects": "自带连接与三次 commit（L73/L87/L107）；init_db + 可选 demo 仓文件 + repo-add + feature-declare + 跑一次 gate",
+      "exit_codes": "0/2（gate FAIL 不改变退出码，只进 gate_result）"
+    },
+    {
+      "entry": "wxg doctor / doctor --fix",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_misc.py:558-617",
+      "input": "--fix（可选）",
+      "output": "stdout JSON：{ok, issue_count, fixable_count, unfixable_count, unfixable_checks, by_check, truncated, issues[<=200], fixed}",
+      "side_effects": "--fix：删悬空 bites/edges/feature_nodes、剔除工单 target_ids/evidence_ids 中已删节点、清非 claimed 行 token、把 meta 两键写成当前版本（L562-600）",
+      "exit_codes": "0 无问题；1 有问题（--fix 后按修完的结果判）"
+    },
+    {
+      "entry": "connect(root)",
+      "kind": "function",
+      "where": "scripts/whyexist/db.py:441-465",
+      "input": "root: Path；环境变量 WXG_DB_URL",
+      "output": "sqlite3.Connection（row_factory=Row）或 _MySQLConnection/_PgConnection 包装",
+      "side_effects": "sqlite：root.mkdir(parents=True, exist_ok=True)、打开/创建 graph.sqlite、PRAGMA foreign_keys=ON、busy_timeout=5000、journal_mode=WAL；mysql/pg：只建连接（mysql 还会 SET 隔离级别 READ COMMITTED）",
+      "exit_codes": "异常直接上抛；CLI 的 try 在 connect 之后（cli.py:70），因此连接期失败是 traceback + 1"
+    },
+    {
+      "entry": "ensure_db(conn)",
+      "kind": "function",
+      "where": "scripts/whyexist/db.py:468-483",
+      "input": "任意后端连接",
+      "output": "None；失败抛 Reject('状态库未初始化：先运行 `wxg init`')",
+      "side_effects": "纯只读：按方言查 meta 表是否存在",
+      "exit_codes": "经 CLI 兜底 → 2"
+    },
+    {
+      "entry": "init_db(conn)",
+      "kind": "function",
+      "where": "scripts/whyexist/db.py:605-616",
+      "input": "连接",
+      "output": "migrate_schema 的 migrated dict",
+      "side_effects": "按方言执行整份 DDL（CREATE IF NOT EXISTS）→ migrate_schema → commit",
+      "exit_codes": "异常上抛；commit 在 migrate 之后、返回之前"
+    },
+    {
+      "entry": "migrate_schema(conn)",
+      "kind": "function",
+      "where": "scripts/whyexist/db.py:509-602",
+      "input": "连接（表已由 init_db 建好）",
+      "output": "migrated dict，键形如 work_items.claimed_by / evidence.generation / claimed_by.legacy / meta",
+      "side_effects": "ALTER TABLE 补列、UPDATE 回填、INSERT OR IGNORE 回填 judge_history、UPSERT meta；不 commit，由调用方提交",
+      "exit_codes": "异常上抛（含旧库缺列导致的 OperationalError）"
+    },
+    {
+      "entry": "db_url() / db_backend()",
+      "kind": "function",
+      "where": "scripts/whyexist/db.py:425-438",
+      "input": "环境变量 WXG_DB_URL",
+      "output": "URL 字符串；'sqlite' | 'mysql' | 'postgres'",
+      "side_effects": "只读环境变量",
+      "exit_codes": "未知协议抛 Reject → 2"
+    },
+    {
+      "entry": "SCHEMA_SQL / MYSQL_SCHEMA_SQL / PG_SCHEMA_SQL",
+      "kind": "function",
+      "where": "scripts/whyexist/db.py:19-289；re-export scripts/wxg.py:32-34",
+      "input": "无",
+      "output": "三份 DDL 字符串",
+      "side_effects": "无；被测试当夹具直接 executescript（tests/test_package_units.py:244 等），也被 gen_sample.py:45 间接使用",
+      "exit_codes": "无"
+    },
+    {
+      "entry": "<root>/graph.sqlite 的 12 张表",
+      "kind": "table",
+      "where": "scripts/whyexist/db.py:19-150",
+      "input": "无",
+      "output": "meta, repos, nodes, edges, features, conditions, work_items, feature_nodes, evidence, bites, judge_history, changes；7 个索引；0 外键；0 CHECK",
+      "side_effects": "文件形态的状态库是外部读契约：why-exist-uml 技能（.dsh/skills/why-exist-uml/SKILL.md:78）直接读 nodes(id,kind,name,repo,path,symbol,attrs_json,unmapped)、edges(id,src,dst,kind,unmapped)，带 --feature 时还读 features/feature_nodes/work_items",
+      "exit_codes": "无"
+    },
+    {
+      "entry": "<root>/ 目录与 SQLite 文件（含瞬态 -wal/-shm）",
+      "kind": "file",
+      "where": "scripts/whyexist/db.py:458-464",
+      "input": "--root",
+      "output": "目录 + graph.sqlite",
+      "side_effects": "mkdir -p；journal_mode=WAL 会产生 -wal/-shm，连接正常关闭后合并",
+      "exit_codes": "路径不可建（root 是文件、无权限）→ 异常在 CLI 兜底外 → traceback + 1"
+    }
+  ],
+  "contracts": [
+    {
+      "id": "C1",
+      "statement": "空目录执行 init 会创建 <root>/graph.sqlite（12 张表齐全），输出 schema_version=9，退出码 0",
+      "evidence": [
+        "scripts/whyexist/db.py:605-616",
+        "scripts/whyexist/commands_repo.py:44-59",
+        "tests/test_wxg.py:86",
+        "tests/test_wxg.py:652",
+        "tests/test_plan_cli.py:341"
+      ],
+      "status": "covered",
+      "note": "每次 init_repo 都覆盖建库路径；schema_version=9 有直接断言"
+    },
+    {
+      "id": "C2",
+      "statement": "init 的 stdout 是 JSON，键为 root/db/backend/schema_version/contract_version/migrated",
+      "evidence": [
+        "scripts/whyexist/commands_repo.py:52-59",
+        "scripts/whyexist/cli.py:75-77,109-113",
+        "tests/test_wxg.py:652",
+        "tests/test_mysql_backend.py:88",
+        "tests/test_pg_backend.py:90"
+      ],
+      "status": "partial",
+      "note": "只有 schema_version 有直接断言；backend 只在两个默认跳过的后端测试里断言；root/db 无断言"
+    },
+    {
+      "id": "C3",
+      "statement": "全新库第一次 init 返回 migrated={\"meta\": 2}，第二次返回 {}",
+      "evidence": [
+        "scripts/whyexist/db.py:593-601",
+        "tests/test_wxg.py:693"
+      ],
+      "status": "gap",
+      "note": "只断言了重复 init 的空 dict；首次的 meta:2、以及其它迁移键的命名/计数无人钉住（migrated 是返回值契约的一部分）"
+    },
+    {
+      "id": "C4",
+      "statement": "已迁移库重复 init 不写任何已有行：migrated=={} 且全表快照不变",
+      "evidence": [
+        "tests/test_wxg.py:683-696",
+        "scripts/whyexist/db.py:509-602"
+      ],
+      "status": "covered",
+      "note": "快照比较覆盖全部 12 张表；这是 0.4.0 修掉过的回归点"
+    },
+    {
+      "id": "C5",
+      "statement": "init 能把任意旧 schema 非破坏地收敛到 9（只加列/加表，不删行）",
+      "evidence": [
+        "scripts/whyexist/db.py:613-614",
+        "scripts/whyexist/db.py:126",
+        "scripts/whyexist/db.py:551-553",
+        "SKILL.md:144"
+      ],
+      "status": "gap",
+      "note": "实测违背：bites 没有 generation 的旧库（schema 3/0.4.x）init 必失败，见 F1"
+    },
+    {
+      "id": "C6",
+      "statement": "旧 work_items 补 claimed_by/judged_by/judged_at/claimed_at 四列；未知身份按状态标 legacy（audit 工单豁免、不伪造具体成员）",
+      "evidence": [
+        "scripts/whyexist/db.py:516-527",
+        "scripts/whyexist/db.py:563-583",
+        "tests/test_wxg.py:632-679"
+      ],
+      "status": "partial",
+      "note": "测试只造了一条 status=passed 的行；claimed/submitted/failed 三种状态的 legacy 标记、audit 豁免、judged_at=COALESCE(created_at) 无断言"
+    },
+    {
+      "id": "C7",
+      "statement": "claimed_at 只对 status='claimed' 的旧行按 created_at 回填（下界，不还原真实领取时刻）",
+      "evidence": [
+        "scripts/whyexist/db.py:581-583",
+        "SKILL.md:237"
+      ],
+      "status": "gap",
+      "note": "零断言；注释里承认只是下界"
+    },
+    {
+      "id": "C8",
+      "statement": "evidence.generation 回填优先取关联工单的 generation，其次取 feature 当前代；都不命中时保持 NULL",
+      "evidence": [
+        "scripts/whyexist/db.py:528-538",
+        "tests/test_wxg.py:957-1002"
+      ],
+      "status": "covered",
+      "note": "linked→1、free→2 两条都断言了；NULL 分支由 doctor 的 evidence-missing-generation 间接覆盖"
+    },
+    {
+      "id": "C9",
+      "statement": "旧 bites 补 generation/phase 两列，generation 按 feature 当前代回填",
+      "evidence": [
+        "scripts/whyexist/db.py:551-562",
+        "tests/test_wxg.py:671"
+      ],
+      "status": "partial",
+      "note": "只断言列存在；回填值、NULL 保留（feature 不存在时）没有断言"
+    },
+    {
+      "id": "C10",
+      "statement": "judge_history 回填用确定性 id `jh:<work_item_id>`，只对 judged_by 非空、kind<>audit、且尚无历史行的工单执行；verdict 由最终 status 推导（passed 否则 failed）",
+      "evidence": [
+        "scripts/whyexist/db.py:585-592",
+        "references/contract.md:329",
+        "tests/test_wxg.py:673"
+      ],
+      "status": "partial",
+      "note": "只断言了一条 passed 行；failed 推导、NOT EXISTS 幂等分支、以及「每次 init 都重跑回填」没有断言"
+    },
+    {
+      "id": "C11",
+      "statement": "meta.schema_version/contract_version 在每次 init 时被写成当前值；doctor 报 meta-version；doctor --fix 把两键写回当前值",
+      "evidence": [
+        "scripts/whyexist/db.py:593-601",
+        "scripts/whyexist/commands_misc.py:536-540,590-600",
+        "tests/test_wxg.py:402-425"
+      ],
+      "status": "covered",
+      "note": "test_wxg.py:412 断言报告、424 断言 contract_version 被修好；schema_version 修复未被单独断言"
+    },
+    {
+      "id": "C12",
+      "statement": "没有降级保护：库里版本号高于代码时，init 直接把它改写成当前版本，随后 doctor 报 ok",
+      "evidence": [
+        "scripts/whyexist/db.py:593-601",
+        "scripts/whyexist/commands_misc.py:537-540"
+      ],
+      "status": "gap",
+      "note": "实测：schema_version=99 → init → migrated={meta:1}、meta 变 9、doctor ok=true；无测试、文档也未提"
+    },
+    {
+      "id": "C13",
+      "statement": "ensure_db 的唯一判据是 meta 表存在；不存在则 Reject「状态库未初始化」并退出 2",
+      "evidence": [
+        "scripts/whyexist/db.py:468-483",
+        "scripts/whyexist/cli.py:79-80",
+        "tests/test_wxg.py:947-955"
+      ],
+      "status": "gap",
+      "note": "947-955 测的是「文件不存在时 CLI 预检不建库」，不是「文件存在但无 meta」。实测空 SQLite 文件 → 退出 2，但无测试夹具。另见 C13b 的反面：meta 存在但表/列缺失时 ensure_db 放行"
+    },
+    {
+      "id": "C13b",
+      "statement": "meta 表存在即视为可用；缺表/缺列不会被 ensure_db 或 init 前置发现，命令以 OperationalError 退出 2",
+      "evidence": [
+        "scripts/whyexist/db.py:468-483",
+        "scripts/whyexist/cli.py:85-90"
+      ],
+      "status": "gap",
+      "note": "实测 schema-1 风格库（只有 meta + work_items）跑 doctor → {\"error\":\"OperationalError: no such table: nodes\"}，没有任何「先跑 init」的引导"
+    },
+    {
+      "id": "C14",
+      "statement": "sqlite connect：创建 root 目录、timeout=5s、WAL、busy_timeout=5000、foreign_keys=ON",
+      "evidence": [
+        "scripts/whyexist/db.py:458-465",
+        "tests/test_wxg.py:1391-1402",
+        "SKILL.md:276"
+      ],
+      "status": "partial",
+      "note": "只断言了 journal_mode=wal；mkdir、busy_timeout、foreign_keys 零断言，且 foreign_keys=ON 在当前 schema 下是空操作（0 外键）"
+    },
+    {
+      "id": "C15",
+      "statement": "连接期失败（graph.sqlite 不是数据库、--root 指向文件）不是可读 JSON，而是 traceback + 退出码 1",
+      "evidence": [
+        "scripts/whyexist/cli.py:70",
+        "scripts/whyexist/db.py:458-464"
+      ],
+      "status": "gap",
+      "note": "实测两种情形都是 traceback + 1；与 01 片 C11 同类，但触发点在 connect 自身"
+    },
+    {
+      "id": "C16",
+      "statement": "一条 CLI 命令一个事务：handler 返回后统一 commit；抛异常不 commit，关闭连接即回滚，不留半截写入",
+      "evidence": [
+        "scripts/whyexist/cli.py:74-93",
+        "scripts/whyexist/db.py:353-360",
+        "scripts/whyexist/commands_repo.py:73,87,107",
+        "scripts/whyexist/commands_gates.py:142"
+      ],
+      "status": "gap",
+      "note": "无任何「失败后 DB 不变」的断言；例外路径也不统一：up/serve 自己 commit，init 在 init_db 内部 commit"
+    },
+    {
+      "id": "C17",
+      "statement": "--db-url 覆盖 WXG_DB_URL；未知协议输出 JSON 错误并退出 2",
+      "evidence": [
+        "scripts/whyexist/cli.py:55-61",
+        "scripts/whyexist/db.py:429-438"
+      ],
+      "status": "gap",
+      "note": "全仓测试对 db_backend/db_url 零引用；两个后端测试都走环境变量"
+    },
+    {
+      "id": "C18",
+      "statement": "_is_integrity_error 识别 sqlite3.IntegrityError、MySQL errno {1022,1062,1169,1557}、PG sqlstate 23*，其它异常原样抛出",
+      "evidence": [
+        "scripts/whyexist/db.py:500-505",
+        "scripts/whyexist/graph.py:9",
+        "scripts/wxg_mysql.py:116-157"
+      ],
+      "status": "gap",
+      "note": "零测试；与 wxg_mysql._INTEGRITY_ERRNOS（10 个 errno）集合不一致；唯一调用点当前 NameError（C19）"
+    },
+    {
+      "id": "C19",
+      "statement": "repo-add 用不同 id 登记同一路径时，返回 Reject「仓登记冲突：path ... 已被其它 repo id 占用」并退出 2",
+      "evidence": [
+        "scripts/whyexist/commands_repo.py:136-146",
+        "scripts/whyexist/db.py:26",
+        "CHANGELOG.md:1499"
+      ],
+      "status": "gap",
+      "note": "实测违背：_is_integrity_error 未导入 → {\"error\":\"NameError: name '_is_integrity_error' is not defined\"}，退出码仍是 2，但契约文案与异常类型都丢了"
+    },
+    {
+      "id": "C20",
+      "statement": "SQLite/MySQL/PG 三份 DDL 的表集合与列名逐表一致（12 表）",
+      "evidence": [
+        "scripts/whyexist/db.py:19-150",
+        "scripts/whyexist/db.py:154-285",
+        "scripts/whyexist/db.py:288-289"
+      ],
+      "status": "gap",
+      "note": "静态解析比对当前一致；MariaDB 12.3.3 与 PG 16.15 实跑建表成功（各 12 表），MySQL 8 未验证；仍无测试守护列集一致性"
+    },
+    {
+      "id": "C21",
+      "statement": "表间不声明任何外键/CHECK；引用完整性由 doctor 事后检查（dangling-bite/orphan-edge/feature-node-missing/work-*-missing/token-on-inactive），--fix 只手删悬空引用与清 token",
+      "evidence": [
+        "scripts/whyexist/db.py:19-150",
+        "scripts/whyexist/commands_misc.py:360-400,562-589",
+        "references/design.md:72",
+        "tests/test_wxg.py:391-429"
+      ],
+      "status": "partial",
+      "note": "doctor 的检查与 --fix 有测试；「schema 不声明约束」这条本身没有被任何测试或契约条目写成承诺（只在 design.md 的信任边界一句里隐含）"
+    },
+    {
+      "id": "C22",
+      "statement": "mysql/postgres 后端 init 输出 backend 名与脱敏后的 db 标签，退出 0",
+      "evidence": [
+        "scripts/whyexist/commands_repo.py:46-51",
+        "tests/test_mysql_backend.py:86-89",
+        "tests/test_pg_backend.py:88-91"
+      ],
+      "status": "gap",
+      "note": "实测违背（MariaDB 12.3.3 与 PG 16.15 均复现）：db_url/re 未导入 → NameError、退出 2；而 init_db 已 commit，12 张表与 meta 都已建好。能抓它的两个测试在 CI 永远 skip"
+    },
+    {
+      "id": "C23",
+      "statement": "init_db 在返回前自行 commit；因此 init 报错时库可能已经建好/迁移完",
+      "evidence": [
+        "scripts/whyexist/db.py:613-615",
+        "scripts/whyexist/cli.py:75-77"
+      ],
+      "status": "gap",
+      "note": "无断言；这是 C22 那个「退出码 2 但库已初始化」的直接成因，也是重写时最容易丢的语义"
+    },
+    {
+      "id": "C24",
+      "statement": "迁移的 generation/身份回填是猜测值，升级后不标记来源（无法区分真实值与回填值）",
+      "evidence": [
+        "scripts/whyexist/db.py:531-538,554-559",
+        "CHANGELOG.md:1504-1506",
+        "references/design.md:151,169-170"
+      ],
+      "status": "partial",
+      "note": "CHANGELOG/design 明确写了「无法还原真实代」；但表里没有 generation_source 之类的标记列，doctor 也无法把回填行标出来"
+    }
+  ],
+  "state_io": [
+    {
+      "target": "<root>/graph.sqlite",
+      "mode": "both",
+      "where": "scripts/whyexist/db.py:459（连接）；scripts/whyexist/db.py:613（建表）"
+    },
+    {
+      "target": "<root>/ 目录",
+      "mode": "write",
+      "where": "scripts/whyexist/db.py:458（connect 内 mkdir -p）"
+    },
+    {
+      "target": "<root>/graph.sqlite-wal / -shm",
+      "mode": "write",
+      "where": "scripts/whyexist/db.py:464（journal_mode=WAL 的副产物）"
+    },
+    {
+      "target": "graph.sqlite:meta",
+      "mode": "both",
+      "where": "写 scripts/whyexist/db.py:596-600、scripts/whyexist/commands_misc.py:590-599；读 scripts/whyexist/db.py:594、scripts/whyexist/commands_misc.py:538"
+    },
+    {
+      "target": "graph.sqlite:repos",
+      "mode": "both",
+      "where": "写 scripts/whyexist/commands_repo.py:137-141；读 scripts/whyexist/graph.py:57,236"
+    },
+    {
+      "target": "graph.sqlite:nodes",
+      "mode": "both",
+      "where": "写 scripts/whyexist/graph.py:120-129、scripts/whyexist/commands_repo.py:214,323,485；读 scripts/whyexist/query.py:87"
+    },
+    {
+      "target": "graph.sqlite:edges",
+      "mode": "both",
+      "where": "写 scripts/whyexist/graph.py:169-186,208-212；读 scripts/whyexist/gates.py:139"
+    },
+    {
+      "target": "graph.sqlite:features",
+      "mode": "both",
+      "where": "写 scripts/whyexist/commands_feature.py:102-121,175-178,195-218,359；读 scripts/whyexist/workflow.py:26"
+    },
+    {
+      "target": "graph.sqlite:conditions",
+      "mode": "both",
+      "where": "写 scripts/whyexist/commands_feature.py:123-126,181-183,221-223,372-374、scripts/whyexist/workflow.py:65；读 scripts/whyexist/workflow.py:39,72"
+    },
+    {
+      "target": "graph.sqlite:work_items",
+      "mode": "both",
+      "where": "写 scripts/whyexist/work.py:29-43,54,57、scripts/whyexist/commands_feature.py:528-532,652-690；读 scripts/whyexist/commands_feature.py:515-520"
+    },
+    {
+      "target": "graph.sqlite:feature_nodes",
+      "mode": "both",
+      "where": "写 scripts/whyexist/graph.py:132、scripts/whyexist/commands_graph.py:31,122；读 scripts/whyexist/workflow.py:104"
+    },
+    {
+      "target": "graph.sqlite:evidence",
+      "mode": "both",
+      "where": "写 scripts/whyexist/commands_graph.py:169-176；读 scripts/whyexist/evidence.py:22"
+    },
+    {
+      "target": "graph.sqlite:bites",
+      "mode": "both",
+      "where": "写 scripts/whyexist/commands_graph.py:124-127；读 scripts/whyexist/gates.py:23,64"
+    },
+    {
+      "target": "graph.sqlite:judge_history",
+      "mode": "both",
+      "where": "写 scripts/whyexist/commands_feature.py:603-617、scripts/whyexist/db.py:585-592；读 scripts/whyexist/commands_feature.py:276"
+    },
+    {
+      "target": "graph.sqlite:changes",
+      "mode": "both",
+      "where": "写 scripts/whyexist/commands_feature.py:376-379；读 scripts/whyexist/commands_feature.py:303"
+    },
+    {
+      "target": "WXG_DB_URL",
+      "mode": "both",
+      "where": "读 scripts/whyexist/db.py:426；写 scripts/whyexist/cli.py:56、scripts/whyexist/engine.py:48（均不恢复）"
+    },
+    {
+      "target": "sqlite3 进程内连接（单写者、WAL）",
+      "mode": "both",
+      "where": "scripts/whyexist/db.py:459-464"
+    }
+  ],
+  "redundancy": [
+    {
+      "item": "三份手工维护的 DDL（SCHEMA_SQL / MYSQL_SCHEMA_SQL / PG_SCHEMA_SQL）",
+      "signal": "同一 12 表在 db.py:19-150、154-285、288-289 各写一遍；PG 版是 SQLite 版的字符串 replace；无任何测试比对列集",
+      "confidence": "high"
+    },
+    {
+      "item": "运行时 SQL 字符串翻译层（_mysql_translate / _pg_translate / _named_params）",
+      "signal": "db.py:305-320,400-422；把 SQLite 方言硬翻译成 MySQL/PG，新增 SQL 只要用错方言就静默坏；只有 8 个纯字符串单测，没有真库验证",
+      "confidence": "high"
+    },
+    {
+      "item": "_MySQLConnection 与 _PgConnection 几乎逐行复制",
+      "signal": "db.py:323-360 与 363-397：execute/executescript/commit/rollback/close 五个方法完全同构",
+      "confidence": "high"
+    },
+    {
+      "item": "两份完整性错误判定，且集合不一致",
+      "signal": "db.py:500-505（4 个 MySQL errno + sqlstate 23*）vs wxg_mysql.py:120-157（10 个 errno）。wxg_mysql.is_integrity_error 无人调用，db._is_integrity_error 的唯一调用点又缺 import",
+      "confidence": "high"
+    },
+    {
+      "item": "_NoopCursor 与两个后端 wrapper 里的 PRAGMA 分支不可达",
+      "signal": "db.py:292-302,334-342,371-379；全仓只有 connect（仅 sqlite）和 _table_columns（先按方言分流）会发 PRAGMA，mysql/pg 的 wrapper 根本走不到这两个分支",
+      "confidence": "high"
+    },
+    {
+      "item": "PRAGMA foreign_keys = ON 是空操作",
+      "signal": "db.py:461；schema 0 外键（PRAGMA foreign_key_list 全空），这条 PRAGMA 只对将来可能加的外键有意义，容易被读成「已有外键保护」",
+      "confidence": "high"
+    },
+    {
+      "item": "work_items.assignee 列只写不读",
+      "signal": "写入 commands_feature.py:529（存 role）、在 5 处被置 NULL；12 张表逐列扫描后，只有它没有任何读取点，actor 语义由 claimed_by 承担",
+      "confidence": "high"
+    },
+    {
+      "item": "meta 版本写入逻辑两份",
+      "signal": "db.py:596-600 与 commands_misc.py:590-599 是同一段 UPSERT 的拷贝；doctor --fix 另外把 fixed[\"meta\"]=1 写死（commands_misc.py:600），无论是否真的改了",
+      "confidence": "high"
+    },
+    {
+      "item": "迁移增列与建索引的顺序耦合",
+      "signal": "db.py:613 executescript 一次跑完整份 DDL（含 7 个 CREATE INDEX），db.py:614 才补列；任何「索引引用新列」都会在补列前失败。当前 idx_bites_feature(db.py:126) 正好引用迁移列 generation",
+      "confidence": "high"
+    },
+    {
+      "item": "级联删除有两套手写实现",
+      "signal": "retract（commands_graph.py:86-92）与 doctor --fix（commands_misc.py:562-570）各自 DELETE bites/edges/feature_nodes；schema 没有 ON DELETE CASCADE",
+      "confidence": "medium"
+    },
+    {
+      "item": "旧库迁移守卫 `_table_columns(conn, \"evidence\") != set()`",
+      "signal": "db.py:528；init_db 在 migrate 前已 executescript 建好 evidence 表，这个条件在唯一调用路径上恒真，是无效守卫",
+      "confidence": "high"
+    },
+    {
+      "item": "db_url 的两套读取路径",
+      "signal": "cli.py:55-56 与 engine.py:47-48 都写 os.environ；db.py:426 是唯一读取点，没有参数化入口",
+      "confidence": "medium"
+    }
+  ],
+  "rewrite_partition": [
+    {
+      "module": "scripts/whyexist/db.py（SCHEMA_SQL，L19-150）",
+      "verdict": "refactor_in_place",
+      "reason": "表/列形状是既成公共契约（外部 why-exist-uml 直接按列名读 nodes/edges/features/feature_nodes/work_items；references/contract.md 记录了 evidence/judge_history 的列语义），且 40 多个契约版本里 schema 只升到 9、一直只做加列/加表。可以原地补索引、补文档、补 CHECK 的新表；不能改名/删列",
+      "risk": "SQLite 加外键/CHECK 需要重建表并搬数据，等于一次 schema 手术；任何列改名会同时打断外部只读消费者与所有旧库迁移"
+    },
+    {
+      "module": "scripts/whyexist/db.py（MYSQL_SCHEMA_SQL / PG_SCHEMA_SQL，L154-289）",
+      "verdict": "refactor_in_place",
+      "reason": "表与列同样是硬契约，只能原地演进；坏的是三份手抄 DDL 只能人肉同步（PG 版还是 SQLite 版的字符串 replace）。方言适配层（L292-422 的 wrapper 与 SQL 翻译）不在本片，归 05 片（其判定：翻译层 rewrite、wrapper refactor_in_place）。本地 MariaDB 12.3.3 与 PG 16.15 实跑建表成功",
+      "risk": "改列名会同时打断 SQLite 迁移与两个后端的新建库；CREATE INDEX IF NOT EXISTS 与 LONGTEXT 默认值在 MySQL 8 上会拒建（未验证），动手前要先定支持面"
+    },
+    {
+      "module": "scripts/whyexist/db.py（migrate_schema 的结构迁移部分：补列/建表/顺序，L516-562、L613-614）",
+      "verdict": "rewrite",
+      "reason": "只加列的语义清楚，但执行顺序错：init_db 先跑完整 DDL（含引用新列的索引）再补列，0.4.x 旧库升级会永久卡死；也没有版本门控（靠列存在性推断）。改成有序步骤 + 明确的兼容检查，成本低",
+      "risk": "改的是所有旧库唯一的升级入口；必须保留 create-if-not-exists 的收敛性（重复 init 零写入）与已迁移库零改写"
+    },
+    {
+      "module": "scripts/whyexist/db.py（migrate_schema 的数据回填部分：L528-538、L551-583、L585-592）",
+      "verdict": "freeze",
+      "reason": "回填语义是猜测且不可复现：legacy 身份、generation 取 feature 当前代、claimed_at 取 created_at、judge_history 由最终 status 推导。没有测试能验证这些值对不对，表里也没有来源标记；在决定「旧数据可不可追溯」之前不许改",
+      "risk": "动它会静默改变历史解释（例如把更早代的咬合算到当前代、把 failed 历史推导成 passed）；冻结的代价是这些不确定性只活在 CHANGELOG 与注释里"
+    },
+    {
+      "module": "scripts/whyexist/db.py（connect / ensure_db / init_db，L441-465、468-483、605-616）",
+      "verdict": "refactor_in_place",
+      "reason": "契约简单且大部分有测试（缺库不建、WAL、init 幂等）。坏的是边界：ensure_db 只看 meta 表、连接异常在 CLI 兜底之外、init_db 自带 commit。局部改签名/加校验即可，不需要换实现",
+      "risk": "ensure_db 一旦变严（校验版本/列），所有旧库会从「静默 OperationalError」变成「直接拒绝」，需要同时给出手动迁移路径；init_db 的内嵌 commit 是「报错但已落库」的根源，改动会改变退出码语义"
+    },
+    {
+      "module": "scripts/whyexist/db.py（_is_integrity_error，L500-505）",
+      "verdict": "rewrite",
+      "reason": "6 行判定，概念清楚（跨后端识别唯一键/非空/外键冲突），但和 wxg_mysql 的第二个实现集合不一致、唯一调用点还缺 import。合并成一份 + 三个后端各两条单测即可",
+      "risk": "合并后若采用更宽的 errno 集合（1048/1451/1452/3819），repo-add 可能把非唯一键错误也翻译成「仓登记冲突」，错误文案会变"
+    },
+    {
+      "module": "scripts/whyexist/commands_repo.py（cmd_init，L44-59）",
+      "verdict": "refactor_in_place",
+      "reason": "输出形状简单、有测试（schema_version），坏点只有两处未导入的全局名（db_url、re）。原地修 import 与脱敏正则即可",
+      "risk": "修好后 mysql/pg init 才开始真正返回 backend/db 字段；这两个后端从「没跑通过」变成「可用」，会暴露迁移里未验证的 SQL（尤其 F7）"
+    },
+    {
+      "module": "scripts/whyexist/cli.py（连接时机与 commit 边界，L62-93）",
+      "verdict": "refactor_in_place",
+      "reason": "与 01 片对 cli.py 的判定一致：契约密、大部分有断言。本片关心的两点是 connect 在 try 之外、以及 commit 只有一次，两者都只需移动/补充分支，不涉及重写",
+      "risk": "把 connect 挪进 try 会改变现存的 traceback+1 行为（01 片 C11 记录的就是它），下游若靠退出码区分「环境错」与「业务拒绝」需要一起改"
+    }
+  ],
+  "implicit_requirements": [
+    "init_db 在返回前自己 commit（db.py:615）：所以命令报错时库可能已经初始化完成——C22 的 mysql/pg init 就是这样「失败但已落库」",
+    "migrate_schema 自己不 commit（db.py:602）：直接把它当公共 API 调用会留下未提交事务；它只被 init_db 调用",
+    "judge_history 回填不是一次性：每次 init 都执行（db.py:585-592），靠 NOT EXISTS 去重；手工删掉的历史行会被 init 复活成 jh:<work_item_id>",
+    "migrated 的键名与计数是 init 输出的一部分：work_items.<col>、evidence.generation、features.<col>、nodes.stale、bites.<col>、claimed_by.legacy（值=行数）、judged_by.legacy、meta（首次 init 为 2）",
+    "claimed_by='legacy' 只标 claimed/submitted/passed/failed 四种状态，audit 工单永不参与（db.py:564-570）",
+    "judged_at 在补列时用 created_at 兜底（db.py:576-578），因此旧库的裁决时间不是真实裁决时间",
+    "bites.generation 按 feature 的当前代回填，更早代的咬合会被算到当前代（db.py:554-558 + CHANGELOG.md:1450-1452）",
+    "evidence.generation 的两级回退：先关联工单、再 feature 当前代、都无则留 NULL（db.py:532-537），doctor 把 NULL 报成 evidence-missing-generation",
+    "迁移期间不改 conditions：旧 feature 不会自动补 8 条条件行，doctor 报 missing-generation-conditions/condition-rows（commands_misc.py:502-516）",
+    "sqlite 连接开 WAL + busy_timeout=5000 + timeout=5s；同一时刻仍只有单写者（db.py:459-464）",
+    "MySQL 连接在构造时把会话隔离级别改成 READ COMMITTED（db.py:328-330），SQLite/PG 没有对应设置",
+    "meta 版本号没有上界检查：更高版本的库会被 init 改写成当前版本；doctor 只看「值是否等于当前」",
+    "`PRAGMA foreign_keys = ON` 在 0 外键的 schema 上是空操作，但代码/注释暗示有外键保护",
+    "bites.verdict / work_items.status 等枚举列没有 CHECK，doctor 只校验 judge_history.verdict（commands_misc.py:456），不校验 bites.verdict",
+    "--db-url 与 Engine(db_url=) 都通过改 os.environ 生效且不恢复，同进程内无法并存两个后端的状态库（cli.py:55-56、engine.py:47-48）",
+    "doctor --fix 的 fixed.meta 恒为 1（commands_misc.py:600），不是真实改动计数；fixed 其余键是 rowcount",
+    "meta 表是「已初始化」的唯一凭据；但没有任何地方核对它是不是这个工具的表（别的 SQLite 库恰好有 meta 也会被放行）"
+  ],
+  "findings": [
+    "F1 旧库升级断链：对 schema 3（0.4.x）的库执行 init，db.py:613 先跑 DB 全文 DDL，idx_bites_feature（db.py:126，引用迁移才补的 generation 列）在建表阶段就失败；db.py:614 的 ALTER 永远轮不到。实测 {\"error\":\"OperationalError: no such column: generation\"}，重试同样失败，库既没升上去也没坏掉，只卡死",
+    "F2 非 sqlite 后端 init 必失败且退出码说谎：commands_repo.py:48 用 db_url、L49 用 re，两个名字都没导入 → NameError；而 init_db 已在 db.py:615 commit，所以 mysql/pg 库其实建好了，命令却返回 2。MariaDB 12.3.3 与 PostgreSQL 16.15 实测均如此：exit 2，12 张表与 meta 已提交",
+    "F3 repo-add 路径冲突的错误契约已坏：commands_repo.py:143 的 _is_integrity_error 未导入，实测同 path 不同 id 得到 {\"error\":\"NameError: ...\"} 而不是「仓登记冲突」；wxg.py:38 的 re-export 不解决模块内全局名",
+    "F4 ensure_db 名不副实：只查 meta 表存在（db.py:468-483），不查版本也不查列。实测一个只有 meta+work_items 的库跑 doctor → OperationalError: no such table: nodes（退出 2，无「先跑 init」引导）",
+    "F5 版本号单向默写：schema_version=99 的库 init 后被无声改成 9（db.py:593-601），doctor 随后 ok；没有“库比代码新”的拒绝或警告",
+    "F6 约束为零：12 张表 0 外键 0 CHECK，唯一约束只有 repos.path UNIQUE 与 work_items.claim_token 部分唯一索引；引用完整性全靠 doctor 事后修（commands_misc.py:360-400,562-589）",
+    "F7 MySQL 回填用 || 拼字符串，实测丢历史：db.py:587 的 `'jh:' || w.id` 在 MariaDB 12.3.3 上实测求值为数字 0（逻辑或）；两条已判工单的回填只留下 1 行 judge_history（id='0'），其余被 INSERT IGNORE 吞掉。同一 SQL 在 PG 16.15 上正常（两条 jh:<work_item_id>）。wxg_mysql.py 未设置 PIPES_AS_CONCAT",
+    "F8 MySQL DDL 实际是 MariaDB 方言：MYSQL_SCHEMA_SQL 用 CREATE INDEX IF NOT EXISTS（MySQL 8 不支持）与 LONGTEXT ... DEFAULT '{}'（MariaDB 10.2+/MySQL 8.0.13+ 需表达式默认）；SKILL.md:60 却直接承诺 mysql://。MariaDB 12.3.3 与 PG 16.15 上三份 DDL 均实跑成功（各建出 12 张表）；MySQL 8 无凭据，仍未验证",
+    "F9 后端测试在 CI 永远不跑：tests/test_mysql_backend.py 与 tests/test_pg_backend.py 各 3 例，setUpClass 前就 skipUnless(env)；ci.yml:30 只跑 unittest discover，无 service container。本地其实有 MariaDB 12.3.3（127.0.0.1:3307）与 PG 16.15（5433）可用，F2/F7 就是本地真库复现的，但 CI 永远看不到",
+    "F10 迁移测试夹具不代表旧库：test_wxg.py:636-643 只建 work_items，test_wxg.py:962-984 只建 meta/features/work_items/evidence；两次都缺 bites/nodes/changes，于是 F1 这种“老表 + 新索引”问题永远测不到",
+    "F11 死代码与空操作：_NoopCursor（db.py:292-302）、两处 PRAGMA 分支（334-342、371-379）、PRAGMA foreign_keys=ON（461）、wxg_mysql.is_integrity_error（153）、write-only 列 work_items.assignee（db.py:83）",
+    "F12 迁移里唯一有数据损毁性的写是 meta：其余回填只填 NULL、不改非空值；但 meta 被无条件覆盖，且 judge_history 回填会在历史行被人为删除后“复活”出推导值",
+    "F13 schema 版本号只写不读：SCHEMA_VERSION 在 db.py:509-602 里不参与任何分支，migrate 靠“列是否存在”判断步骤，所以所谓 v9 只是标签，不是迁移状态机"
+  ],
+  "open_questions": [
+    "要不要给 schema 补外键/CHECK？SQLite 只能重建表，而 12 表里 9 张带跨表引用列、还有外部只读消费者（why-exist-uml）。是继续「无约束 + doctor」，还是做一次带版本号的数据迁移手术？",
+    "旧库（0.4.x 及更早）还要不要救？要救就得修 F1 并补一个真实旧 schema 的迁移夹具；不救则 init 应检测到缺列后给可读错误和重建指引，而不是 OperationalError",
+    "schema_version 的权威方向：只允许升级吗？遇到“库版本 > 代码版本”应该拒绝、警告，还是像现在这样静默改写？这直接决定回滚策略",
+    "MySQL/PostgreSQL 是产品承诺还是实验？本地容器可跑（MariaDB 12.3.3 / PG 16.15）、CI 永不跑；DDL 是 MariaDB 方言、回填 SQL 有 || 拼接（MariaDB 上实测丢历史）。要么上 service container 解冻，要么从 SKILL.md/契约里撤掉这两个后端",
+    "migrated 字典的键名与计数算不算公开契约？如果算，需要一条测试把每个键钉住；如果不算，现在 init 的输出形状就是偶然实现",
+    "迁移的猜测值（evidence.generation / bites.generation / claimed_at）要不要在表里留来源标记（如 generation_source / claimed_at_source）？现在只能靠 CHANGELOG 记住哪些行不可信",
+    "doctor 与 schema 的职责边界：既然没有 DB 约束，doctor 是否应该补齐枚举校验（bites.verdict、work_items.status）？现在它只校 judge_history.verdict",
+    "work_items.assignee 还有存在价值吗？它存的是 role，与 work_items.role 完全重复且无人读；删除需要 SQLite 3.35+ 或重建表，但外部消费者不读它，风险低"
+  ]
+}

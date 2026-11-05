@@ -1,0 +1,604 @@
+{
+  "slice": "14-work-flow",
+  "modules": [
+    {
+      "path": "scripts/whyexist/work.py",
+      "loc": 111,
+      "role": "工单的库级操作与访问门：work_id 生成、insert/get、claim_token 校验、角色白名单、target_ids 边界判定、evidence 追加；不含领取与提交本身"
+    },
+    {
+      "path": "scripts/whyexist/workflow.py",
+      "loc": 126,
+      "role": "条件链的读写层：actor 取值、feature 取用、8 条件读取与派生（current_phase / recompute_ready / refresh_blocked）、工作作用域 scope_ids；不是状态机驱动者"
+    },
+    {
+      "path": "scripts/whyexist/briefing.py",
+      "loc": 118,
+      "role": "把单张工单裁剪成盲化任务书：边界展开、界外上游输入、按 kind 的产出契约、固定禁止事项与完成定义；纯函数不碰库"
+    },
+    {
+      "path": "scripts/whyexist/blind.py",
+      "loc": 108,
+      "role": "盲执行产出的结构校验：边界越界、依赖未声明、kind 未登记三类判定 + locality 权重分；纯函数，kind 白名单由调用方传入"
+    },
+    {
+      "path": "scripts/whyexist/reducer.py",
+      "loc": 102,
+      "role": "补丁归约：单补丁规范化去重、多补丁按节点内容指纹检测冲突、边端点可达性检查；纯函数，写库由 apply 命令负责"
+    }
+  ],
+  "public_surface": [
+    {
+      "entry": "wxg brief",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_compiler.py:107",
+      "input": "--work <工单 id>；--out <路径>（可选）",
+      "output": "stdout 缩进 JSON：brief_version/blind/work_item/feature/role/kind/goal/acceptance/constraints/write_boundary/write_patterns/inputs/produces/forbidden/definition_of_done；带 --out 时只打印 {\"written\",\"work_item\"}",
+      "side_effects": "只读库；--out 时无条件覆盖写 UTF-8 文件（json indent=2 + 结尾换行，commands_compiler.py:110-115），父目录不存在抛 OSError",
+      "exit_codes": "0 成功；2 工单不存在（Reject）或写文件 OSError"
+    },
+    {
+      "entry": "wxg blind-check",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_compiler.py:119",
+      "input": "--work <工单 id>；--result <产出 JSON 文件>（必须是 JSON 对象，含 nodes/edges 数组）",
+      "output": "stdout 缩进 JSON：work_item/verdict(PASS|FAIL)/locality/boundary{ok,out_of_bounds}/contract{ok,unexpected_kinds,unknown_kinds,unknown_edge_kinds,malformed}/dependencies{ok,undeclared}",
+      "side_effects": "只读；读 --result 文件，不写库不写文件",
+      "exit_codes": "0 成功（即使 verdict=FAIL 也是 0）；2 工单不存在 / 产出文件不存在 / 非 JSON / 非对象"
+    },
+    {
+      "entry": "wxg patch",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_compiler.py:234",
+      "input": "--work <工单 id>（仅作补丁标签）；--result <产出 JSON>；--out <补丁路径>（必填）",
+      "output": "stdout {written,work_item,nodes,edges}；--out 文件内容是 normalize 后的 {work_item,nodes[],edges[]}",
+      "side_effects": "不读写库；无条件覆盖写 --out 文件（indent=2 + 换行）；静默丢弃缺 id 的节点与缺端点的边",
+      "exit_codes": "0 成功；2 产出文件不存在 / 无法解析 / 非对象 / 写文件失败"
+    },
+    {
+      "entry": "wxg apply",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_compiler.py:259",
+      "input": "--patches <a.json,b.json>（逗号分隔，至少一个）；--dry-run",
+      "output": "stdout {ok,conflicts[],unknown_endpoints[],nodes[],edges[],applied,written_nodes,written_edges}",
+      "side_effects": "ok 且非 --dry-run 时写 nodes/edges（走 graph.upsert_node/upsert_edge，commands_compiler.py:284-287）；整个命令在 CLI 末尾统一 commit（cli.py:84），中途异常不提交；不写 evidence_ids、不改工单状态、不校验 claim_token/角色/target_ids",
+      "exit_codes": "0 ok 为真；1 ok 为假（冲突或未知端点）；2 Reject / 补丁文件缺失或不可解析"
+    },
+    {
+      "entry": "wxg work-open",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_feature.py:496",
+      "input": "--feature；--kind（C.WORK_KINDS，audit 被拒）；--target-ids <逗号/JSON/@文件>",
+      "output": "{\"work\":{\"action\":\"insert|merge|update\",\"id\":...}}",
+      "side_effects": "写 work_items：不存在则 INSERT status=ready；存在则 merge 追加 target_ids（passed/submitted/failed/superseded 时 Reject）",
+      "exit_codes": "0 成功；2 kind 非法 / feature 不存在 / 工单已终结"
+    },
+    {
+      "entry": "wxg work-seed",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_feature.py:492",
+      "input": "--feature",
+      "output": "{\"created\":[{id,kind,status,depends_on}],\"existed\":[{id,kind,status}],\"ready\":[{id,kind,status}]}",
+      "side_effects": "按 C.CONDITION_TO_KIND 对每个未为真的条件补一张工单；target_ids 取 scope_ids；depends_on 链到上一张已 passed 的工单；前置未 passed 时先插 ready 再 UPDATE 成 blocked（commands_feature.py:456-489）",
+      "exit_codes": "0 成功；2 feature 不存在 / 条件不齐"
+    },
+    {
+      "entry": "wxg work-claim",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_feature.py:507",
+      "input": "--role（audit 被拒；implement-test 需 --allow-product-code）；--actor 或 WXG_ACTOR（必填）；--brief",
+      "output": "{work_item_id,kind,role,actor,claim_token(32 位 hex),target_ids[],slice}；--brief 时 slice 只含 summary 计数",
+      "side_effects": "原子领取：UPDATE ... WHERE id=? AND status='ready'，rowcount=1 才算领到（commands_feature.py:528-535）；写 status=claimed/assignee/claimed_by/claim_token/claimed_at；claim_token 由 jsonio.new_token（uuid4.hex）生成，DB 上有 UNIQUE 索引（db.py:93）",
+      "exit_codes": "0 成功；2 未知角色 / 缺 actor / 无 ready 工单 / 需 --allow-product-code"
+    },
+    {
+      "entry": "wxg work-finish",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_feature.py:564",
+      "input": "--token <claim_token>",
+      "output": "{work_item_id,status:\"submitted\",audit_id,audit_status:\"ready\"}",
+      "side_effects": "校验 evidence_ids ⊆ target_ids；工单置 submitted 并清 claim_token；创建或重置 audit 单 work:<f>:g<n>:audit:<wid>（target_ids/depends_on 都指向被审单），状态 ready",
+      "exit_codes": "0 成功；2 token 无效 / 工单不是 claimed / evidence 越界"
+    },
+    {
+      "entry": "wxg work-judge",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_feature.py:620",
+      "input": "--id <工单或 audit 单>；--verdict passed|failed；--fail-reason（failed 必填）；--role 默认 audit；--actor 必填且不得等于 claimed_by",
+      "output": "passed: {verdict,condition,work_item_id,actor,legacy_claim,ready,conditions{8 项}}；failed: {verdict,condition,work_item_id,actor,legacy_claim,fail_reason,conditions_changed}",
+      "side_effects": "写 work_items（passed/failed、judged_by/judged_at、fail_reason、failed 时回 ready）；写 judge_history；passed 时 set_condition 置真该条件并 recompute_ready 派生 Ready；failed 时从该条件起后缀条件全部置假；两种都 refresh_blocked",
+      "exit_codes": "0 成功；2 角色非法 / 被审单非 submitted / 审计人不独立 / BehaviorPassed 缺 evidence / coverage 未达标 / failed 缺理由"
+    },
+    {
+      "entry": "wxg work-list",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_feature.py:708",
+      "input": "--feature",
+      "output": "{feature,generation,work_items:[{id,kind,role,status,target_ids,depends_on,claim_token}]}；target_ids/depends_on 是原始 JSON 字符串，不是数组",
+      "side_effects": "只读",
+      "exit_codes": "0 成功；2 feature 不存在"
+    },
+    {
+      "entry": "whyexist.briefing.build_brief / resolve_boundary / PRODUCES / DEPENDENCY_EDGE_KINDS",
+      "kind": "function",
+      "where": "scripts/whyexist/briefing.py:62,81,31,28",
+      "input": "build_brief 关键字参数 feature/work/nodes/edges（都是普通 dict，不连库）；resolve_boundary(target_ids, node_ids)",
+      "output": "15 键任务书 dict；resolve_boundary 返回排序去重的节点 id 列表",
+      "side_effects": "纯函数，无 IO",
+      "exit_codes": "无；不抛 Reject"
+    },
+    {
+      "entry": "whyexist.blind.check_output",
+      "kind": "function",
+      "where": "scripts/whyexist/blind.py:32",
+      "input": "brief dict、output dict、known_node_kinds、known_edge_kinds（后两个省略即跳过 kind 校验）",
+      "output": "{work_item,verdict,locality,boundary,contract,dependencies}",
+      "side_effects": "纯函数，无 IO",
+      "exit_codes": "无"
+    },
+    {
+      "entry": "whyexist.reducer.normalize_patch / merge_patches",
+      "kind": "function",
+      "where": "scripts/whyexist/reducer.py:28,55",
+      "input": "patch dict（可带 work_item/nodes/edges）；patches 列表 + existing_ids 集合",
+      "output": "规范化补丁 {work_item,nodes[],edges[]}；归约结果 {ok,conflicts,unknown_endpoints,nodes,edges}",
+      "side_effects": "纯函数，无 IO",
+      "exit_codes": "无"
+    },
+    {
+      "entry": "whyexist.work.*（work_id/get_work/get_work_by_token/insert_work/require_token/require_role/target_match/require_targets/append_evidence）",
+      "kind": "function",
+      "where": "scripts/whyexist/work.py:11",
+      "input": "conn + 工单 id / token / 节点 id 列表 / feature+generation+kind",
+      "output": "dict 或 None；insert_work 返回 {action,id}；校验失败抛 Reject",
+      "side_effects": "insert_work 与 append_evidence 写 work_items；其余只读",
+      "exit_codes": "无（抛 Reject，由 CLI 转成 2）"
+    },
+    {
+      "entry": "whyexist.workflow.*（actor_value/get_feature/ensure_feature/condition_rows/condition_flags/current_phase/set_condition/recompute_ready/refresh_blocked/scope_ids）",
+      "kind": "function",
+      "where": "scripts/whyexist/workflow.py:12",
+      "input": "conn + feature dict 或 (feature_id,generation)；actor_value 收 argparse Namespace",
+      "output": "str / dict / str / int|bool / list[str]；缺 feature 或条件不齐抛 Reject",
+      "side_effects": "读 features/conditions/nodes/feature_nodes/work_items；set_condition 与 recompute_ready 写 conditions；refresh_blocked 写 work_items；actor_value 读环境变量 WXG_ACTOR",
+      "exit_codes": "无（抛 Reject）"
+    },
+    {
+      "entry": "whyexist.Engine.brief / Engine.blind_check",
+      "kind": "function",
+      "where": "scripts/whyexist/engine.py:115",
+      "input": "work_id；blind_check 另收 output dict",
+      "output": "同 wxg brief / wxg blind-check 的 dict（brief 走 commands_compiler._brief_payload）",
+      "side_effects": "只读库；Engine(db_url=...) 首次 connect 会把 URL 写进进程级 os.environ['WXG_DB_URL']（engine.py:47-48）",
+      "exit_codes": "无；Reject 上抛"
+    },
+    {
+      "entry": "whyexist.build_brief / whyexist.check_output（包级导出）",
+      "kind": "function",
+      "where": "scripts/whyexist/__init__.py:20",
+      "input": "同模块函数",
+      "output": "同上（__init__.py:34-47 的 __all__ 里）",
+      "side_effects": "无",
+      "exit_codes": "无"
+    },
+    {
+      "entry": "表 work_items",
+      "kind": "table",
+      "where": "scripts/whyexist/db.py:74",
+      "input": "id/feature_id/generation/kind/role/target_ids/status/depends_on/assignee/claimed_by/claim_token/claimed_at/evidence_ids/fail_reason/judged_by/judged_at/created_at",
+      "output": "工单当前状态；claim_token 上有部分唯一索引（db.py:93）",
+      "side_effects": "本切片写 status/assignee/claimed_by/claim_token/claimed_at/fail_reason/judged_by/judged_at/target_ids/depends_on/evidence_ids",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "表 conditions",
+      "kind": "table",
+      "where": "scripts/whyexist/db.py:66",
+      "input": "PRIMARY KEY(feature_id, generation, name)；status 0/1；reason 文本",
+      "output": "每代固定 8 行（C.CONDITIONS）",
+      "side_effects": "本切片只 UPDATE status/reason（workflow.py:64-67,77）；INSERT 在 commands_feature.py:122-126",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "环境变量 WXG_ACTOR",
+      "kind": "file",
+      "where": "scripts/whyexist/workflow.py:14",
+      "input": "--actor 缺省时的回退来源",
+      "output": "actor 字符串（strip 后 1-80 非空白字符）",
+      "side_effects": "只读",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "<root>/graph.sqlite 与 --out/--result 文件",
+      "kind": "file",
+      "where": "scripts/whyexist/commands_compiler.py:111,123,247,267",
+      "input": "--out 路径（brief/patch）、--result 路径（blind-check/patch/apply）",
+      "output": "brief/patch 写 UTF-8 JSON（indent=2 + 换行）并覆盖同名文件；--result 只读",
+      "side_effects": "写 --out 文件；不创建目录、不校验已存在",
+      "exit_codes": "写失败按通用异常 → 2"
+    }
+  ],
+  "contracts": [
+    {
+      "id": "C1",
+      "statement": "工单 id 固定为 work:{feature_id}:g{generation}:{kind}；同一 (feature, generation, kind) 只可能有一张工单。",
+      "evidence": ["scripts/whyexist/work.py:11-12", "tests/test_package_units.py:85-89"],
+      "status": "covered",
+      "note": "audit 单 id 是 work:{f}:g{n}:audit:{wid}（commands_feature.py:572），这个格式没有直接断言。"
+    },
+    {
+      "id": "C2",
+      "statement": "insert_work 新建时写 status=ready、role=kind、target_ids/depends_on 为 JSON 文本、created_at 为 UTC，返回 {\"action\":\"insert\",\"id\":...}。",
+      "evidence": ["scripts/whyexist/work.py:28-44", "tests/test_package_units.py:258-263"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C3",
+      "statement": "insert_work(merge=True) 对已存在工单只做 target_ids 并集（保序去重），status 为 ready/claimed/blocked 时允许，其它状态抛 Reject；返回 {\"action\":\"merge\"}。",
+      "evidence": ["scripts/whyexist/work.py:45-55", "tests/test_package_units.py:265-280"],
+      "status": "partial",
+      "note": "只测了 passed 被拒；submitted/failed/superseded 三个拒绝分支与 claimed/blocked 两个放行分支无断言（探针已确认行为）。"
+    },
+    {
+      "id": "C4",
+      "statement": "insert_work(merge=False) 对已存在工单整体替换 target_ids 与 depends_on（传 None 落库为 []），不改 status；返回 {\"action\":\"update\"}。",
+      "evidence": ["scripts/whyexist/work.py:56-60", "tests/test_package_units.py:282-287"],
+      "status": "partial",
+      "note": "测试只断言 target_ids 被替换；depends_on 被重置与 status 保持不变是探针结论（depends_on 传 None 后变 \"[]\"）。生产调用点没有走这条分支。"
+    },
+    {
+      "id": "C5",
+      "statement": "require_token 分三档拒绝（空 token、未知 token、工单非 claimed），成功时返回该工单 dict；token 在库内唯一。",
+      "evidence": ["scripts/whyexist/work.py:63-71", "scripts/whyexist/db.py:93", "tests/test_package_units.py:289-310", "tests/test_wxg.py:444-460"],
+      "status": "covered",
+      "note": "拒绝文案被 test_wxg.py:1371-1374 以子串方式依赖（\"claim_token\"）。"
+    },
+    {
+      "id": "C6",
+      "statement": "require_role 以 C.ROLES 为唯一白名单判定角色能否执行某命令；role 不在表里时允许集为空，一切命令被拒。",
+      "evidence": ["scripts/whyexist/work.py:74-77", "scripts/wxg_contract.py:246-259", "tests/test_package_units.py:108-115"],
+      "status": "covered",
+      "note": "未知 role 的空表分支只在函数层间接覆盖，CLI 层由 argparse choices 先挡掉。"
+    },
+    {
+      "id": "C7",
+      "statement": "target_match 只有两种匹配：完全相等，或 pattern 以 * 结尾时的前缀匹配；非字符串 node_id 返回 False 而不抛错。",
+      "evidence": ["scripts/whyexist/work.py:80-85", "tests/test_package_units.py:91-97"],
+      "status": "covered",
+      "note": "单独的 \"*\" 等于全匹配（探针）。"
+    },
+    {
+      "id": "C8",
+      "statement": "require_targets 用精确集合 + 通配前缀判定越界，越界时抛 Reject 且只列前 5 个 id；target_ids 为空时任何写入都被拒。",
+      "evidence": ["scripts/whyexist/work.py:88-100", "tests/test_package_units.py:99-106"],
+      "status": "partial",
+      "note": "空边界拒绝、非字符串 id 会抛 AttributeError/TypeError（探针）都没测；前者是安全语义，后者是错误处理缺陷。"
+    },
+    {
+      "id": "C9",
+      "statement": "append_evidence 把节点 id 去重追加进 work_items.evidence_ids，并同步改写调用方传入的 item dict。",
+      "evidence": ["scripts/whyexist/work.py:103-111", "tests/test_package_units.py:312-318"],
+      "status": "covered",
+      "note": "就地改 dict 这一副作用没有被断言，只有库内结果被断言。"
+    },
+    {
+      "id": "C10",
+      "statement": "actor_value 依次取 --actor、WXG_ACTOR，strip 后要求长度 1-80、无空白字符，否则 Reject；required=False 时缺省返回空串。",
+      "evidence": ["scripts/whyexist/workflow.py:12-20", "tests/test_wxg.py:531-533"],
+      "status": "partial",
+      "note": "只有「CLI 缺 actor → 退出码 2」一条测试；env 回退、strip、80/81 边界、含空格拒绝均无断言（探针确认）。"
+    },
+    {
+      "id": "C11",
+      "statement": "condition_flags 要求该代条件行数恰好等于 C.CONDITIONS 长度，否则 Reject；返回 {条件名: 0|1}。",
+      "evidence": ["scripts/whyexist/workflow.py:37-49", "tests/test_package_units.py:372-375"],
+      "status": "covered",
+      "note": "行数「多一行」的情况没测：那会让 recompute_ready 永远出不了 Ready（探针）。"
+    },
+    {
+      "id": "C12",
+      "statement": "current_phase 按 C.CONDITIONS 顺序返回第一个 status != 1 的条件名（跳过 Ready），全为真时返回 \"Ready\"。",
+      "evidence": ["scripts/whyexist/workflow.py:52-60", "tests/test_package_units.py:377-385", "tests/test_wxg.py:1095-1100"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C13",
+      "statement": "set_condition 只做 UPDATE；目标行不存在时静默无操作，不报错、不插入。",
+      "evidence": ["scripts/whyexist/workflow.py:63-67"],
+      "status": "gap",
+      "note": "无任何直接测试；探针确认 rowcount=0 且不抛错。条件行缺失只能靠 doctor 事后发现。"
+    },
+    {
+      "id": "C14",
+      "statement": "recompute_ready 在条件行齐全且除 Ready 外全为 1 时把 Ready 置 1（reason=\"条件齐\"），否则置 0；返回 ready 值。",
+      "evidence": ["scripts/whyexist/workflow.py:70-78", "tests/test_package_units.py:387-398"],
+      "status": "partial",
+      "note": "返回值类型不一致：未就绪返回 int 0，就绪返回 bool True，于是 work-judge 的 JSON 里 ready 会出现 true 或 0（探针）；测试用 assertEqual(1, ...) 掩盖了这点。"
+    },
+    {
+      "id": "C15",
+      "statement": "refresh_blocked 只处理 status='blocked' 的工单，当其 depends_on 全部为 passed 时改成 ready；其它状态一律不动。",
+      "evidence": ["scripts/whyexist/workflow.py:81-91", "tests/test_package_units.py:400-416"],
+      "status": "covered",
+      "note": "依赖工单被 superseded/failed 的情形无测试，此时会永久 blocked。"
+    },
+    {
+      "id": "C16",
+      "statement": "scope_ids 返回三个来源的并集：feature_nodes、requirement:<feature>: 前缀节点、当前代工单 target_ids（通配展开），并过滤掉库里不存在的 id。",
+      "evidence": ["scripts/whyexist/workflow.py:94-124", "tests/test_package_units.py:418-439"],
+      "status": "partial",
+      "note": "三源合并有测，但通配展开顺序依赖 PYTHONHASHSEED（探针 4 个种子 4 种顺序），没有顺序断言；空 feature（get_feature 为 None）分支无测试。"
+    },
+    {
+      "id": "C17",
+      "statement": "brief 输出固定 15 个键，blind=true、brief_version=1、write_boundary 为排序去重的已存在节点、write_patterns 保留原始 target_ids、produces 由工单 kind 经 PRODUCES 映射（未知 kind 为空数组）。",
+      "evidence": ["scripts/whyexist/briefing.py:102-118", "tests/test_briefing.py:72-168", "tests/test_plan_cli.py:230-253"],
+      "status": "covered",
+      "note": "字段顺序与「两次生成字节一致」只在 docs 承诺（briefing.py:15），测试用 sort_keys=True 比对，实际上没锁顺序。"
+    },
+    {
+      "id": "C18",
+      "statement": "brief 的 inputs 只包含「边界内节点在 depends/calls/reads/writes 边上的边界外终点」，不向上传递，也不含非依赖边。",
+      "evidence": ["scripts/whyexist/briefing.py:28,95-100", "tests/test_briefing.py:84-120"],
+      "status": "covered",
+      "note": "DEPENDENCY_EDGE_KINDS 被 impact.py:19 复用，两处共享同一个元组对象（探针确认）。"
+    },
+    {
+      "id": "C19",
+      "statement": "brief 只接收单张工单的数据（不接受工单列表），未知工单抛 Reject 退出码 2；输出里不含其它 feature 的 id。",
+      "evidence": ["scripts/whyexist/commands_compiler.py:76-104", "tests/test_plan_cli.py:255-258", "tests/test_briefing.py:122-139"],
+      "status": "partial",
+      "note": "「盲」只被一条字符串不含 \"feat-y\" 的弱断言覆盖；结构上真正的保证是函数签名，无测试能证明。"
+    },
+    {
+      "id": "C20",
+      "statement": "brief --out 把任务书写成 UTF-8 JSON（indent=2、结尾换行），无条件覆盖同名文件，并只回 {\"written\",\"work_item\"}。",
+      "evidence": ["scripts/whyexist/commands_compiler.py:110-115"],
+      "status": "gap",
+      "note": "全套测试没有一条用 --out；文件内容、覆盖行为、父目录缺失的失败路径都无断言。"
+    },
+    {
+      "id": "C21",
+      "statement": "blind-check 输出固定结构：verdict/locality 为标量，boundary{ok,out_of_bounds}、contract{ok,unexpected_kinds,unknown_kinds,unknown_edge_kinds,malformed}、dependencies{ok,undeclared}，并回带 brief.work_item。",
+      "evidence": ["scripts/whyexist/blind.py:95-108", "tests/test_blind.py:35-131", "tests/test_plan_cli.py:266-334"],
+      "status": "covered",
+      "note": "malformed 里 {\"node\":...} 与 {\"edge\":...} 两种形状只在单元测试出现，CLI 层未断言。"
+    },
+    {
+      "id": "C22",
+      "statement": "verdict 是 boundary_ok ∧ contract_ok ∧ dependencies_ok 的逻辑与；FAIL 不改变退出码（blind-check 永远 0）。",
+      "evidence": ["scripts/whyexist/blind.py:81-94", "scripts/whyexist/cli.py:94-113", "tests/test_plan_cli.py:317-321"],
+      "status": "covered",
+      "note": "FAIL 仍 0 是被 test_plan_cli 的默认 expect=0 隐式锁住的，没有显式断言。"
+    },
+    {
+      "id": "C23",
+      "statement": "produces 只约束「不在 write_boundary 里」的新节点；produces 为空（implement-test/observe/audit）时不做产出 kind 校验。",
+      "evidence": ["scripts/whyexist/blind.py:45,63-64", "tests/test_blind.py:88-97"],
+      "status": "partial",
+      "note": "只测了 unexpected_kinds 的拒绝与「边界内已有节点不复检」；空 produces 放行只靠探针。"
+    },
+    {
+      "id": "C24",
+      "statement": "check_output 的 known_node_kinds/known_edge_kinds 省略时，kind 合法性检查整体跳过（未知 kind 也能 PASS）。",
+      "evidence": ["scripts/whyexist/blind.py:40-41,65-66,78-79"],
+      "status": "gap",
+      "note": "CLI 与 Engine 都显式传入，库调用方不传就静默弱化；无测试（探针：省略 → PASS，传入 → FAIL）。"
+    },
+    {
+      "id": "C25",
+      "statement": "brief.inputs 里的节点只能作为边端点使用；若产出把它们当节点写出，判为越界。",
+      "evidence": ["scripts/whyexist/blind.py:43-46,61-62"],
+      "status": "gap",
+      "note": "无测试；探针确认 out_of_bounds 会包含输入节点。文档只说「输入契约」，没写这条限制。"
+    },
+    {
+      "id": "C26",
+      "statement": "locality 从 1.0 起扣：越界 0.4（每多一项再 0.1）、未声明的边端点 0.3（每多一项再 0.1）、契约不符 0.3，clamp 到 [0,1] 并保留两位小数；不参与 verdict。",
+      "evidence": ["scripts/whyexist/blind.py:85-92", "tests/test_blind.py:116-131", "references/design.md:364"],
+      "status": "partial",
+      "note": "测试只断言 clean=1.0、dirty<1.0、dirty>=0；精确值（探针：0.6 / 0.5 / 0.6）无断言。"
+    },
+    {
+      "id": "C27",
+      "statement": "patch 把 --result 规范化后写进 --out（覆盖），返回 {written,work_item,nodes,edges} 计数。",
+      "evidence": ["scripts/whyexist/commands_compiler.py:246-256", "tests/test_plan_cli.py:414-446"],
+      "status": "partial",
+      "note": "端到端只把补丁文件当 apply 的输入，文件 JSON 形状与计数没被断言。"
+    },
+    {
+      "id": "C28",
+      "statement": "normalize_patch：节点按 id 保留第一次出现、边按 (src,dst,kind) 去重并按三元组排序、缺 id 的节点与缺端点的边静默丢弃、显式 work_item 覆盖补丁自带值。",
+      "evidence": ["scripts/whyexist/reducer.py:28-52", "tests/test_reducer.py:28-56"],
+      "status": "covered",
+      "note": "work_item 两者都缺时返回 None（探针），无断言。"
+    },
+    {
+      "id": "C29",
+      "statement": "merge_patches 的冲突以 (kind, name, attrs) 指纹判定：指纹不同才算冲突，指纹相同只保留一份；冲突只上报不覆盖。",
+      "evidence": ["scripts/whyexist/reducer.py:18-25,68-81", "tests/test_reducer.py:71-93,124-142"],
+      "status": "covered",
+      "note": "指纹刻意不含 repo/path/symbol/line_*/origin/unmapped：两个补丁给同一 id 写不同代码锚点不算冲突，第一份静默胜出（探针）。"
+    },
+    {
+      "id": "C30",
+      "statement": "merge_patches 对每条边检查端点是否在补丁节点或 existing_ids 中，未知端点逐个上报；ok = 无冲突且无未知端点；nodes/edges 输出排序，结果与补丁顺序无关。",
+      "evidence": ["scripts/whyexist/reducer.py:83-102", "tests/test_reducer.py:95-142"],
+      "status": "covered",
+      "note": "冲突标签在补丁无 work_item 时退化为 patch-<index>（探针），无断言；边 kind 合法性完全不校验（探针 ok=True）。"
+    },
+    {
+      "id": "C31",
+      "statement": "apply 只有 ok 且非 --dry-run 才写库；冲突/未知端点退出码 1 且库不变；--dry-run 返回 ok 但不写；成功回写 written_nodes/written_edges。",
+      "evidence": ["scripts/whyexist/commands_compiler.py:278-295", "scripts/whyexist/cli.py:100-102", "tests/test_plan_cli.py:414-515"],
+      "status": "covered",
+      "note": "「写到一半失败」的回滚路径无测试：upsert_node 抛 Reject 时靠 CLI 不 commit 兜底（commands_compiler.py:260 的 docstring 声称如此）。"
+    },
+    {
+      "id": "C32",
+      "statement": "apply 不校验 claim_token、角色与 target_ids 写入边界，也不把 id 记进工单 evidence_ids；它是有意绕过写入边界的旁路。",
+      "evidence": ["scripts/whyexist/commands_compiler.py:259-295", "scripts/wxg_contract.py:585-591", "docs/PRODUCT-PLAN.md:126"],
+      "status": "gap",
+      "note": "只在 PRODUCT-PLAN（规划文档）里写了意图，SKILL.md 的契约规则块没有这条；无测试。任何进程都能调 apply 直写图库。"
+    },
+    {
+      "id": "C33",
+      "statement": "work-finish 要求 token 属于 claimed 工单、evidence_ids 全部落在 target_ids 内；成功后置 submitted、清 claim_token，并创建/重置 audit 单。",
+      "evidence": ["scripts/whyexist/commands_feature.py:564-582", "scripts/whyexist/work.py:63-71,80-85", "tests/test_wxg.py:444-460"],
+      "status": "partial",
+      "note": "token 清空与 audit 单有测（test_wxg.py:558）；evidence 越界拒绝分支无测试。"
+    },
+    {
+      "id": "C34",
+      "statement": "work-judge(passed) 只置真该 kind 对应的条件并重算 Ready，failed 把该条件及其后的条件全部置假并让工单回到 ready；两种裁决都写 judge_history。",
+      "evidence": ["scripts/whyexist/commands_feature.py:635-705", "scripts/whyexist/workflow.py:63-91", "tests/test_wxg.py:324-332,1102-1131"],
+      "status": "covered",
+      "note": "条件链重置与 judge_history 有测；返回体里的 ready 字段类型问题见 C14。"
+    },
+    {
+      "id": "C35",
+      "statement": "work-list 原样返回 work_items 行：target_ids/depends_on 是 JSON 字符串，claim_token 明文出现；与 feature-status 的裁剪形状（target_count/target_sample/depends_on 数组）不同。",
+      "evidence": ["scripts/whyexist/commands_feature.py:708-714", "scripts/whyexist/commands_feature.py:310-317", "tests/test_plan_cli.py:723-733"],
+      "status": "gap",
+      "note": "work-list 的字段形状无断言，只有 kind/status 被消费；claim_token 出现在列表输出里是未文档化的泄露面。"
+    }
+  ],
+  "state_io": [
+    {"target": "graph.sqlite:work_items", "mode": "both", "where": "scripts/whyexist/work.py:16,21,29-43,54,57,110；scripts/whyexist/workflow.py:83,91,113"},
+    {"target": "graph.sqlite:conditions", "mode": "both", "where": "scripts/whyexist/workflow.py:38-42,64-67,71-74,77"},
+    {"target": "graph.sqlite:features", "mode": "read", "where": "scripts/whyexist/workflow.py:26"},
+    {"target": "graph.sqlite:nodes", "mode": "read", "where": "scripts/whyexist/workflow.py:97,107"},
+    {"target": "graph.sqlite:feature_nodes", "mode": "read", "where": "scripts/whyexist/workflow.py:104"},
+    {"target": "graph.sqlite:judge_history", "mode": "write", "where": "scripts/whyexist/commands_feature.py:601-617（work-judge 消费 workflow 派生的条件状态）"},
+    {"target": "graph.sqlite:nodes/edges（apply 直写）", "mode": "write", "where": "scripts/whyexist/commands_compiler.py:284-287"},
+    {"target": "--out 文件（brief / patch）", "mode": "write", "where": "scripts/whyexist/commands_compiler.py:110-115,247-250"},
+    {"target": "--result 文件（blind-check / patch / apply）", "mode": "read", "where": "scripts/whyexist/commands_compiler.py:123-129,237-245,266-273"},
+    {"target": "环境变量 WXG_ACTOR", "mode": "read", "where": "scripts/whyexist/workflow.py:14"},
+    {"target": "环境变量 WXG_DB_URL（间接）", "mode": "read", "where": "scripts/whyexist/db.py:425-426；写入方 scripts/whyexist/cli.py:55-56、engine.py:47-48"}
+  ],
+  "redundancy": [
+    {
+      "item": "「前缀* 通配」匹配规则至少有 9 份实现，语义还不完全一致",
+      "signal": "work.target_match（work.py:80-85，带非字符串保护）；work.require_targets（work.py:88-100，为性能重写成精确集合+前缀元组，没有类型保护）；briefing._matches（briefing.py:56-59）；blind._matches（blind.py:21-25，docstring 自己承认「与 briefing 保持同一约定」）；workflow.scope_ids（workflow.py:117-121）；query.py:21-23；conflicts.py:16-17；commands_misc.py:390；commands_graph.py:68",
+      "confidence": "high"
+    },
+    {
+      "item": "gates.py 末尾的工单状态机 re-export 块是死兼容层",
+      "signal": "scripts/whyexist/gates.py:402-413 导入 9 个符号，只有 work_id 在模块体内使用且已由第 11 行导入；append_evidence/get_work_by_token/insert_work/require_role/require_targets/require_token/target_match 在本文件内零使用，grep 全仓也没有从 gates 反向取这些名字的调用点",
+      "confidence": "high"
+    },
+    {
+      "item": "conditions 表有两个写入入口，状态机没有单一权威",
+      "signal": "INSERT 与 Accepted 置真在 commands_feature.py:122-126 和 179-182 直接写 SQL；后续 UPDATE 走 workflow.set_condition（workflow.py:63-67）；派生 Ready 在 workflow.recompute_ready（workflow.py:70-78）；failed 的后缀重置又写在 commands_feature.py:692-695",
+      "confidence": "high"
+    },
+    {
+      "item": "工单生命周期被切成三层，work.py 的模块说明与实际内容不符",
+      "signal": "work.py:1 自称「工单状态机：领取、令牌校验、写入边界与证据追加」，但领取在 commands_feature.py:507-561、提交在 564-582、裁决在 620-705；work.py 只有校验谓词与两条 UPDATE",
+      "confidence": "high"
+    },
+    {
+      "item": "「依赖边」常量定义三份、两份同名不同值",
+      "signal": "briefing.DEPENDENCY_EDGE_KINDS=('depends','calls','reads','writes')（briefing.py:28）；derive.DEPENDENCY_EDGE_KINDS=('calls','reads','writes')（derive.py:23）；planner 拆成 DESIGN_EDGE_KINDS/CODE_EDGE_KINDS（planner.py:32-35）；impact.py:19 直接复用 briefing 的那个",
+      "confidence": "high"
+    },
+    {
+      "item": "「任务书」概念两套实现：role-prompt 手写文案 vs brief 结构化输出",
+      "signal": "commands_misc.py:207-247 手写角色任务书；briefing.build_brief 生成工单任务书；references/design.md:830 声称 role-prompt「调 briefing」，但 commands_misc.py 全文件没有 import briefing",
+      "confidence": "medium"
+    },
+    {
+      "item": "engine.py 与命令层重复取数组装（跨切片，但在 brief 这条链上共享 _brief_payload）",
+      "signal": "engine.plan（engine.py:77-113）≈ cmd_plan（commands_compiler.py:23-70）；engine.impact（engine.py:133-151）≈ cmd_impact（commands_compiler.py:305-313）；只有 brief/blind_check 走了共享的 _brief_payload（commands_compiler.py:73-104）",
+      "confidence": "medium"
+    },
+    {
+      "item": "包级 __version__ 与契约版本漂移且无人读",
+      "signal": "scripts/whyexist/__init__.py:49 \"2.23.0\" vs scripts/wxg_contract.py:18 CONTRACT_VERSION \"2.92.0\"；全仓 grep 只有这一处定义，没有读者；tools/check_docs.py 只比文档与 CONTRACT_VERSION",
+      "confidence": "medium"
+    },
+    {
+      "item": "condition_rows 只为 condition_flags 存在，却被当成公开导出",
+      "signal": "scripts/whyexist/workflow.py:37-42 仅被 45-46 调用；scripts/wxg.py:97 把它和其余 10 个函数一起 re-export",
+      "confidence": "low"
+    },
+    {
+      "item": "brief 的禁止事项/完成定义是散落的字面量清单，与 SKILL.md 的边界叙述重复",
+      "signal": "briefing.py:42-53 的 _FORBIDDEN/_DONE 与 SKILL.md:446-448、references/contract.md 的边界段各自表述同一组约束，没有引用关系",
+      "confidence": "low"
+    }
+  ],
+  "rewrite_partition": [
+    {
+      "module": "scripts/whyexist/briefing.py",
+      "verdict": "keep",
+      "reason": "契约最清楚的一块：纯函数、零 IO、15 个键被测试锁死、边界/输入/产出三条语义各有正反用例，另有 CLI 与 Engine 两条端到端覆盖。确定性承诺与固定文案是唯二没锁的部分，加一条顺序敏感测试即可，不需要动实现。",
+      "risk": "低。真正的风险在外部：commands_compiler._brief_payload 传的是 loads 过的 target_ids 子集（只给 id/role/kind/target_ids），若重写时把接受字段换成 work 整行，会悄悄改变对 _brief_payload 的隐式契约。"
+    },
+    {
+      "module": "scripts/whyexist/blind.py",
+      "verdict": "keep",
+      "reason": "12 条单元测试覆盖三类判定与 locality 趋势，纯函数、边界清楚，是切片里测试密度最高的一块。省略 known kinds 时的退化、inputs 不可作产出、locality 精确值三条属于文档缺口而不是实现缺陷，补测试与注释即可。",
+      "risk": "低到中。若判定规则收紧（例如把 inputs 当合法产出、或强制 known kinds），会改变 PASS/FAIL 语义，而 apply/patch 流程还没有把 blind-check 作为硬门，外部消费者只在 Engine 与 CLI 两处。"
+    },
+    {
+      "module": "scripts/whyexist/reducer.py",
+      "verdict": "refactor_in_place",
+      "reason": "归约的对外形状（ok/conflicts/unknown_endpoints/nodes/edges、顺序无关）已有 10 条测试锁住，但冲突指纹只看 kind/name/attrs，丢掉了 upsert_node 实际会写的 repo/path/symbol/line_*/origin/unmapped，于是同一节点被两个补丁写到不同代码锚点时静默取第一份；merge 也不校验 kind 合法性，把失败推迟到写库阶段。这两处要在原地改，不能整块重写：冲突检测的语义被 apply 的 ok 直接消费。",
+      "risk": "中。扩大指纹会改变哪些输入算冲突（现有测试里 test_identical_node_content_is_not_a_conflict 依赖 attrs 等值判定）；若同时引入 kind 校验，apply 的失败点会从写库前移到归约期，退出码仍是 1/2，但 reports 字段会变。"
+    },
+    {
+      "module": "scripts/whyexist/work.py",
+      "verdict": "refactor_in_place",
+      "reason": "公开函数的承诺大多被 17 条单元测试覆盖（work_id/target_match/require_targets/require_role/require_token/insert_work/append_evidence），但实现里有三类硬伤：同一匹配规则四种写法、insert_work 非 merge 分支静默重置 depends_on（无生产调用点）、require_targets 对非字符串 id 抛 AttributeError。它也不该继续叫「工单状态机」——领取/提交/裁决都在命令层。建议保留函数名（wxg.py 与 4 个命令模块依赖它们），把匹配逻辑抽成单一 helper，把 insert_work 的两个分支收敛成一个显式参数。",
+      "risk": "中。require_token 的错误文案被 test_wxg.py:1371 以子串依赖；insert_work 的 merge 白名单决定 work-open/reconcile/import 三条路径能否扩边界，改宽改窄都会改 lead 的行为。"
+    },
+    {
+      "module": "scripts/whyexist/workflow.py",
+      "verdict": "refactor_in_place",
+      "reason": "条件链语义清楚且有 9 条直接测试 + judge/declare 端到端，但它是「状态读取层」而不是驱动者：set_condition 无行时静默、recompute_ready 返回 0 或 True（JSON 里 ready 变成 0 或 true）、多一行未知条件就永远出不了 Ready、scope_ids 顺序随哈希种子变。这些都是在原地能修的行为细节；真正该做的是把「一次裁决如何迁移条件」收敛成一个显式转移函数，供 work-judge 与 change-open 共用。",
+      "risk": "中到高。recompute_ready 的返回值类型动一下就会改 work-judge 的 JSON 形状；scope_ids 被 7 个模块的约 20 个调用点消费，任何排序或去重规则的改动都会在 plan/gate/export/status 里体现。没有测试锁住顺序，属于「改了没人拦」的区域。"
+    }
+  ],
+  "implicit_requirements": [
+    "insert_work(merge=False) 会把 depends_on 一起重置为 []（work.py:56-59，探针：blocked 工单被覆盖后 depends_on 变 \"[]\"，status 仍是 blocked，于是永远解不开）。这条行为只在单元测试里被触发过，生产调用点全部走 merge=True 或只在工单不存在时插入。",
+    "target_ids 为空等于「禁止任何写入」（work.py:94-98，探针：空边界拒绝一切 id）。这是安全语义，但 SKILL.md 与 references/contract.md 都只讲「落在 target_ids 内」，没讲空集是硬拒绝，也没讲单独的 \"*\" 是全通配。",
+    "scope_ids 的通配展开遍历 set(existing)，输出顺序随 PYTHONHASHSEED 变（探针：0/1/2/3 四个种子四种顺序）。result 会被 work_seed 原样写进 work_items.target_ids（commands_feature.py:460,479），也会被 feature-status 取前 5 条做 target_sample，所以「同一状态库同一条命令两次输出一致」在这条路径上不成立。",
+    "brief 的 write_boundary 只展开「当前已存在」的节点，新建节点靠 write_patterns 放行（design.md:362 有记录）；而 blind-check 允许 write_patterns 匹配任意 id（blind.py:61,76），于是 target_ids 里的宽通配会让边界检查实质失效——这条推论没有任何文档与测试。",
+    "check_output 的 known_node_kinds/known_edge_kinds 默认 None 时静默跳过 kind 校验（blind.py:40-41,65-66,78-79），库里消费方只有 CLI 与 Engine 两处显式传入；外部调用方省略参数会拿到一个恒 PASS 的校验器。",
+    "brief.inputs 里的节点只能当边端点，不能作为产出节点写出，否则算越界（blind.py:43-46,61-62；探针）。任务书里 inputs 的语义只有一句「输入契约」，这条限制没写。",
+    "locality 的精确扣分（0.4/0.3/0.3，额外项 0.1，clamp 两位）只出现在 design.md:364 的叙述里，没有断言；它「不参与判定」这一点也没有测试能证明。",
+    "reducer 的冲突指纹刻意不含 repo/path/symbol/line_start/line_end/origin/unmapped（reducer.py:20-24；探针：repo= r1/x.py 与 r2/y.py 的两个补丁 ok=True，第一份胜出）。apply 会把第一份写进图库，代码锚点因此在无提示的情况下被选中。",
+    "merge_patches 不校验边 kind 与节点 kind（探针：bogus 边 kind 也 ok=True），非法输入要等到 apply 调用 graph.upsert_node 才抛 Reject；能回滚只是因为 CLI 在最后才 commit（cli.py:84），这层兜底没有任何测试。",
+    "apply 完全绕过 claim_token、角色与 target_ids 写入边界，也不把写过的 id 记进 evidence_ids（commands_compiler.py:259-295）。意图只写在 docs/PRODUCT-PLAN.md:126，SKILL.md 的契约规则块没有；任何进程都能直写图库。",
+    "recompute_ready 的返回值是 0 或 True（workflow.py:76-78），所以 work-judge 的 ready 字段在 JSON 里是 0 或 true（探针）。测试用 assertEqual(1, ...) 掩掉了类型差异。",
+    "conditions 行数多一行（例如手工插了一个未知条件名）会让 recompute_ready 永远返回假，Ready 永远为 0，且没有任何报错（探针：9 行全真 → 0）。doctor 只查缺行，不查多行。",
+    "refresh_blocked 只认 status='passed' 的依赖（workflow.py:85,90）；依赖工单被 superseded 或 failed 时，blocked 工单会永久卡住，没有超时或升级路径。",
+    "actor_value 的身份规则（strip 后 1-80、无空白、环境变量回退）只在 CLI 缺 actor 的那一条测试里被间接碰过；SKILL.md:294 只说「必须带 --actor」或者设 WXG_ACTOR。",
+    "work-list 把 target_ids/depends_on 以 JSON 字符串返回，并把 claim_token 明文列出来（commands_feature.py:711-714）；而 feature-status 对同一张表做了裁剪与解码（commands_feature.py:310-317）。两个视图的字段语义不一致，没有任何文档说明。",
+    "brief 的 forbidden/definition_of_done 是给执行者看的硬约束文本（briefing.py:42-53），但没有测试断言其内容；改文案不会触发任何失败。",
+    "brief 文档承诺「字段顺序固定、同样输入两次生成字节一致」（briefing.py:15），测试却用 sort_keys=True 比对（test_briefing.py:157-159），实际只证明了内容相同，没证明顺序稳定。"
+  ],
+  "findings": [
+    "本切片的模块确实是「小」，但不是「工具」：work.py 只做校验与两条 UPDATE，workflow.py 只做条件读取与派生，真正的工单状态迁移（claim/finish/judge/seed）全在 commands_feature.py:456-714。任务书把 claim/finish 归给 work.py 与事实不符，这也说明状态机目前没有单一归属。",
+    "通配匹配规则在 9 处各写一遍，且至少两处语义已经漂移：target_match 有 isinstance 保护、require_targets 没有（探针：非字符串 id 抛 AttributeError，unhashable 的列表抛 TypeError）。这是「同一概念散在多处」的实证，不是风格问题。",
+    "recompute_ready 返回 0 或 True，导致 work-judge 输出的 ready 字段在 JSON 里是 0 或 true；测试用 ==1 的断言把类型差异吃掉了。任何按类型消费该字段的下游都会踩到。",
+    "scope_ids 的输出顺序依赖 PYTHONHASHSEED（4 个种子 4 种顺序），而它会被 work_seed 原样写进 work_items.target_ids、被 feature-status 取前 5 条展示。整个项目反复强调确定性（brief 字节一致、reconcile 幂等），这条路径是例外且没有测试。",
+    "apply 是图库的一条无鉴权写入口：不要 token、不查角色、不查 target_ids、不记 evidence。意图只写在 docs/PRODUCT-PLAN.md:126，SKILL.md 的 I5「写入有边界」规则在 apply 上不成立。",
+    "reducer 的冲突指纹只覆盖 kind/name/attrs，代码锚点（repo/path/symbol/line_*）与 origin/unmapped 的差异不算冲突，第一份补丁静默胜出。对于并行补丁合并这个目标，这是最容易漏掉的冲突类。",
+    "briefing 与 blind 是切片里契约最扎实的两个模块（12+12 条单元测试 + CLI/Engine 端到端），并且都是纯函数；它们的缺口集中在「文档承诺了但没测」的少数几条（顺序确定、locality 精确值、known kinds 省略）。",
+    "C13/C20/C24/C25/C32/C35 六条是纯 gap：set_condition 的静默无操作、brief --out 的文件产物、known kinds 省略时的退化、inputs 不可作产出、apply 的越权写、work-list 的原始字段形状——这些行为只存在于代码里。"
+  ],
+  "open_questions": [
+    "「工单状态机」应该有一个归属模块吗？现在 claim（commands_feature.py:507）、finish（564）、judge（620）、条件迁移（workflow.py:63-91）、依赖解锁（workflow.py:81）分散在三处，重写时先合并成 lifecycle.py 还是保持现状、只在测试里补契约？",
+    "recompute_ready 的返回类型是 0/True 混合，是历史遗留还是下游真的按布尔消费？改 成统一 bool 会让 work-judge 的 JSON 从 0 变成 false，需要先确认没有脚本按整数判断。",
+    "apply 绕过 claim_token 与写入边界是产品决定（PRODUCT-PLAN.md:126）还是尚未收口的安全口子？如果是有意的，SKILL.md 的 I5 规则需要为 apply 写例外；如果不是，apply 缺一个 token 参数就是一个洞。",
+    "scope_ids 的顺序不确定是否值得修？它的直接消费者大多会排序或转 set，但 work_seed 落库的 target_ids 顺序与 feature-status 的 target_sample 会不同步；修法是在 scope_ids 末尾排序，还是让调用方各自负责？",
+    "reducer 的冲突指纹要不要包含 repo/path/symbol/line_*/origin/unmapped？扩大指纹会让更多并行补丁判冲突（更安全但更吵），不扩则是静默丢锚点。",
+    "brief 的 forbidden/definition_of_done 文本算不算对外契约？如果算，应该进 wxg_contract 由 verify 校验；如果不算，为什么它出现在机读 JSON 里而 role-prompt 另写一套？",
+    "work-list 为什么要明文返回 claim_token 并把 target_ids 留在字符串形态？是给脚本用的兼容形状，还是没人看的调试输出？这决定它能不能和 feature-status 合并成一个视图。",
+    "gates.py:402-413 的 re-export 块什么时候删？它已经在文件末尾静置了两个版本（注释说「保持模块内调用点不变」，但模块内没有调用点）。"
+  ]
+}

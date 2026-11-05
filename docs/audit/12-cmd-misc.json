@@ -1,0 +1,919 @@
+{
+  "slice": "12-cmd-misc",
+  "modules": [
+    {
+      "path": "scripts/whyexist/commands_misc.py",
+      "loc": 619,
+      "role": "export / role-prompt / contract / verify / doctor 五条命令的实现：只读设计视图导出、角色提示词、契约渲染与块替换、文档/样例漂移自检、状态库体检与 --fix"
+    },
+    {
+      "path": "scripts/gen_sample.py",
+      "loc": 120,
+      "role": "verify 的确定性 fixture：用 feature-declare + 真实 export 生成 references/export-sample/feat-demo 的六份视图"
+    }
+  ],
+  "public_surface": [
+    {
+      "entry": "wxg export",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_misc.py:22",
+      "input": "--feature（必填；全局 --root 决定输出根）",
+      "output": "stdout JSON：{dir, generation, steps, files[6]}",
+      "side_effects": "创建 <root>/export/<feature>/ 并覆盖写六份 md；读 nodes/edges/features/feature_nodes/work_items；SQLite 连接会 PRAGMA journal_mode=WAL；不清理目录里的其它旧文件",
+      "exit_codes": "0 成功；2 feature 不存在/参数或运行时异常（stderr JSON）"
+    },
+    {
+      "entry": "wxg role-prompt",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_misc.py:207",
+      "input": "--role（必填，choices=ROLES）；--token；--feature；全局 --root",
+      "output": "stdout 纯文本 Markdown 提示词（不是 JSON）：角色、状态库路径、CLI 路径、允许命令、边界、可选令牌/feature 段",
+      "side_effects": "无 DB、无文件；不创建 .why-exist；会把 --token 明文打印",
+      "exit_codes": "0 成功；2 argparse 参数错（usage 文本）/Reject（JSON 到 stderr，经 CLI 实际不可达）"
+    },
+    {
+      "entry": "wxg contract",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_misc.py:250",
+      "input": "--json（flag）；--section main|full（默认 main）；--write <path>（相对路径按 SKILL_DIR 解析）",
+      "output": "默认 main 契约 Markdown；--section full 输出完整契约；--json 输出 contract_json() 对象；--write 返回 {written, section}",
+      "side_effects": "无 DB；--write 原地改写目标文件（只替换第一对 wxg:contract:* 标记之间），Windows 上换行变 CRLF；--json 时静默忽略 --write/--section",
+      "exit_codes": "0 成功；2 目标文件不存在/缺标记/参数错（stderr JSON 或 usage）"
+    },
+    {
+      "entry": "wxg verify",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_misc.py:269",
+      "input": "无命令参数；环境变量 WXG_SKILL_DIR 可重定向技能根（默认 scripts 的上两级）",
+      "output": "stdout JSON：失败 {ok:false, issues:[str]}；成功 {ok:true, checks:[6 个固定名], version:\"wxg contract v2.92.0 / schema v9\"}",
+      "side_effects": "不连状态库、不建 .why-exist；读 SKILL.md、references/*、tests/test_wxg.py、CHANGELOG.md、export-sample；在临时目录真实建库并跑一次 export（结束删除）",
+      "exit_codes": "0 无问题；1 有 issues；2 异常/环境错误"
+    },
+    {
+      "entry": "wxg doctor",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_misc.py:558",
+      "input": "--fix（flag）；全局 --root",
+      "output": "stdout JSON：{ok, issue_count, fixable_count, unfixable_count, unfixable_checks, by_check, truncated, issues[≤200 每条带 fixable], fixed}",
+      "side_effects": "默认只读（SELECT + 两次 doctor_report）；--fix 硬删 bites/edges/feature_nodes 悬空行、裁非 audit 工单的 target_ids/evidence_ids、清非 claimed 的 claim_token、把 meta 两个版本刷成当前常量",
+      "exit_codes": "0 无问题（含 --fix 后已修干净）；1 有问题；2 状态库未初始化/运行时异常"
+    },
+    {
+      "entry": "doctor_report(conn)",
+      "kind": "function",
+      "where": "scripts/whyexist/commands_misc.py:355",
+      "input": "已连接的 DB conn",
+      "output": "list[dict]，每条至少含 check + 该检查的上下文字段；不带 fixable 标记",
+      "side_effects": "只读；执行约 20 条 SELECT 覆盖 11 张表",
+      "exit_codes": "不直接面向 CLI；异常抛给 cmd_doctor → CLI 转 exit 2"
+    },
+    {
+      "entry": "<root>/export/<feature>/{01-需求,02-用例,04-架构,05-类图,07-数据流,测试规格}.md",
+      "kind": "file",
+      "where": "scripts/whyexist/commands_misc.py:25-26,38-39,66-193",
+      "input": "feature 的作用域节点与边",
+      "output": "六份 Markdown：顶部伪 YAML 头（generation/feature_id/来源/说明）+ 标题 + 表格（空表渲染一行全空单元格）",
+      "side_effects": "覆盖写；目录中其它文件保留",
+      "exit_codes": "写失败 → 异常 → 2"
+    },
+    {
+      "entry": "SKILL.md / references/contract.md 的 wxg:contract 块",
+      "kind": "file",
+      "where": "scripts/whyexist/commands_misc.py:274-285,1040-1047(wxg_contract.py)",
+      "input": "C.main_contract_markdown() / C.full_contract_markdown()",
+      "output": "<!-- wxg:contract:main:begin/end --> 与 full 块之间的生成文本",
+      "side_effects": "contract --write 写；verify 读",
+      "exit_codes": "缺标记 → verify 记 issue/exit 1；--write 抛 ValueError → exit 2"
+    },
+    {
+      "entry": "references/export-sample/feat-demo/*.md",
+      "kind": "file",
+      "where": "scripts/whyexist/commands_misc.py:330-348",
+      "input": "gen_sample.build() 的实时输出",
+      "output": "六份样例，逐份文本比对",
+      "side_effects": "只读样例；verify 内部写临时目录",
+      "exit_codes": "缺失/过期 → issue → verify exit 1"
+    },
+    {
+      "entry": "env WXG_SKILL_DIR",
+      "kind": "function",
+      "where": "scripts/whyexist/commands_misc.py:271",
+      "input": "目录路径",
+      "output": "改变 verify 读文档/样例的技能根；不影响代码导入（代码仍来自真实安装）",
+      "side_effects": "只读目标目录",
+      "exit_codes": "路径不存在 → 多条“缺少文件/资源/样例” → exit 1"
+    }
+  ],
+  "contracts": [
+    {
+      "id": "C1",
+      "statement": "export 在 <root>/export/<feature_id>/ 写六份文件，名字/标题/列来自 C.EXPORT_FILES，每份带 generation/feature_id 头；返回 {dir,generation,steps,files}，退出 0。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:22-49",
+        "scripts/whyexist/commands_misc.py:66-194",
+        "tests/test_wxg.py:264-268",
+        "tests/test_wxg.py:608-630"
+      ],
+      "status": "partial",
+      "note": "测试只断言 07 文件存在且有一行、参数去重；文件名集合、头部、返回值结构无断言。"
+    },
+    {
+      "id": "C2",
+      "statement": "export 的作用域是 scope_ids：feature_nodes + requirement:<feature>: 前缀 + 当前代 work_items.target_ids（含 `前缀*` 展开），不是仅 feature_nodes。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:51",
+        "scripts/whyexist/workflow.py:94-124",
+        "docs/audit/_probe_12.py:214"
+      ],
+      "status": "gap",
+      "note": "scope_ids 在 workflow.py:111-123 合并当前代 target_ids；探针 B6a 只确认 claim 的 target_ids 含通配模式，未单独构造“只靠 target_ids 进入导出”的用例。无测试覆盖。"
+    },
+    {
+      "id": "C3",
+      "statement": "01 需求表每行 = 作用域内一个 requirement；能力取 attrs.statement 或 name；验收/约束取 feature 级 acceptance_json/constraints_json，用“；”连接后对每个 requirement 重复。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:54-65",
+        "docs/audit/_probe_12.py:187"
+      ],
+      "status": "gap",
+      "note": "样例与测试只有一个 requirement，重复语义从未被断言。"
+    },
+    {
+      "id": "C4",
+      "statement": "02 用例 = satisfies 指向作用域内 requirement 的 use_case，按 id 去重；行的顺序来自 edges 扫描顺序（无 ORDER BY）。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:74-86",
+        "scripts/whyexist/commands_misc.py:76"
+      ],
+      "status": "gap",
+      "note": "无测试；SQLite 下顺序稳定，MySQL/PG 无排序保证。"
+    },
+    {
+      "id": "C5",
+      "statement": "04 架构 = 从 use_case 经 depends/associates/realizes 到达的 component/port，加作用域内 pattern；按 (kind,id,name) 去重并排序。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:88-107",
+        "tests/test_wxg.py:1198-1200"
+      ],
+      "status": "partial",
+      "note": "只断言 pattern 一行；component/port 拓扑与去重无测试。"
+    },
+    {
+      "id": "C6",
+      "statement": "05 类图 = use_case contains 的 operation、contains 指向这些 operation 的 classifier、operation 的 has_input parameter；按 classifier/operation/parameter 顺序再按名称排序；property 永不出现在导出里。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:109-140",
+        "docs/audit/_probe_12.py:271",
+        "scripts/wxg_contract.py:744-750"
+      ],
+      "status": "gap",
+      "note": "无任何测试；property kind 有 schema 但不在导出规则中。"
+    },
+    {
+      "id": "C7",
+      "statement": "07 数据流每条 (operation, writes→sink) 一行，步号按发现顺序递增；该 operation 的所有 asserts 断言文本用“；”拼进断言列，并在每个 sink 行重复。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:142-154",
+        "tests/test_wxg.py:264-268",
+        "docs/audit/_probe_12.py:237"
+      ],
+      "status": "partial",
+      "note": "测试只断言 `| 1 | save |`；探针确认两 sink 两断言时断言文本重复两遍。"
+    },
+    {
+      "id": "C8",
+      "statement": "07 追加“请求参数”小节；参数按 id 去重、按首次出现排序；属性列是 attrs_json 原样 JSON。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:155-162",
+        "scripts/wxg_contract.py:735-740",
+        "tests/test_wxg.py:608-630"
+      ],
+      "status": "partial",
+      "note": "只测“同一参数只出现一次”；首次出现顺序与 attrs 原样无断言。"
+    },
+    {
+      "id": "C9",
+      "statement": "测试规格 = verifies 指向这些 operation/use_case 的 testcase + asserts 指向 operation 的 assertion，按节点 id 去重；属性列是 attrs_json 原文。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:164-193"
+      ],
+      "status": "gap",
+      "note": "无测试；attrs 里的 `|` 会被表格转义，导致 JSON 原文被改写。"
+    },
+    {
+      "id": "C10",
+      "statement": "单元格里的 `|` 转义成 `\\|`；空表渲染成一行全空单元格，而不是空表体。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:41-49",
+        "tests/test_wxg.py:1004-1026"
+      ],
+      "status": "partial",
+      "note": "竖线有测试；空行渲染（无数据时一行全空单元格）与 name 含换行会破坏表格，两者无测试。"
+    },
+    {
+      "id": "C11",
+      "statement": "export 对不存在的 feature 抛 Reject（exit 2），在 ensure_feature 之前不创建导出目录。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:23",
+        "scripts/whyexist/workflow.py:30-34",
+        "docs/audit/_probe_12.py:198"
+      ],
+      "status": "gap",
+      "note": "探针确认 exit 2 且 <root>/export/feat-nope 不存在；无测试。"
+    },
+    {
+      "id": "C12",
+      "statement": "export 只覆盖六份已知文件，不删除目录里的旧文件；写文件发生在所有读取之后逐个进行，中途异常会留下半套产物。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:25-26",
+        "scripts/whyexist/commands_misc.py:38-39",
+        "docs/audit/_probe_12.py:194"
+      ],
+      "status": "gap",
+      "note": "探针：重导出后手工放的 99-旧版本.md 仍在。无文档说明导出是否应清空目录。"
+    },
+    {
+      "id": "C13",
+      "statement": "导出目录由 feature id 拼路径；feature id 允许 `.`/`..`（正则只限字符集），`--feature ..` 会把六份 md 直接写进 <root>。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:25",
+        "scripts/whyexist/commands_feature.py:45",
+        "docs/audit/_probe_12.py:426"
+      ],
+      "status": "gap",
+      "note": "实测 feature id='..' 时 <root>/export 不创建，六份文件落在 <root> 根。"
+    },
+    {
+      "id": "C14",
+      "statement": "role-prompt 输出纯文本提示词：角色名、<root>/graph.sqlite、CLI 绝对路径、ROLES 里的允许命令、五条边界；audit 走“不领工单、直接 work-judge”分支，其他角色追加 work-finish；model-architecture/model-structure 追加 pattern 提示，implement-test 追加 construction 提示。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:207-247",
+        "tests/test_wxg.py:894-902",
+        "scripts/wxg_contract.py:246-255"
+      ],
+      "status": "partial",
+      "note": "只测了 audit/scan 的 root 路径、work-judge 文案与 work-finish --token；其余分支无断言。"
+    },
+    {
+      "id": "C15",
+      "statement": "role-prompt 在给 --token 时把 claim_token 明文写进“## 你的令牌”段，在给 --feature 时写“## feature”段，两者都不校验存在性。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:243-246",
+        "docs/audit/_probe_12.py:317"
+      ],
+      "status": "gap",
+      "note": "token 是可直接转发的凭据；无脱敏、无测试。"
+    },
+    {
+      "id": "C16",
+      "statement": "未知角色由 argparse choices 拦截（usage 文本、exit 2），cmd_role_prompt 里的 `未知角色` Reject 分支经 CLI 不可达。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:209-210",
+        "scripts/wxg_contract.py:627-630",
+        "docs/audit/_probe_12.py:319"
+      ],
+      "status": "gap",
+      "note": "双重校验，handler 分支是死代码；无测试直接调用 handler。"
+    },
+    {
+      "id": "C17",
+      "statement": "role-prompt 不需要状态库：不 connect、不创建 .why-exist，root 取 --root 或 cwd/.why-exist 的 resolve 结果。",
+      "evidence": [
+        "scripts/whyexist/cli.py:62-70",
+        "scripts/whyexist/commands_misc.py:211",
+        "tests/test_wxg.py:894-898",
+        "docs/audit/_probe_12.py:311"
+      ],
+      "status": "partial",
+      "note": "测试只断言提示词里出现真实 root；未断言不建目录（同文件 verify 有该断言）。"
+    },
+    {
+      "id": "C18",
+      "statement": "role-prompt 无条件告诉 teammate“状态库：<root>/graph.sqlite”并只给 `--root` 的 CLI 用法，不感知 WXG_DB_URL/MySQL/PostgreSQL 后端。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:211-218",
+        "scripts/whyexist/db.py:425-438"
+      ],
+      "status": "gap",
+      "note": "非 SQLite 后端下提示词指向一个不存在/无关的 sqlite 路径，且照抄命令会连错后端。"
+    },
+    {
+      "id": "C19",
+      "statement": "contract 无 --json/--write 时把 main 契约 Markdown 打到 stdout；--section full 输出完整契约（含节点/边/属性/证据/history/导出规则/版本行）；不连库。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:250-262",
+        "scripts/wxg_contract.py:801,924",
+        "docs/audit/_probe_12.py:278-281"
+      ],
+      "status": "gap",
+      "note": "测试只覆盖 --json；默认文本输出与 full 文本无断言。"
+    },
+    {
+      "id": "C20",
+      "statement": "contract --json 返回 contract_json()（32 键、argparse type 降级为字符串名），并静默忽略同时给出的 --write/--section。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:251-252",
+        "scripts/wxg_contract.py:997-1031",
+        "tests/test_wxg.py:518-525",
+        "docs/audit/_probe_12.py:297"
+      ],
+      "status": "partial",
+      "note": "只断言 6 个键；“忽略 --write”无测试（探针确认文件不变）。"
+    },
+    {
+      "id": "C21",
+      "statement": "contract --write 替换第一对 begin/end 之间的全部内容，保留块外文本，返回 {written,section}；相对路径相对 SKILL_DIR（技能根）解析而不是 cwd。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:255-261",
+        "scripts/wxg_contract.py:1040-1047",
+        "docs/audit/_probe_12.py:289,301"
+      ],
+      "status": "gap",
+      "note": "无任何测试；探针用临时文件验证块外保留、重复写字节幂等、相对路径落到技能根。"
+    },
+    {
+      "id": "C22",
+      "statement": "contract --write 的目标不存在或文件里没有对应 begin/end 标记时退出 2（stderr JSON）；标记顺序颠倒时 replace_block 解包抛 ValueError，同样是 exit 2。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:259-260",
+        "scripts/wxg_contract.py:1043-1047",
+        "scripts/whyexist/cli.py:85-90",
+        "docs/audit/_probe_12.py:307"
+      ],
+      "status": "gap",
+      "note": "错误信息对普通用户不可读（FileNotFoundError/ValueError 原文）；无测试。"
+    },
+    {
+      "id": "C23",
+      "statement": "contract --write 用 Path.write_text 默认换行，Windows 上整文件写成 CRLF；verify 用文本模式读并 strip，因此换行差异不会报漂移。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:260",
+        "docs/audit/_probe_12.py:291",
+        ".gitattributes:3"
+      ],
+      "status": "gap",
+      "note": "探针：CRLF 后 234/234 行都是 CRLF；仓库 .gitattributes 要求 eol=lf，工作树当前已混合 CRLF（SKILL.md 360/491 行）。"
+    },
+    {
+      "id": "C24",
+      "statement": "verify 对 full 块漂移给出的修复提示是 `wxg contract --write contract.md --section full`，但该相对路径解析到技能根，文件不存在，照做直接 exit 2。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:285",
+        "scripts/whyexist/commands_misc.py:257-258",
+        "docs/audit/_probe_12.py:371,417"
+      ],
+      "status": "gap",
+      "note": "提示丢失 references/ 前缀；探针确认 skill-root/contract.md 不存在且未被创建。"
+    },
+    {
+      "id": "C25",
+      "statement": "verify 把 SKILL.md 的 main 块与 references/contract.md 的 full 块分别与渲染器输出比较，不同则记 issue 并 exit 1；两处都读不到标记也算 issue。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:274-285",
+        "tests/test_wxg.py:481-501",
+        "docs/audit/_probe_12.py:371,378"
+      ],
+      "status": "partial",
+      "note": "反向测试只有 main 块；full 块漂移与缺标记只有探针证明。"
+    },
+    {
+      "id": "C26",
+      "statement": "verify 校验 SKILL.md 以 --- 开头、frontmatter 含 `name: why-exist-graph` 与 `description:`；不符则 issue。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:287-298",
+        "docs/audit/_probe_12.py:390"
+      ],
+      "status": "gap",
+      "note": "无测试；探针改 name 后 exit 1。"
+    },
+    {
+      "id": "C27",
+      "statement": "verify 交叉引用：50 条 COMMANDS 都有 wxg.cmd_* 处理器且都在 WRITE_MODES 里；ROLES 只引用已注册命令；ATTR_SCHEMA/BIND_EDGE_KIND 的 kind 必须存在；EXPORT_FILES 每份有列、附加小节有列；五类资源文件存在。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:299-329",
+        "tests/test_wxg.py:503-516"
+      ],
+      "status": "partial",
+      "note": "测试用同样机制直接断言 handler/角色，不经 verify；缺 WRITE_MODES、kind、导出列、资源缺失、缺标记这些失败分支无测试。"
+    },
+    {
+      "id": "C28",
+      "statement": "verify 用 gen_sample 在临时目录真实建库并导出六份视图，与 references/export-sample/feat-demo 逐份文本比较；缺失/过期各记 issue；整个样例自检的异常被收成一条 `导出样例自检失败`。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:330-348",
+        "scripts/gen_sample.py:38-61",
+        "docs/audit/_probe_12.py:359,364"
+      ],
+      "status": "gap",
+      "note": "无反向测试；CI 只跑过干净仓库的正向。"
+    },
+    {
+      "id": "C29",
+      "statement": "verify 成功时返回固定六项 checks 名单与版本行；失败时返回 {ok:false, issues[]}，两者都是 stdout JSON。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:350-352",
+        "scripts/whyexist/cli.py:94-96",
+        "docs/audit/_probe_12.py:353"
+      ],
+      "status": "partial",
+      "note": "测试只断言 ok/退出码；checks 名单与 version 字符串无断言（版本升级时无人提醒）。"
+    },
+    {
+      "id": "C30",
+      "statement": "verify 是零 DB 命令：不 connect、不在 cwd 建 .why-exist；但它会创建临时目录、建库、导出后删除。WXG_SKILL_DIR 可把“被检查的技能根”指向任意目录。",
+      "evidence": [
+        "scripts/whyexist/cli.py:62-70",
+        "scripts/whyexist/commands_misc.py:271,336-338",
+        "tests/test_wxg.py:873-882",
+        "docs/audit/_probe_12.py:328"
+      ],
+      "status": "partial",
+      "note": "只测 cwd 不建 .why-exist；临时目录清理与 WXG_SKILL_DIR 重定向（仅测试用到）未成为契约。"
+    },
+    {
+      "id": "C31",
+      "statement": "verify/contract 的“字节比较”实际是文本比较：换行、块外首尾空行不影响，只有块内文本变化才报漂移；只处理第一对标记，伪造的第二对标记不被检查。",
+      "evidence": [
+        "scripts/wxg_contract.py:1040-1054",
+        "scripts/whyexist/commands_misc.py:279-284",
+        "docs/audit/_probe_12.py:402,414"
+      ],
+      "status": "gap",
+      "note": "探针：整文件改 CRLF 仍 PASS；插第二对 begin/end 仍 PASS。README/SKILL 写“逐字节”。"
+    },
+    {
+      "id": "C32",
+      "statement": "doctor 输出固定 32 类 check（dangling-bite/orphan-edge/applies-invalid/…/audit-passed-subject-not），每条形如 {check, ...上下文}；汇总含 ok/issue_count/fixable_count/unfixable_count/unfixable_checks/by_check/truncated/issues≤200。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:355-555",
+        "scripts/whyexist/commands_misc.py:601-617",
+        "tests/test_wxg.py:408-414"
+      ],
+      "status": "partial",
+      "note": "32 类里只有 8 类有测试；汇总字段只断言了 ok/by_check/truncated=false/fixable_count。"
+    },
+    {
+      "id": "C33",
+      "statement": "doctor 无问题退出 0，有问题退出 1；--fix 后按修复后的状态重算 ok，并把修复动作计数放进 fixed。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:558-617",
+        "scripts/whyexist/cli.py:94-96",
+        "tests/test_wxg.py:391-428"
+      ],
+      "status": "covered",
+      "note": "干净库 ok、脏库 exit 1、--fix 后 ok 都有断言。"
+    },
+    {
+      "id": "C34",
+      "statement": "不带 --fix 的 doctor 对状态库只读：两次运行主库文件 hash 不变。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:355,558-601",
+        "docs/audit/_probe_12.py:101",
+        "references/quality.md:12"
+      ],
+      "status": "gap",
+      "note": "质量门文档要求“连续两次 doctor 不改变 DB hash”，实现符合，但没有任何测试断言；CLI 在只读命令结束后仍会 commit。"
+    },
+    {
+      "id": "C35",
+      "statement": "doctor --fix 执行六组修复：删悬空 bites、删悬空 edges、删悬空 feature_nodes、裁非 audit 工单的 target_ids/evidence_ids、清非 claimed 的 claim_token、把 meta.contract_version/schema_version 刷成当前常量；返回六组计数。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:561-600",
+        "tests/test_wxg.py:415-425",
+        "docs/audit/_probe_12.py:130,146"
+      ],
+      "status": "partial",
+      "note": "测试只覆盖 dangling_bites/tokens/meta 三组；orphan_edges/feature_nodes/work_refs 三组只有探针证明可用。"
+    },
+    {
+      "id": "C36",
+      "statement": "doctor --fix 只修 DOCTOR_FIXABLE_CHECKS 的 7 类；其余 25 类（legacy 身份、applies-invalid、证据非零退出、审计配对、条件/变更一致性等）只报不修，且不会因此把 ok 变成 true。",
+      "evidence": [
+        "scripts/wxg_contract.py:22-30",
+        "scripts/whyexist/commands_misc.py:602-612",
+        "tests/test_wxg.py:675-679",
+        "docs/audit/_probe_12.py:172"
+      ],
+      "status": "partial",
+      "note": "只有 legacy-identity 被断言为 unfixable；修复清单与 I9 正文是两份人工同步的列表。"
+    },
+    {
+      "id": "C37",
+      "statement": "doctor 把任何 exit_code≠0 的 evidence 记为 `evidence-exit-nonzero`（不可修）；而系统没有删除 evidence 的 CLI 命令，所以如实登记一次失败测试会让 doctor 永久红。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:440-441",
+        "docs/audit/_probe_12.py:158",
+        "scripts/wxg_contract.py:153-158"
+      ],
+      "status": "gap",
+      "note": "EVIDENCE_RULES 要求每次测试/gate 都登记；与 doctor 的非零退出检查直接冲突。"
+    },
+    {
+      "id": "C38",
+      "statement": "doctor 校验 evidence 的 generation 非空、关联工单存在、产物文件仍存在且 hash 未变；并复算 BehaviorPassed 是否有同代有效证据。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:437-451",
+        "scripts/whyexist/commands_misc.py:528-534",
+        "scripts/whyexist/evidence.py:19-35",
+        "tests/test_wxg.py:569-606"
+      ],
+      "status": "partial",
+      "note": "产物缺失/被改与 generation 缺失有测试；evidence-work-missing 与 behavior-passed-without-evidence 无测试。"
+    },
+    {
+      "id": "C39",
+      "statement": "doctor 校验工单/审计配对：claimed/submitted 必须有 claimed_by，claimed 必须有 claimed_at，audit 裁决必须有 judged_by 且不等于被审工单 claimed_by，passed 工单必须有 passed 的 audit，audit passed 的被审工单必须 passed，claimed_by/judged_by=legacy 单独报。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:397-435",
+        "scripts/whyexist/commands_misc.py:542-554",
+        "tests/test_wxg.py:675-679"
+      ],
+      "status": "partial",
+      "note": "只有 legacy-identity 与 passed 工单的 judge-history 有测试；独立性、缺 actor、缺时间戳、passed-without-audit 无测试。"
+    },
+    {
+      "id": "C40",
+      "statement": "doctor 校验每个 feature 当前代条件存在、每代 8 行且名称齐全、Ready=前七项与、BehaviorPassed 有证据。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:502-534"
+      ],
+      "status": "gap",
+      "note": "missing-generation-conditions/condition-rows/ready-inconsistent/behavior-passed-without-evidence 四类全部无测试。"
+    },
+    {
+      "id": "C41",
+      "statement": "doctor 校验 changes：from_generation<to_generation、from_condition 合法、目标代有条件行、from_condition 之前的条件必须为真（Accepted/Ready 除外）。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:468-494",
+        "tests/test_wxg.py:1535-1551"
+      ],
+      "status": "partial",
+      "note": "只有 change-inheritance 有反例测试；change-generation/change-from-condition/change-conditions-missing 无测试。"
+    },
+    {
+      "id": "C42",
+      "statement": "doctor 校验作用域外所有 pattern 节点都有非空 applicability 与 not_applicable（不要求 applies 边）。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:496-500",
+        "scripts/wxg_contract.py:701-709"
+      ],
+      "status": "gap",
+      "note": "无测试；gate 的模式检查有测试，doctor 这条没有。"
+    },
+    {
+      "id": "C43",
+      "statement": "doctor 比对 meta.contract_version/schema_version 与契约常量；--fix 直接 upsert 成当前值，不做结构迁移。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:537-540",
+        "scripts/whyexist/commands_misc.py:590-599",
+        "tests/test_wxg.py:402-425",
+        "docs/audit/_probe_12.py:150"
+      ],
+      "status": "partial",
+      "note": "--fix 会把版本刷成当前值而库结构可能仍旧；探针显示干净库上 --fix 仍报 fixed.meta=1。"
+    },
+    {
+      "id": "C44",
+      "statement": "doctor 不校验枚举与属性类型：非法 node.kind、非法 edge.kind、非法 bite.verdict、attrs_json 不合 schema 都不会被 doctor 报出。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:355-555",
+        "scripts/whyexist/graph.py:13-41"
+      ],
+      "status": "gap",
+      "note": "绕过命令直接写库时，doctor 的“状态库体检”覆盖不到这些；gate 只采信特定 verdict 值，非法值会被静默忽略。"
+    },
+    {
+      "id": "C45",
+      "statement": "doctor 每次运行都会算两遍 doctor_report（before 未使用）；--fix 的 fixed.meta 固定为 1，即使没有版本变化。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:559",
+        "scripts/whyexist/commands_misc.py:600",
+        "docs/audit/_probe_12.py:150"
+      ],
+      "status": "gap",
+      "note": "浪费一次全库扫描；修复计数不反映真实变化，容易误读。"
+    },
+    {
+      "id": "C46",
+      "statement": "doctor 的 issues 最多输出 200 条，truncated 标记是否截断；by_check 统计全部问题；无法翻页取剩余部分。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:604-615",
+        "tests/test_wxg.py:414"
+      ],
+      "status": "partial",
+      "note": "只测过 truncated=false；>200 的路径无测试。"
+    },
+    {
+      "id": "C47",
+      "statement": "verify/contract/role-prompt 不走 connect、不创建 .why-exist；doctor/export 需要已初始化状态库，缺库时 exit 2 且不创建目录。",
+      "evidence": [
+        "scripts/whyexist/cli.py:62-70",
+        "tests/test_wxg.py:873-882",
+        "tests/test_wxg.py:947-955",
+        "docs/audit/_probe_12.py:328"
+      ],
+      "status": "partial",
+      "note": "缺库不创建只测了 gate/work-seed/repo-list，没测 export/doctor；探针对五条命令都做了。"
+    },
+    {
+      "id": "C48",
+      "statement": "五条命令的 Reject/异常统一输出 stderr JSON 并 exit 2；argparse 层错误（未知 --role、非法 --section）输出 usage 文本而不是 JSON。",
+      "evidence": [
+        "scripts/whyexist/cli.py:85-90",
+        "scripts/whyexist/cli.py:29-44",
+        "docs/audit/_probe_12.py:319"
+      ],
+      "status": "partial",
+      "note": "统一 JSON 错误通道有测试间接覆盖；argparse 绕过的差异没有契约声明。"
+    },
+    {
+      "id": "C49",
+      "statement": "verify/doctor 无论成功失败都向 stdout 打 JSON（失败带 issues）并按 ok 决定 0/1；export/contract 打 JSON 或 Markdown 文本；role-prompt 打纯文本。",
+      "evidence": [
+        "scripts/whyexist/cli.py:94-113",
+        "tests/test_wxg.py:487,896"
+      ],
+      "status": "covered",
+      "note": "verify/role-prompt 的 stdout 形态有测试；doctor 的失败 JSON 由 expect=1 + 解析覆盖。"
+    }
+  ],
+  "state_io": [
+    {
+      "target": "graph.sqlite:nodes",
+      "mode": "read",
+      "where": "scripts/whyexist/commands_misc.py:54-99,358,382,496,502；export 与 doctor 都读"
+    },
+    {
+      "target": "graph.sqlite:edges",
+      "mode": "read",
+      "where": "scripts/whyexist/commands_misc.py:76,90,111,117,124,144,149,174,178,183,365,371"
+    },
+    {
+      "target": "graph.sqlite:features",
+      "mode": "read",
+      "where": "scripts/whyexist/commands_misc.py:23(ensure_feature),502"
+    },
+    {
+      "target": "graph.sqlite:feature_nodes",
+      "mode": "both",
+      "where": "读 scripts/whyexist/workflow.py:104；删 scripts/whyexist/commands_misc.py:568"
+    },
+    {
+      "target": "graph.sqlite:work_items",
+      "mode": "both",
+      "where": "读 scripts/whyexist/commands_misc.py:386-429,464,542；写 target_ids/evidence_ids scripts/whyexist/commands_misc.py:581-584；写 claim_token scripts/whyexist/commands_misc.py:587-589"
+    },
+    {
+      "target": "graph.sqlite:conditions",
+      "mode": "read",
+      "where": "scripts/whyexist/commands_misc.py:474-527"
+    },
+    {
+      "target": "graph.sqlite:evidence",
+      "mode": "read",
+      "where": "scripts/whyexist/commands_misc.py:437-451,529"
+    },
+    {
+      "target": "graph.sqlite:judge_history",
+      "mode": "read",
+      "where": "scripts/whyexist/commands_misc.py:453-466"
+    },
+    {
+      "target": "graph.sqlite:changes",
+      "mode": "read",
+      "where": "scripts/whyexist/commands_misc.py:468-494"
+    },
+    {
+      "target": "graph.sqlite:bites",
+      "mode": "both",
+      "where": "读 scripts/whyexist/commands_misc.py:360；删 scripts/whyexist/commands_misc.py:562-564"
+    },
+    {
+      "target": "graph.sqlite:meta",
+      "mode": "both",
+      "where": "读 scripts/whyexist/commands_misc.py:537-540；写 scripts/whyexist/commands_misc.py:590-599"
+    },
+    {
+      "target": "file:<root>/export/<feature>/*.md",
+      "mode": "write",
+      "where": "scripts/whyexist/commands_misc.py:25-26,38-39,66-193"
+    },
+    {
+      "target": "file:SKILL.md（main 块）",
+      "mode": "both",
+      "where": "读 scripts/whyexist/commands_misc.py:279；写 scripts/whyexist/commands_misc.py:255-261"
+    },
+    {
+      "target": "file:references/contract.md（full 块）",
+      "mode": "both",
+      "where": "读 scripts/whyexist/commands_misc.py:279；写 scripts/whyexist/commands_misc.py:255-261"
+    },
+    {
+      "target": "file:references/{design,quality,contract}.md、tests/test_wxg.py、CHANGELOG.md",
+      "mode": "read",
+      "where": "scripts/whyexist/commands_misc.py:327-329（仅存在性）"
+    },
+    {
+      "target": "file:references/export-sample/feat-demo/*.md",
+      "mode": "read",
+      "where": "scripts/whyexist/commands_misc.py:332-346"
+    },
+    {
+      "target": "file:临时 state 库 + 临时导出目录",
+      "mode": "write",
+      "where": "scripts/whyexist/commands_misc.py:336-338（gen_sample.build）"
+    },
+    {
+      "target": "env:WXG_SKILL_DIR",
+      "mode": "read",
+      "where": "scripts/whyexist/commands_misc.py:271"
+    },
+    {
+      "target": "module 全局 DEFAULT_ROOT = Path.cwd()/.why-exist",
+      "mode": "read",
+      "where": "scripts/whyexist/commands_misc.py:20,211（args.root_path 始终存在，实际是死回退）"
+    },
+    {
+      "target": "sys.modules['wxg'] / sys.path（scripts 目录）",
+      "mode": "read",
+      "where": "scripts/whyexist/commands_misc.py:300；scripts/wxg.py:20-24；gen_sample.py:17-19"
+    }
+  ],
+  "redundancy": [
+    {
+      "item": "commands_misc.py:197-204 从 whyexist.query re-export cmd_find/cmd_get/cmd_slice/resolve_targets/slice_payload",
+      "signal": "wxg.py:75-81 直接从 whyexist.query 导入；全仓没有 `from ...commands_misc import cmd_get/cmd_find/cmd_slice` 的调用点，这 8 行是拆包残留。",
+      "confidence": "high"
+    },
+    {
+      "item": "commands_misc.py:15 import make_temp_dir 但全文只用 temp_dir",
+      "signal": "grep make_temp_dir 在本文件只出现在 import 行；verify 的临时目录走 temp_dir。",
+      "confidence": "high"
+    },
+    {
+      "item": "commands_misc.py:559 的 before = doctor_report(conn) 计算后未使用",
+      "signal": "后续只用 after；每次 doctor 都多跑一遍全库检查（探针 A1 的耗时无法直接看，但代码路径确定）。",
+      "confidence": "high"
+    },
+    {
+      "item": "commands_misc.py:600 fixed['meta'] = 1 是硬编码",
+      "signal": "无论 meta 是否变化都报 1；探针 A6 在干净库上 --fix 仍返回 meta:1，其它计数为 0。",
+      "confidence": "high"
+    },
+    {
+      "item": "verify 成功输出的 checks 名单（commands_misc.py:352）与实际执行的检查块不同步",
+      "signal": "名单 6 项，代码实际还检查 frontmatter、资源存在、attr/bind kind、导出列；名单是手写常量，不是从检查过程收集的。",
+      "confidence": "high"
+    },
+    {
+      "item": "DOCTOR_FIXABLE_CHECKS（wxg_contract.py:22-30）与 I9 正文（wxg_contract.py:763）各一份 7 项清单",
+      "signal": "改一处不影响另一处；verify 不比较两份文本。",
+      "confidence": "medium"
+    },
+    {
+      "item": "doctor 的 32 类 check 名字散落在 20 处 issues.append，没有枚举/常量表",
+      "signal": "check 名是字符串字面量；测试只能靠字符串匹配，新增/改名没有机械校验。",
+      "confidence": "medium"
+    },
+    {
+      "item": "role-prompt 的未知角色校验与 argparse choices 双重实现",
+      "signal": "commands_misc.py:209-210 的分支经 CLI 不可达；choices 已经拦截（探针 D4）。",
+      "confidence": "high"
+    },
+    {
+      "item": "DEFAULT_ROOT 三份：cli.py:16、wxg.py:26、commands_misc.py:20",
+      "signal": "commands_misc 的那份只作为 getattr(args,'root_path',...) 的死回退；wxg.py 的那份无人读。",
+      "confidence": "medium"
+    },
+    {
+      "item": "EXPORT_RULE 文本（wxg_contract.py:744-750）与 cmd_export 的硬编码遍历逻辑两份描述",
+      "signal": "输出代码不读 EXPORT_RULE；verify 只比较由同一实现生成的样例，两者可以一起漂移而无人发现。",
+      "confidence": "medium"
+    },
+    {
+      "item": "commands_repo.py:728-735 再导出 commands_misc 的 6 个符号，而 wxg.py:157-164 直接从 commands_misc 导入",
+      "signal": "双层 facade；commands_repo 的 re-export 层本身也被 08 切片标为兼容残留。",
+      "confidence": "medium"
+    },
+    {
+      "item": "quality.md:43 声称 applies-invalid“有反例测试”，但 tests 里该字符串 0 次",
+      "signal": "文档与测试断言不一致；同理 quality.md:12 的 doctor hash 稳定性也无测试。",
+      "confidence": "high"
+    }
+  ],
+  "rewrite_partition": [
+    {
+      "module": "scripts/whyexist/commands_misc.py:cmd_verify（269-352）",
+      "verdict": "refactor_in_place",
+      "reason": "契约清楚、行为安全（只读、临时目录自清理），九类检查各自独立；但只有 main 块漂移与零副作用有测试，checks 名单是手写常量，full 块的修复提示指错路径。适合保留骨架、补测试、把“逐字节”改成真实字节或改文档。",
+      "risk": "收紧成真字节比较会让当前 CRLF 工作树与两份文档立刻失败；改 checks 名单会改 stdout 契约；拆检查函数会动到 CLI 端到端。"
+    },
+    {
+      "module": "scripts/whyexist/commands_misc.py:doctor_report（355-555）",
+      "verdict": "refactor_in_place",
+      "reason": "只读、意图清楚（32 类一致性检查），但 24 类无测试、check 名无枚举、没有 kind/verdict/attrs 校验。适合按检查项拆函数并逐项加 fixture，而不是重写语义。",
+      "risk": "新增枚举/属性检查会让历史上用 SQL 直改的库突然变红；拆函数时容易改变 issue 字段形状，下游测试和 by_check 统计都依赖它们。"
+    },
+    {
+      "module": "scripts/whyexist/commands_misc.py:cmd_doctor --fix（558-617）",
+      "verdict": "freeze",
+      "reason": "这是切片里唯一会删数据的路径：硬删 bites/edges/feature_nodes、改写 work_items 的 target_ids/evidence_ids、清 token、刷 meta 版本。6 组修复里 orphan-edge/feature-node-missing/work-refs 三组零测试，meta 计数是假的，stamp 版本还能掩盖未迁移的旧库。先把“能删什么、要不要备份、meta 算不算修复”定成契约，再动。",
+      "risk": "直接改 SQL 条件可能误删活数据；改 meta 行为会让既有 --fix 脚本失效；回退只能靠库备份，而 SQLite 默认没有。"
+    },
+    {
+      "module": "scripts/whyexist/commands_misc.py:cmd_export（22-194）",
+      "verdict": "refactor_in_place",
+      "reason": "行为边界清楚（六份视图、作用域可枚举），但实现把六段遍历写在一个函数里、按下标取 EXPORT_FILES、无 ORDER BY、不清理旧文件、非原子。适合抽成“作用域查询 + 六个 projection”并补作用域/顺序测试。",
+      "risk": "改排序会改导出字节与 references/export-sample；改作用域会影响 verify 样例与用户已有导出；目录清理若默认删除会误删手工产物。"
+    },
+    {
+      "module": "scripts/whyexist/commands_misc.py:cmd_contract（250-262）",
+      "verdict": "refactor_in_place",
+      "reason": "20 行、职责单一；但 --write 零测试，CRLF、相对路径、缺标记、--json 静默忽略都是未声明行为，且错误提示不可读。补测试与明确路径解析即可，不值得重写。",
+      "risk": "固定 LF 会改已提交文档字节；把 --write 限制在白名单文件会破坏 HANDOFF 里“任意 --write”的用法。"
+    },
+    {
+      "module": "scripts/whyexist/commands_misc.py:cmd_role_prompt（207-247）",
+      "verdict": "keep",
+      "reason": "纯字符串拼装、无 I/O、已有 audit/scan 两条端到端断言；契约（角色→允许命令）由 ROLES 单点驱动。",
+      "risk": "唯一的真风险是 token 明文与后端不感知，这两个是产品决策，不是实现烂；动它要同时改测试与文档。"
+    },
+    {
+      "module": "scripts/whyexist/commands_misc.py:10-20 导入/常量、197-204 re-export",
+      "verdict": "rewrite",
+      "reason": "未使用的 make_temp_dir、无人消费的 query re-export、第三份 DEFAULT_ROOT 都是拆包残留；删除后行为不变，且能减少循环导入风险。",
+      "risk": "低；先全局搜 `whyexist.commands_misc` 的引用（当前只有 wxg.py 与 commands_repo.py 的 re-export）。"
+    },
+    {
+      "module": "scripts/gen_sample.py",
+      "verdict": "keep",
+      "reason": "确定性 fixture，直接复用 cmd_export 而不是另写一套渲染；verify 与 README 的刷新流程都依赖它。",
+      "risk": "它调用 wxg.cmd_export（依赖 sys.modules['wxg'] 注册），改 wxg.py 的注册方式会同时影响 verify 的样例自检。"
+    },
+    {
+      "module": "references/export-sample/feat-demo/*.md",
+      "verdict": "keep",
+      "reason": "生成产物，由 gen_sample --write 刷新、verify 比对；不应手改。",
+      "risk": "导出排序/格式一变就必须整组重生成，否则 verify 立刻红。"
+    }
+  ],
+  "implicit_requirements": [
+    "export 的作用域会吸收当前代 work_items.target_ids 里的通配模式；只改 feature_nodes 不一定改变导出内容。",
+    "01 的“验收/约束”是 feature 级字段，对每个 requirement 行重复；不是每个 requirement 自己的字段。",
+    "07 的断言列在每个 writes→sink 行都重复一遍；同一 operation 多 sink 时会出现相同的断言文本多行。",
+    "02/05/07/测试规格 的行顺序依赖 SQL 返回顺序（多处无 ORDER BY）；SQLite 下稳定，MySQL/PG 下不保证跨后端字节一致。",
+    "05 永远不导出 property 节点，即使 classifier contains property；导出规则文本与节点 kind 表存在这一层缺口。",
+    "空表渲染为一行全空单元格，消费者必须把“全空行”当作无数据，而不是空表。",
+    "export 不清理导出目录里的旧文件；EXPORT_FILES 改名/减项后旧文件会一直留着。",
+    "export 不是原子操作：六份文件逐个写，第 N 份失败会留下前 N-1 份新内容 + 旧内容混合。",
+    "feature id 允许 `.` 与 `..`；`--feature ..` 会把六份视图写到 <root> 根目录，`export/` 目录根本不存在。",
+    "role-prompt 把 --token 明文写进提示词，提示词天然会被复制/转发；没有脱敏或一次性令牌概念。",
+    "role-prompt 不读 WXG_DB_URL，MySQL/PostgreSQL 后端下仍宣称状态库是 <root>/graph.sqlite。",
+    "role-prompt 的 root 是调用时 --root 或 cwd 的绝对路径；提示词换机器/换目录后路径失效。",
+    "contract --write 的相对路径以技能根解析，不是 cwd；HANDOFF 里的 `--write SKILL.md` 依赖这一点。",
+    "contract --json 与 --write 同时给时，--json 静默胜出，文件不被修改。",
+    "contract --write 在 Windows 上把整个文件改写成 CRLF，即使原文件是 LF；verify 看不见这个差异。",
+    "verify 只检查第一对 begin/end；文件里可以有第二对伪造标记而不被发现。",
+    "verify 的比较是“文本相等 + strip 块外换行”，不是逐字节；块内行尾空格会报漂移，换行符不会。",
+    "verify 的 full 块修复提示丢了 references/ 前缀，照提示执行会 exit 2。",
+    "verify 会真实执行 gen_sample → cmd_export → 建临时 SQLite 库；它的“零副作用”只保证不碰 cwd 与权威库。",
+    "WXG_SKILL_DIR 能重定向 verify 的被检查根，但代码仍从真实安装导入；测试靠这一点做漂移探针。",
+    "doctor 默认只读但仍会走 connect 的 PRAGMA journal_mode=WAL 与 CLI 末尾 commit；对旧的非 WAL 库会产生文件级副作用。",
+    "doctor 把 exit_code≠0 的 evidence 当问题，且没有删除 evidence 的命令；如实记录失败运行会让 doctor 永久红。",
+    "doctor --fix 会改写 superseded 旧代工单的 target_ids/evidence_ids（只跳过 audit），旧代写入边界的历史记录会被抹掉。",
+    "doctor --fix 的 meta 版本刷新不做结构迁移，能把“版本对不上”变成“版本对但结构旧”。",
+    "doctor 的 fixed.meta 恒为 1，其它计数才反映真实变化。",
+    "doctor 的 issues 上限 200；超限时只给 truncated=true，没有分页参数。",
+    "doctor 不校验 kind/verdict/attrs 的枚举与类型，绕过命令直写库的非法值不会被体检发现。",
+    "evidence 的 artifact_path 在 evidence-record 时被 resolve 成绝对路径；移动仓库/日志目录后 doctor 会报产物缺失。",
+    "CLI 对除 verify/contract/role-prompt/up 外的所有命令都要求 graph.sqlite 已存在，并在连接前做文件检查；doctor/export 因此不会“先建空库再报错”。",
+    "所有 DB 命令在 handler 返回后无条件 conn.commit()，包括纯读命令；SQLite 下通常无内容变化，但不是严格的无事务副作用。"
+  ],
+  "findings": [
+    "doctor --fix 是切片里唯一删数据的路径：6 组修复中 orphan-edge/feature-node-missing/work-refs 三组没有任何测试，且 meta 计数硬编码为 1，修复报告不可信。",
+    "doctor 把任何 exit_code≠0 的 evidence 记为不可修问题，又不存在删除 evidence 的 CLI 命令：诚实登记一次失败测试会让发布安全网永久红，实际会逼人只登记绿灯证据。",
+    "verify 的“逐字节”不成立：文本模式读取 + strip 块外换行，整文件改 CRLF 仍 PASS；只检查第一对标记；full 块漂移的修复提示 `--write contract.md` 解析到技能根，照做直接 exit 2。",
+    "verify 的九类检测只有 main 块漂移与“不建 .why-exist”有测试；导出样例漂移、full 块漂移、frontmatter、资源缺失、缺标记全部靠未断言的代码路径（探针证明能抓到，但重构可静默删掉）。",
+    "export 的作用域包含当前代 work_items.target_ids（不只是 feature_nodes），导出不清理旧文件、不是原子写；feature id 为 `..` 时六份视图直接写进 <root>。",
+    "doctor 不校验枚举与属性类型：非法 node.kind/edge.kind/bite.verdict、不合 schema 的 attrs_json 都不会被报出；gate 只按已知 verdict 值判断，非法值被静默忽略。",
+    "role-prompt 把 claim_token 明文写进可转发的提示词，并且在 MySQL/PG 后端下仍宣称状态库是 <root>/graph.sqlite。",
+    "doctor 每次运行都算两遍 doctor_report（before 未使用），每次 --fix 都重写 meta 并报 fixed.meta=1。",
+    "commands_misc.py:197-204 的 query re-export、未使用的 make_temp_dir、第三份 DEFAULT_ROOT 都是拆包残留，零消费者。",
+    "quality.md:43 声称 applies-invalid“有反例测试”，实际测试里 0 次；quality.md:12 的 doctor hash 稳定性同样无测试；README.md:116 还写着 contract v1.1.0 / schema v8，README.md:179 写 2.67.0，HANDOFF.md:14 写 2.91.0，verify 管不到这些正文。",
+    "CI 只跑 verify + unittest（ci.yml:27-30）；doctor 只在 tools/preflight.py 里对新建的干净库跑一次，因此“安全网”在自动化里从未面对过脏库。"
+  ],
+  "open_questions": [
+    "verify 应该做真字节比较（拒绝 CRLF/多标记/块外改动），还是维持“文本归一化”并把文档里的“逐字节”改掉？前者会让当前工作树立刻失败，需要先定重生成流程。",
+    "verify 的检查范围要不要扩展到 VERSION/CHANGELOG/README/quality 的版本一致性？现在这些正文漂移完全无人管，tools/check_docs.py 又不在 CI。",
+    "doctor 是“交付门”还是“诊断工具”？如果是门，exit_code≠0 的 evidence 就不该是问题（失败运行也要留痕）；如果是诊断，就不该用退出码 1 表达。",
+    "doctor --fix 允许硬删 bites/edges/feature_nodes 吗？要不要先备份/导出被删行，或改成“报告 + 显式 --apply --yes”？",
+    "doctor --fix 的 meta 刷新算修复还是掩盖？是否应该在 schema_version 不匹配时拒绝 stamp，要求先跑 init 迁移？",
+    "doctor 要不要补 kind/verdict/attrs 的枚举与类型校验？补了会让用 SQL 直改的旧库变红，不补则“体检通过”有盲区。",
+    "export 是否应对旧文件做清理、是否要原子写（临时目录 + rename）、是否要固定排序以保证跨后端字节一致？",
+    "feature id 的校验要不要禁止 `.`/`..`（或统一禁止以点开头）？这会影响已有 feature 命名。",
+    "role-prompt 的 token 要不要脱敏、要不要支持“二维码/一次性令牌”，以及是否应感知 WXG_DB_URL 输出 --db-url？",
+    "contract --write 是否应限制为 SKILL.md / references/contract.md 两个已知路径？现在它可以改写任意带标记的文件。",
+    "verify 失败提示里的修复命令要不要直接给出可复制的绝对/正确相对路径（`--write references/contract.md`）？",
+    "WXG_SKILL_DIR 是测试后门还是公开能力？如果公开，需要写进契约并校验目录结构；如果是测试后门，应改成参数或 pytest fixture。"
+  ]
+}

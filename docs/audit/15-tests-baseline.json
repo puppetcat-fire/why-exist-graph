@@ -1,0 +1,851 @@
+{
+  "slice": "15-tests-baseline",
+  "modules": [
+    {
+      "path": "tests/test_wxg.py",
+      "loc": 1895,
+      "role": "CLI 端到端主回归：37 条命令的 happy path 与反例、迁移、门禁、导出、doctor/verify"
+    },
+    {
+      "path": "tests/test_plan_cli.py",
+      "loc": 865,
+      "role": "plan/brief/blind-check/apply/impact/cycles/conflicts/up 的独立 e2e 夹具"
+    },
+    {
+      "path": "tests/test_package_units.py",
+      "loc": 753,
+      "role": "包内纯函数与内存 SQLite：jsonio/work/db 方言/graph 校验/gates/导入解析"
+    },
+    {
+      "path": "tests/test_wxg_mysql.py",
+      "loc": 485,
+      "role": "纯标准库 MySQL 客户端集成测试，需真实 MariaDB（默认 127.0.0.1:3307）"
+    },
+    {
+      "path": "tests/test_graph_algo.py",
+      "loc": 216,
+      "role": "SCC/分层/反链/可达/analyze 的纯算法测试"
+    },
+    {
+      "path": "tests/test_cycles.py",
+      "loc": 173,
+      "role": "环检测、最小断边集、断边建议与环形状"
+    },
+    {
+      "path": "tests/test_briefing.py",
+      "loc": 172,
+      "role": "盲化 brief 的边界展开、输入判定与 15 键形状"
+    },
+    {
+      "path": "tests/test_impact.py",
+      "loc": 153,
+      "role": "影响闭包、跳数、跨 feature、断边影响"
+    },
+    {
+      "path": "tests/test_reducer.py",
+      "loc": 146,
+      "role": "补丁归一化与合并不交叠"
+    },
+    {
+      "path": "tests/test_derive.py",
+      "loc": 143,
+      "role": "按目录分组与 depends 推导"
+    },
+    {
+      "path": "tests/test_pg_backend.py",
+      "loc": 143,
+      "role": "PostgreSQL 状态库后端 IT，默认 skip，破坏性重置 public schema"
+    },
+    {
+      "path": "tests/test_mysql_backend.py",
+      "loc": 140,
+      "role": "MySQL 状态库后端 IT，默认 skip，破坏性清空目标库"
+    },
+    {
+      "path": "tests/test_engine.py",
+      "loc": 140,
+      "role": "Engine 库 API（plan/brief/blind_check/gate/impact/close），不经 subprocess"
+    },
+    {
+      "path": "tests/test_blind.py",
+      "loc": 135,
+      "role": "盲测输出合法性判定与 locality 趋势"
+    },
+    {
+      "path": "tests/test_planner.py",
+      "loc": 118,
+      "role": "分层选择、并行度、bottleneck 文案、确定性"
+    },
+    {
+      "path": "tests/test_conflicts.py",
+      "loc": 86,
+      "role": "目标模式重叠判定与边界情况"
+    }
+  ],
+  "public_surface": [
+    {
+      "entry": "python -m unittest discover -s tests -v",
+      "kind": "cli",
+      "where": "tests/（16 个 test_*.py）",
+      "input": "无参；工作目录必须是项目根；环境需 PYTHONUTF8=1 才能稳定输出中文",
+      "output": "stderr 逐条 ok/skipped，尾部 Ran N tests / OK；stdout 为空",
+      "side_effects": "写 __pycache__；每条 e2e 用例在系统临时目录建独立 <tmp>/state/graph.sqlite（WAL + -shm）与 <tmp>/state/export/；跑完 rmtree(ignore_errors=True)",
+      "exit_codes": "0 全绿；1 有 FAIL/ERROR"
+    },
+    {
+      "entry": "python -m unittest tests.test_xxx -v",
+      "kind": "cli",
+      "where": "tests/test_wxg.py:1；tests/test_plan_cli.py:1；各模块首行 docstring 给出运行示例",
+      "input": "模块点分名",
+      "output": "同上",
+      "side_effects": "同上",
+      "exit_codes": "0 / 1"
+    },
+    {
+      "entry": "WXG_TEST_MYSQL_URL（后端 IT 开关）",
+      "kind": "cli",
+      "where": "tests/test_mysql_backend.py:28,31",
+      "input": "mysql:// URL，指向可丢弃库",
+      "output": "未设：3 条整类 skip；设了：跑 init→repo→declare→prepare→claim→write→finish→judge→gate→doctor、并发 claim、serve --once",
+      "side_effects": "setUpClass 会 SHOW TABLES 并 DROP 目标库所有表（破坏性）",
+      "exit_codes": "0（带 skip）或 1"
+    },
+    {
+      "entry": "WXG_TEST_PG_URL（后端 IT 开关）",
+      "kind": "cli",
+      "where": "tests/test_pg_backend.py:27,30",
+      "input": "postgresql:// URL；另需 psycopg",
+      "output": "未设：3 条整类 skip；设了：同 MySQL 的三条流程",
+      "side_effects": "setUpClass 执行 DROP SCHEMA public CASCADE 后重建（破坏性）",
+      "exit_codes": "0（带 skip）或 1"
+    },
+    {
+      "entry": "WXG_MYSQL_TEST_URL（客户端 IT 开关）",
+      "kind": "cli",
+      "where": "tests/test_wxg_mysql.py:29-30,43-58",
+      "input": "MariaDB URL；默认 mysql://root:wxgpass@127.0.0.1:3307",
+      "output": "连不上时 setUpClass 抛 SkipTest，整个 MySQLClientTestCase 记为 1 条 skip；连上跑 11 条",
+      "side_effects": "建/删库 wxg_client_test_<pid>；建/删用户 wxg_cli_<pid>",
+      "exit_codes": "0（带 skip）或 1"
+    },
+    {
+      "entry": "WXG_SKILL_DIR（verify 重定向）",
+      "kind": "cli",
+      "where": "tests/test_wxg.py:498",
+      "input": "一份技能树拷贝的绝对路径",
+      "output": "让 wxg verify 读拷贝里的 SKILL.md / references，用于制造漂移",
+      "side_effects": "shutil.copytree(SKILL, copy)：复制整棵树（当前 9.6 MB / 335 文件，含 dist 13 个 zip 与 docs/audit 临时 sqlite）",
+      "exit_codes": "不直接暴露；子进程 verify 非 0 被断言"
+    },
+    {
+      "entry": "<tmp>/state/graph.sqlite（+ -wal/-shm）",
+      "kind": "file",
+      "where": "tests/test_wxg.py:47-58,155；tests/test_plan_cli.py:50-58,128",
+      "input": "CLI --root 指向 <tmp>/state",
+      "output": "SQLite 状态库，测试用 sqlite3 直接读表断言",
+      "side_effects": "写；tearDown 删除整棵 <tmp>",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "<tmp>/state/export/<feature>/*.md",
+      "kind": "file",
+      "where": "tests/test_wxg.py:264-268,628-630,753-755,1004-1026,1198-1200",
+      "input": "wxg export --feature",
+      "output": "6 份 Markdown（01/02/04/05/07/测试规格）；测试只断言其中 4 份",
+      "side_effects": "写",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "<tmp>/{artifact.txt,result.json,out*.json,patch*.json}",
+      "kind": "file",
+      "where": "tests/test_wxg.py:572-576；tests/test_plan_cli.py:275-287,303-315,423-446,462-477,496-503",
+      "input": "用例自造的证据产物、盲测产出、补丁文件",
+      "output": "被 evidence-record / blind-check / patch / apply 消费",
+      "side_effects": "写",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "wxg.make_temp_dir / whyexist 私有符号",
+      "kind": "function",
+      "where": "tests/test_wxg.py:24,617-627,1010-1019,1411-1416；tests/test_plan_cli.py:24；tests/test_engine.py:18-20；tests/test_package_units.py:18-23；tests/test_mysql_backend.py:25,46；tests/test_pg_backend.py:25,48",
+      "input": "测试模块直接 import 实现（upsert_node/upsert_edge/bind_node/Reject/gates._required_coverage/work.insert_work）",
+      "output": "复用内部实现，绕过 CLI",
+      "side_effects": "无",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "graph.sqlite:12 张表",
+      "kind": "table",
+      "where": "tests/test_wxg.py:157-166；tests/test_plan_cli.py:44-46,130-138",
+      "input": "CLI 写入",
+      "output": "meta/repos/nodes/edges/features/conditions/work_items/feature_nodes/evidence/bites/judge_history/changes",
+      "side_effects": "db_snapshot 逐表 SELECT * ORDER BY 1，用于只读性与幂等断言",
+      "exit_codes": "不适用"
+    }
+  ],
+  "contracts": [
+    {
+      "id": "C1",
+      "statement": "全量套件在当前工作区发现 381 条用例、全部通过、退出 0，耗时约 185 秒",
+      "evidence": ["README.md:117", "实测：python -m unittest discover -s tests -v"],
+      "status": "covered",
+      "note": "唯一可复现基线；FAIL/ERROR 行数为 0"
+    },
+    {
+      "id": "C2",
+      "statement": "没有 MariaDB 时仍全绿：370 条、7 条跳过、退出 0，约 171 秒",
+      "evidence": ["实测：WXG_MYSQL_TEST_URL=死端口 后全量跑", "tests/test_wxg_mysql.py:47-58"],
+      "status": "covered",
+      "note": "CI 口径；与 381 的差额来自类级 skip 把 11 个方法折成 1 条"
+    },
+    {
+      "id": "C3",
+      "statement": "每条 e2e 用例使用独立临时状态库，不写工作区 ./.why-exist",
+      "evidence": ["tests/test_wxg.py:47-58", "tests/test_plan_cli.py:50-58", "CONTRIBUTING.md:47"],
+      "status": "partial",
+      "note": "由夹具构造保证，没有一条断言能发现测试写进了真实工作区"
+    },
+    {
+      "id": "C4",
+      "statement": "失败时输出可读 JSON 到 stderr、stdout 为空、退出码 2",
+      "evidence": ["scripts/whyexist/cli.py:85-90", "tests/test_wxg.py:61-83,479"],
+      "status": "partial",
+      "note": "变异 M5（把错误 JSON 改打到 stdout）整套测试存活；夹具把两路混读，从未分辨流"
+    },
+    {
+      "id": "C5",
+      "statement": "成功时输出 JSON 到 stdout、退出码 0",
+      "evidence": ["tests/test_wxg.py:61-83", "scripts/whyexist/cli.py:109-113"],
+      "status": "covered",
+      "note": "只锁可解析；indent=2 与 ensure_ascii=False 的格式未被断言"
+    },
+    {
+      "id": "C6",
+      "statement": "gate 结果 PASS 退出 0、FAIL 退出 1，且输出含 result/reason/missing/checks",
+      "evidence": ["tests/test_wxg.py:255-256,304-306,868-871", "tests/test_plan_cli.py:746-767"],
+      "status": "covered",
+      "note": "变异 M4（FAIL 也退 0）被杀"
+    },
+    {
+      "id": "C7",
+      "statement": "verify 无漂移时 ok=true 退出 0；文档块被手改时非 0 且 stdout 含「过期」",
+      "evidence": ["tests/test_wxg.py:481-501", "scripts/whyexist/commands_misc.py:269-352"],
+      "status": "partial",
+      "note": "只改 SKILL.md 的 main 块；references/contract.md 的 full 块、frontmatter、缺资源、导出样例过期四类都无用例"
+    },
+    {
+      "id": "C8",
+      "statement": "doctor 无问题退 0、有问题退 1、--fix 后恢复 0 并返回 fixed 计数",
+      "evidence": ["tests/test_wxg.py:408-429,583-587"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C9",
+      "statement": "apply 成功退 0；合并冲突退 1 且不写库；--dry-run 退 0 且 applied=false",
+      "evidence": ["tests/test_plan_cli.py:448-457,459-491,493-515"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C10",
+      "statement": "reconcile 未收敛退 1、收敛退 0；dry-run 不写库且两次输出一致",
+      "evidence": ["tests/test_wxg.py:1326-1337,1339-1355"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C11",
+      "statement": "状态库缺失时命令退 2 且不创建 .why-exist 目录",
+      "evidence": ["tests/test_wxg.py:947-955", "scripts/whyexist/cli.py:66-69"],
+      "status": "partial",
+      "note": "只覆盖 gate/work-seed/repo-list 3 条；其余 41 条需库命令靠统一分支，无用例"
+    },
+    {
+      "id": "C12",
+      "statement": "verify 零副作用：不创建 .why-exist 目录",
+      "evidence": ["tests/test_wxg.py:873-882"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C13",
+      "statement": "plan 只读：执行前后 12 张表内容完全相同，且两次输出相同",
+      "evidence": ["tests/test_plan_cli.py:184-199"],
+      "status": "covered",
+      "note": "用整库快照而非单表，是项目里最强的只读断言"
+    },
+    {
+      "id": "C14",
+      "statement": "gate 只读：库文件 sha256 前后一致",
+      "evidence": ["tests/test_wxg.py:299-306"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C15",
+      "statement": "sync 只读：库文件 sha256 前后一致",
+      "evidence": ["tests/test_wxg.py:1585-1600"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C16",
+      "statement": "serve --once 默认只读；--apply 才 seed 工单",
+      "evidence": ["tests/test_wxg.py:1659-1676,1678-1693"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C17",
+      "statement": "SQLite 使用 WAL 日志模式；work-claim 写入 claimed_at",
+      "evidence": ["tests/test_wxg.py:1391-1402"],
+      "status": "covered",
+      "note": "实现细节，不是用户承诺；换后端后此断言无意义"
+    },
+    {
+      "id": "C18",
+      "statement": "schema_version=9、契约版本 2.92.0（测试硬编码版本号）",
+      "evidence": ["tests/test_wxg.py:520-521,652,425"],
+      "status": "covered",
+      "note": "升版本必须同步 VERSION、CONTRACT_VERSION、CHANGELOG、契约块与这三处测试断言"
+    },
+    {
+      "id": "C19",
+      "statement": "状态库含 meta/repos/nodes/edges/features/conditions/work_items/feature_nodes/evidence/bites/judge_history/changes 共 12 张表",
+      "evidence": ["tests/test_wxg.py:157-166", "tests/test_plan_cli.py:44-46", "tests/test_package_units.py:244"],
+      "status": "partial",
+      "note": "快照查询隐含要求表存在；没有 DDL/列集合断言（迁移用例除外）"
+    },
+    {
+      "id": "C20",
+      "statement": "export 在 <root>/export/<feature>/ 写 6 份 Markdown",
+      "evidence": ["tests/test_wxg.py:264-268,628-630,753-755,1004-1026,1198-1200", "scripts/whyexist/commands_misc.py:22-194"],
+      "status": "partial",
+      "note": "只断言 01/02/04/07；05-类图.md 与 测试规格.md 零断言"
+    },
+    {
+      "id": "C21",
+      "statement": "导出表格转义竖线；共享 parameter 只出现一次",
+      "evidence": ["tests/test_wxg.py:1004-1026,608-630"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C22",
+      "statement": "up 幂等；next 首步是 import-file --prepare；已存在的 feature 不重建",
+      "evidence": ["tests/test_plan_cli.py:337-351"],
+      "status": "partial",
+      "note": "gate FAIL 时仍退 0 未显式断言；minimal + --path 的矛盾未测"
+    },
+    {
+      "id": "C23",
+      "statement": "up --template minimal 只建 feature、不登记仓",
+      "evidence": ["tests/test_plan_cli.py:518-522"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C24",
+      "statement": "import-file 重导入幂等（inserted=0 且 updated>0），并保留手写 attrs（duty/x_*）",
+      "evidence": ["tests/test_wxg.py:334-351,353-369"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C25",
+      "statement": "符号从源码消失时节点标 stale=1、复现时清 0；stale 使 gate FAIL",
+      "evidence": ["tests/test_wxg.py:1559-1583"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C26",
+      "statement": "非 python 仓给可读 Reject，不回显内部改名 wxg_import",
+      "evidence": ["tests/test_wxg.py:909-923"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C27",
+      "statement": "import-repo 递归扫描仓内全部 .py（跳过点目录）",
+      "evidence": ["tests/test_plan_cli.py:567-584"],
+      "status": "partial",
+      "note": "只有 2 个根目录文件；点目录/语法错/大仓未测"
+    },
+    {
+      "id": "C28",
+      "statement": "derive 默认 dry-run 只读；组件数<=1 时带 hint；--apply 写 origin=derived 的组件",
+      "evidence": ["tests/test_plan_cli.py:587-600,602-626"],
+      "status": "covered",
+      "note": "stale_derived、depends.x_evidence、target 边界未断言"
+    },
+    {
+      "id": "C29",
+      "statement": "promote 只接受 origin=derived；改成 declared 并记录 x_promoted_by",
+      "evidence": ["tests/test_plan_cli.py:629-647,649-681"],
+      "status": "covered",
+      "note": "跨 feature 提升未被测（上一切片已证存在越权）"
+    },
+    {
+      "id": "C30",
+      "statement": "work-claim 必须带 --actor；裁决 actor 不能等于被审工单 claimed_by",
+      "evidence": ["tests/test_wxg.py:527-567"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C31",
+      "statement": "work-finish 清空 claim_token；work-judge(passed) 后 status=passed 且 token 仍为空",
+      "evidence": ["tests/test_wxg.py:444-463"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C32",
+      "statement": "图写入必须 token 有效、角色匹配、全部 id 落在 target_ids 内",
+      "evidence": ["tests/test_wxg.py:465-479", "tests/test_package_units.py:289-309"],
+      "status": "partial",
+      "note": "越界只测了 upsert-node；upsert-edge/bind/retract/derive 边界无用例"
+    },
+    {
+      "id": "C33",
+      "statement": "coverage 未达标时 work-judge 被拒；coverage.next 指向首个未达阶段",
+      "evidence": ["tests/test_wxg.py:1133-1156,1299-1308"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C34",
+      "statement": "同一节点只认最新咬合，跨节点 KEEP 不抵消；失败历史只增不删且清空陈旧 fail_reason",
+      "evidence": ["tests/test_wxg.py:1055-1077,1102-1131"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C35",
+      "statement": "evidence 按 generation 隔离；artifact 被删或改动时 gate FAIL、doctor 报错",
+      "evidence": ["tests/test_wxg.py:792-810,569-606"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C36",
+      "statement": "doctor --fix 只修可修项（dangling bite/token/meta），legacy 身份列为 unfixable",
+      "evidence": ["tests/test_wxg.py:391-429,675-678"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C37",
+      "statement": "init 迁移旧库（补列、回填 legacy 身份与 judge_history），已迁移库重复执行不改写任何行",
+      "evidence": ["tests/test_wxg.py:632-679,683-696,957-1002"],
+      "status": "covered",
+      "note": "只覆盖 SQLite"
+    },
+    {
+      "id": "C38",
+      "statement": "change-open 按起始条件继承/重置，generation+1，已开变更时二次 open 被拒",
+      "evidence": ["tests/test_wxg.py:1446-1533"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C39",
+      "statement": "conformance 报锚点/代码支撑/未声明耦合/缺测试/代码孤儿；--conformance 开启后 gate FAIL",
+      "evidence": ["tests/test_wxg.py:1704-1890", "tests/test_package_units.py:555-687"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C40",
+      "statement": "并发 work-claim 只有一个成功（退出码集合 {0,2}）",
+      "evidence": ["tests/test_mysql_backend.py:109-126", "tests/test_pg_backend.py:112-129"],
+      "status": "gap",
+      "note": "两条都默认 skip；SQLite（默认后端）没有并发用例"
+    },
+    {
+      "id": "C41",
+      "statement": "MySQL/PostgreSQL 后端 init 返回 backend=mysql/postgres、schema_version=9",
+      "evidence": ["tests/test_mysql_backend.py:86-89", "tests/test_pg_backend.py:88-91"],
+      "status": "gap",
+      "note": "用例默认 skip；且 08-cmd-repo 切片已证非 SQLite 上 init 抛 NameError"
+    },
+    {
+      "id": "C42",
+      "statement": "feature-list 返回 {features:[{id,name,generation,conditions}]}，按 id 升序",
+      "evidence": ["scripts/whyexist/commands_feature.py:235-245", "探针 docs/audit/_probe_15e.py"],
+      "status": "gap",
+      "note": "全仓 0 测试；探针实跑确认形状"
+    },
+    {
+      "id": "C43",
+      "statement": "repo-list 返回 {repos:[{id,path,language,created_at}]}，按 id 升序，只读",
+      "evidence": ["tests/test_wxg.py:947-955", "探针 docs/audit/_probe_15e.py"],
+      "status": "gap",
+      "note": "只测了缺库错误路径；成功输出无任何断言"
+    },
+    {
+      "id": "C44",
+      "statement": "bind 只收 parameter/argument/assertion，方向随 kind，默认边 kind 来自 BIND_EDGE_KIND",
+      "evidence": ["tests/test_wxg.py:229-231", "scripts/whyexist/graph.py:190-213"],
+      "status": "partial",
+      "note": "只在 full flow 里被调用一次；无拒绝分支、无方向断言、无 --edge-kind 用例"
+    },
+    {
+      "id": "C45",
+      "statement": "gate --json / coverage --json 改变输出形态",
+      "evidence": ["scripts/whyexist/commands_gates.py:159（cmd_gate 不读 args.json）", "scripts/whyexist/commands_gates.py:28（cmd_coverage 同）", "探针 docs/audit/_probe_15e.py（两种调用 stdout 相同）"],
+      "status": "gap",
+      "note": "契约表把 --json 列为参数，实现不读；测试照传 20+ 处，无法发现"
+    },
+    {
+      "id": "C46",
+      "statement": "--db-url 覆盖 WXG_DB_URL；非法协议退 2 且错误进 stderr",
+      "evidence": ["scripts/whyexist/cli.py:55-61", "探针 docs/audit/_probe_15e.py"],
+      "status": "gap",
+      "note": "全项目没有任何 --db-url 用例；后端选择只靠 test_mysql_backend 的 env"
+    },
+    {
+      "id": "C47",
+      "statement": "WXG_ACTOR 环境变量可作为 actor 兜底",
+      "evidence": ["scripts/whyexist/workflow.py:12-20"],
+      "status": "gap",
+      "note": "测试一律显式 --actor；环境变量分支从未执行"
+    },
+    {
+      "id": "C48",
+      "statement": "相对 --root 可用（会被 resolve 成绝对路径）",
+      "evidence": ["scripts/whyexist/cli.py:53"],
+      "status": "gap",
+      "note": "所有测试传绝对路径"
+    },
+    {
+      "id": "C49",
+      "statement": "--data/--target-ids/--ids 支持 @文件，且兼容 UTF-8 BOM",
+      "evidence": ["tests/test_wxg.py:884-892", "tests/test_package_units.py:41-45"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C50",
+      "statement": "中文输出可被 UTF-8 解析",
+      "evidence": ["tests/test_wxg.py:21,66-68"],
+      "status": "partial",
+      "note": "靠 encoding=utf-8 + PYTHONUTF8=1 的夹具保证，没有字节级断言"
+    },
+    {
+      "id": "C51",
+      "statement": "Engine 公开 API：plan/brief/blind_check/gate/impact/close，FAIL 不抛异常",
+      "evidence": ["tests/test_engine.py:82-136"],
+      "status": "covered",
+      "note": "close 后重连未测；gate PASS 路径未测"
+    },
+    {
+      "id": "C52",
+      "statement": "纯函数确定性：graph_algo/planner/impact/reducer/briefing 同输入同输出",
+      "evidence": ["tests/test_graph_algo.py:194-212", "tests/test_planner.py:109-114", "tests/test_impact.py:128-131", "tests/test_reducer.py:124-142", "tests/test_briefing.py:150-159"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C53",
+      "statement": "算法边界：空图返回 0/空、自环单列、环抛 CyclicGraph、悬空边分类上报、断边集过大时 truncated",
+      "evidence": ["tests/test_graph_algo.py:29,93,182,189", "tests/test_cycles.py:40-45,90-94", "tests/test_planner.py:99-107"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C54",
+      "statement": "SQL 方言翻译：INSERT IGNORE / ON DUPLICATE KEY / VALUES(x) / ON CONFLICT DO NOTHING / ? 换 %s",
+      "evidence": ["tests/test_package_units.py:181-222"],
+      "status": "partial",
+      "note": "全部是字符串级断言，没有一条证明译出的 SQL 能在真实后端执行"
+    },
+    {
+      "id": "C55",
+      "statement": "_named_params 把字符串字面量里的 :name 当占位符（已知限制）",
+      "evidence": ["tests/test_package_units.py:225-235"],
+      "status": "covered",
+      "note": "测试把缺陷写成契约，防止有人误以为支持"
+    },
+    {
+      "id": "C56",
+      "statement": "测试执行环境不依赖网络（除本机 MariaDB）与第三方包（psycopg 仅 PG 分支导入）",
+      "evidence": ["tests/test_wxg_mysql.py:27（import wxg_mysql 纯标准库）", "tests/test_pg_backend.py:34（函数内 import psycopg）"],
+      "status": "covered",
+      "note": "MariaDB 走 127.0.0.1:3307 本地 TCP"
+    }
+  ],
+  "state_io": [
+    {
+      "target": "graph.sqlite:meta/repos/nodes/edges/features/conditions/work_items/feature_nodes/evidence/bites/judge_history/changes",
+      "mode": "both",
+      "where": "tests/test_wxg.py:157-166,380-386,420-426,553-567；tests/test_plan_cli.py:44-46,130-138"
+    },
+    {
+      "target": "<tmp>/state/（目录新建与删除）",
+      "mode": "write",
+      "where": "tests/test_wxg.py:47-58；tests/test_plan_cli.py:50-58；tests/test_engine.py:25-33"
+    },
+    {
+      "target": "<tmp>/state/export/<feature>/*.md",
+      "mode": "write",
+      "where": "tests/test_wxg.py:264-268,628-630,753-755,1004-1026,1198-1200"
+    },
+    {
+      "target": "<tmp>/artifact.txt（evidence 产物）",
+      "mode": "write",
+      "where": "tests/test_wxg.py:572-576,593-597"
+    },
+    {
+      "target": "<tmp>/{result.json,out*.json,patch*.json}",
+      "mode": "write",
+      "where": "tests/test_plan_cli.py:275-287,303-315,423-446,462-477,496-503"
+    },
+    {
+      "target": "<tmp>/skill-copy/（整棵技能树副本）",
+      "mode": "write",
+      "where": "tests/test_wxg.py:489-490"
+    },
+    {
+      "target": "env:PYTHONUTF8",
+      "mode": "write",
+      "where": "tests/test_wxg.py:21；tests/test_plan_cli.py:21；tests/test_engine.py:15"
+    },
+    {
+      "target": "env:PYTHONIOENCODING",
+      "mode": "write",
+      "where": "tests/test_wxg.py:21；tests/test_plan_cli.py:21"
+    },
+    {
+      "target": "env:WXG_SKILL_DIR",
+      "mode": "write",
+      "where": "tests/test_wxg.py:498"
+    },
+    {
+      "target": "env:WXG_DB_URL",
+      "mode": "write",
+      "where": "tests/test_mysql_backend.py:54；tests/test_pg_backend.py:56"
+    },
+    {
+      "target": "env:WXG_TEST_MYSQL_URL / WXG_TEST_PG_URL / WXG_MYSQL_TEST_URL",
+      "mode": "read",
+      "where": "tests/test_mysql_backend.py:28；tests/test_pg_backend.py:27；tests/test_wxg_mysql.py:29-30"
+    },
+    {
+      "target": "MariaDB：库 wxg_client_test_<pid>、用户 wxg_cli_<pid>",
+      "mode": "both",
+      "where": "tests/test_wxg_mysql.py:44,47-67,398-430"
+    },
+    {
+      "target": "仓库内源文件",
+      "mode": "read",
+      "where": "全量测试；无写入（plan-test.log 是历史残留）"
+    }
+  ],
+  "redundancy": [
+    {
+      "item": "CLI 夹具在四个文件里重复实现",
+      "signal": "test_wxg.py:61-166、test_plan_cli.py:62-146、test_mysql_backend.py:59-84、test_pg_backend.py:61-86 的 cli/init_repo/declare/db_snapshot 近乎逐行相同；8 行块跨文件重复共 51 组",
+      "confidence": "high"
+    },
+    {
+      "item": "SHOP_PY 夹具四份副本",
+      "signal": "test_wxg.py:26-42、test_plan_cli.py:26-42、test_mysql_backend.py:50-53、test_pg_backend.py:52-55",
+      "confidence": "high"
+    },
+    {
+      "item": "TABLES 元组重复声明",
+      "signal": "test_wxg.py:162-163 与 test_plan_cli.py:44-45 同一份 12 表清单",
+      "confidence": "high"
+    },
+    {
+      "item": "mysql 与 pg 后端 IT 互为副本",
+      "signal": "两个文件 140/143 行，除 URL、backend 断言与 skip 文案外结构一致；setUpClass 都是破坏性的",
+      "confidence": "high"
+    },
+    {
+      "item": "gate --json / coverage --json 是死开关",
+      "signal": "commands_gates.py 全文无 args.json 读取；实测两种调用 stdout 逐字节相同；测试仍传 20+ 次",
+      "confidence": "high"
+    },
+    {
+      "item": "三种互不相同的 DB 不可用判定",
+      "signal": "skipUnless(WXG_TEST_MYSQL_URL)（test_mysql_backend.py:31）、skipUnless(WXG_TEST_PG_URL)（test_pg_backend.py:30）、setUpClass 抛 SkipTest（test_wxg_mysql.py:57-58）",
+      "confidence": "high"
+    },
+    {
+      "item": "测试文件几乎全部未纳入版本控制",
+      "signal": "git ls-files tests 只有 tests/test_wxg.py；HEAD 版本 42 条用例，工作区 85 条；scripts/whyexist/ 整包未跟踪",
+      "confidence": "high"
+    },
+    {
+      "item": "文档里的用例数与版本号漂移",
+      "signal": "README.md:139 写 79 条（实际 85）、README.md:116 写 contract v1.1.0/schema v8（实际 2.92.0/9）、references/design.md:280 写 76→95",
+      "confidence": "high"
+    },
+    {
+      "item": "CHANGELOG 把「381 不变」当发布门",
+      "signal": "CHANGELOG.md 连续几十条记录只写「测试 381 不变」，把用例数当成覆盖度指标",
+      "confidence": "medium"
+    },
+    {
+      "item": "verify 用例复制整棵技能树",
+      "signal": "test_wxg.py:489-490 copytree(SKILL)，会连 dist/（13 个 zip，3.5 MB）与 docs/audit/_probe_*_tmp 里的 sqlite 一起复制",
+      "confidence": "medium"
+    },
+    {
+      "item": "根目录残留日志",
+      "signal": "plan-test.log（1233 B，13 行手工跑测输出，*.log 已被 .gitignore 忽略）",
+      "confidence": "low"
+    }
+  ],
+  "rewrite_partition": [
+    {
+      "module": "tests/test_wxg.py",
+      "verdict": "keep",
+      "reason": "85 条、335 断言，覆盖 37 条命令与全部门禁语义；20 条只读性断言（库哈希/整库快照）是项目最硬的安全网，变异 M4 被它杀掉",
+      "risk": "单文件 1895 行、夹具与断言混写；verify 用例依赖 copytree 整树，仓库变大会慢或挂"
+    },
+    {
+      "module": "tests/test_plan_cli.py",
+      "verdict": "keep",
+      "reason": "39 条覆盖 plan/brief/blind/apply/impact/cycles/conflicts/up；plan 的 12 表快照是不可替代的只读证明",
+      "risk": "48 s 的 subprocess 开销；up 在 gate FAIL 时仍退 0 只被隐式断言"
+    },
+    {
+      "module": "tests/test_package_units.py",
+      "verdict": "keep",
+      "reason": "87 条、134 断言直接打内存库；方言翻译、工单状态机、coverage 数学、conformance 报告在重写时是秒级反馈",
+      "risk": "方言翻译只有字符串断言；与私有符号（_required_coverage、SCHEMA_SQL）强耦合"
+    },
+    {
+      "module": "tests/test_graph_algo.py",
+      "verdict": "keep",
+      "reason": "30 条纯函数，空图/自环/双环/顺序无关/确定性边界齐全，运行 0.002 s",
+      "risk": "无大图或性能用例，O(n^2) 退化不会被发现"
+    },
+    {
+      "module": "tests/test_planner.py",
+      "verdict": "keep",
+      "reason": "13 条锁层级选择、并行度与 bottleneck 文案，重写 planner 时可直接对照",
+      "risk": "bottleneck 只断言中文子串（第 85-101 行），改措辞会误报回归"
+    },
+    {
+      "module": "tests/test_cycles.py",
+      "verdict": "keep",
+      "reason": "25 条覆盖环、断边集、建议排序、形状与 guidance，含 truncated 边界",
+      "risk": "2^n 枚举的上限只测了一条；改断边策略会连带改多条断言"
+    },
+    {
+      "module": "tests/test_impact.py",
+      "verdict": "keep",
+      "reason": "15 条覆盖闭包/跳数/断边/跨 feature，纯函数且确定",
+      "risk": "CLI 侧只断言 affected/closed，cross_feature 与 depends_on 无 CLI 用例"
+    },
+    {
+      "module": "tests/test_derive.py",
+      "verdict": "keep",
+      "reason": "15 条覆盖分组键、跨组 depends、排除目录、文件依赖，重写 derive 可先跑它",
+      "risk": "depth<=0 语义与 Windows 分隔符只有各一条"
+    },
+    {
+      "module": "tests/test_briefing.py",
+      "verdict": "keep",
+      "reason": "12 条锁死盲化键集（15 键）与输入判定，是 blind 契约的一半",
+      "risk": "字段顺序、文案、--out 未测"
+    },
+    {
+      "module": "tests/test_blind.py",
+      "verdict": "keep",
+      "reason": "12 条覆盖 PASS/FAIL 三类判定、locality 单调性、空产出",
+      "risk": "locality 精确值与 known kinds 省略未测"
+    },
+    {
+      "module": "tests/test_reducer.py",
+      "verdict": "keep",
+      "reason": "10 条覆盖去重、指纹冲突、跨补丁端点、交换律",
+      "risk": "指纹范围（repo/path/unmapped）与边 kind 合法性未测"
+    },
+    {
+      "module": "tests/test_conflicts.py",
+      "verdict": "keep",
+      "reason": "12 条锁通配重叠语义，纯函数、0.002 s",
+      "risk": "只有尾部 * 一种通配，语义收紧会改多项目标"
+    },
+    {
+      "module": "tests/test_engine.py",
+      "verdict": "keep",
+      "reason": "7 条锁 README 承诺的 Python API 入口（from whyexist import Engine）",
+      "risk": "只测 gate FAIL、close 后重连；Engine 与 CLI 的等价性只覆盖 5 个方法"
+    },
+    {
+      "module": "tests/test_wxg_mysql.py",
+      "verdict": "refactor_in_place",
+      "reason": "13 条覆盖协议细节（类型、转义、rowcount、事务、并发写、大文本、百分号凭据、AuthSwitch），质量高且本机可跑",
+      "risk": "依赖本机 MariaDB；无库时静默降级为 1 条 skip，CI 里等于不存在。应改显式开关 + CI service"
+    },
+    {
+      "module": "tests/test_mysql_backend.py",
+      "verdict": "rewrite",
+      "reason": "与 pg 版 90% 重复、破坏性 setUpClass、默认 skip，实际从未在 CI 执行；行为边界清楚，值得合并成参数化后端套件",
+      "risk": "它正是「init 在非 SQLite 上 NameError」没被发现的直接原因；重写前必须先决定后端是否进 CI"
+    },
+    {
+      "module": "tests/test_pg_backend.py",
+      "verdict": "rewrite",
+      "reason": "同上，另需 psycopg，环境更难；三处 DROP SCHEMA public 不可用于共享库",
+      "risk": "同 MySQL；若后端不冻结，必须先有可复现的 PG 环境"
+    },
+    {
+      "module": ".github/workflows/ci.yml",
+      "verdict": "refactor_in_place",
+      "reason": "流程本身正确（verify + unittest，2 OS × 3 Python），只是拿不到当前测试集",
+      "risk": "仓库只跟踪 25 个文件，15/16 个测试文件与 scripts/whyexist/ 全部未提交；不先修版本控制，CI 绿与当前代码无关"
+    }
+  ],
+  "implicit_requirements": [
+    "错误必须走 stderr（M5 变异把错误 JSON 改到 stdout 后 381 条测试全绿）",
+    "成功 JSON 用 indent=2、ensure_ascii=False 输出（只被解析，未被断言）",
+    "gate/coverage 的 --json 是空开关，加不加输出相同",
+    "doctor --fix 会把 meta.contract_version 刷成当前版本（test_wxg.py:425）",
+    "SQLite journal_mode 必须是 wal（test_wxg.py:1399），这是实现细节被测试锁死",
+    "up 的 next 第一条必须是 import-file ... --prepare，不能是 work-claim（test_plan_cli.py:344-346）",
+    "feature-declare 默认 coverage.enforced=true、epsilon=1.0；重声明沿用旧策略（test_wxg.py:1613-1654）",
+    "import-file 写库只认 claim 所属 feature，--feature 只在 prepare 阶段生效（test_wxg.py:337-343）",
+    "serve --once 由 handler 自己 print 一份 JSON，CLI 层不再打印（cli.py:106-108）",
+    "测试直接 import 私有符号：wxg.make_temp_dir、wxg.upsert_node/upsert_edge/bind_node、wxg.Reject、whyexist.gates._required_coverage，改内部 API 会先红测试",
+    "--root 被 resolve 成长路径，测试也 resolve 后比较（Windows 8.3 短名曾导致 CI 失败）",
+    "evidence-record 默认 exit_code=0；--artifact 存绝对路径 + SHA-256",
+    "快照断言依赖 SELECT * ... ORDER BY 1 的物理行序，加列会改快照",
+    "WXG_SKILL_DIR 只为测试存在，文档从未写"
+  ],
+  "findings": [
+    "基线：工作区全绿 381 条 / 0 失败 / 6 skip / 185.0 s；无 MariaDB 时 370 条 / 7 skip / 170.7 s。CI 口径是 370，不是 381",
+    "安全网整体可信但不完整：5 个变异体杀掉 4 个（max_antichain、group_key、target_match、gate 退出码），唯一漏检的正是「错误 JSON 改打 stdout」——错误流契约没有任何断言",
+    "381 条测试里 15 个文件与 scripts/whyexist/ 全部未纳入 git；HEAD 只有 tests/test_wxg.py 的 42 条旧用例。按当前提交跑 CI 得不到 381，任何「CI 全绿」都不能作为重写依据",
+    "50 条命令中只有 feature-list 零测试（连错误路径都没有），repo-list 只有错误路径，bind 只有 full flow 里一次间接调用；-db-url、WXG_ACTOR、相对 --root 三个入口 0 测试",
+    "数据库承诺没有安全网：mysql/pg 后端 IT 默认 skip 且依赖破坏性 setUpClass，SQLite（默认后端）没有并发 claim 用例；mysql 客户端 13 条依赖本机 127.0.0.1:3307，无库时静默折成 1 条 skip",
+    "gate --json 与 coverage --json 是死开关：契约表列出、测试传 20+ 次、handler 从不读取；实测两种调用 stdout 逐字节相同",
+    "导出只锁了 6 份产物中的 4 份：05-类图.md 与 测试规格.md 零断言",
+    "测试夹具重复严重：CLI 夹具 4 份、SHOP_PY 4 份、TABLES 2 份，8 行重复块 51 组；mysql/pg 后端 IT 互为副本",
+    "文档与测试事实漂移且无检查拦截：README 写 test_wxg 79 条（实际 85）、contract v1.1.0/schema v8（实际 2.92.0/9）、design.md 写 76→95；check_docs 只校验 VERSION/CHANGELOG/design 编号",
+    "耗时高度集中：test_wxg 110.5 s + plan_cli 48.4 s + engine 10.6 s ≈ 92% 的墙钟，全部来自每条断言一次 subprocess；纯函数层 12 个模块合计不到 0.2 s",
+    "负例密度真实存在：test_wxg 有 30 处 expect=2、36 处 expect=1、25 处断言 error 键；package_units 有 20 处 assertRaises；但纯函数文件（briefing/conflicts/cycles/derive/impact/reducer）几乎没有反向用例",
+    "verify 用例 copytree 整棵技能树（当前 9.6 MB），审计自身写进 docs/audit 的临时 sqlite 会被一起复制，随仓库增长变脆",
+    "测试留痕：5 个 __pycache__ 目录与根目录 plan-test.log（后者是手工跑测残留，不是测试套件产出）"
+  ],
+  "open_questions": [
+    "要不要先把 tests/ 与 scripts/whyexist/ 提交进版本控制再谈重写？现在 381 条只活在工作区，git reset/clean 会把安全网和实现一起抹掉",
+    "mysql/pg 后端要不要进 CI？不进，后端改动只能冻结；进，就要决定容器化与两个破坏性 setUpClass 的重写",
+    "错误流（stderr）与退出码算不算正式契约？补一条 assert stdout == 空 成本极低，但会立刻暴露现有夹具的掩盖行为",
+    "gate --json / coverage --json 保留还是删？保留要有行为，删要同步契约块与 20+ 处测试调用",
+    "05-类图.md 与 测试规格.md 的导出内容要不要锁？verify 的样例逐字节校验只间接覆盖了一部分",
+    "SQLite 并发 claim 的语义（WAL + busy_timeout）要不要测？默认后端反而没有并发用例",
+    "test_wxg_mysql 在无 MariaDB 的机器上降级为 1 条 skip，这算通过还是算没跑？基线数字会因此差 11 条",
+    "CHANGELOG 把「381 不变」当发布门，是否说明在用数量代替覆盖判断？本次已找到 1 条零测试命令、1 条仅错误路径命令、1 类仅间接命令",
+    "check_docs 是否应该接管 README 里的用例数与契约版本？现在只校验三处版本号与章节编号",
+    "verify 用例要不要改成最小 fixture 目录，还是继续复制整棵树？"
+  ]
+}

@@ -1,0 +1,566 @@
+{
+  "slice": "05-db-backends",
+  "modules": [
+    {
+      "path": "scripts/whyexist/db.py",
+      "loc": 618,
+      "role": "三套 schema、后端判定、方言字符串翻译、sqlite3 连接包装、ensure_db/迁移/建库"
+    },
+    {
+      "path": "scripts/wxg_mysql.py",
+      "loc": 904,
+      "role": "纯标准库 MySQL/MariaDB 线路协议客户端：握手 v10、native 认证、文本协议结果、? 转义、事务"
+    },
+    {
+      "path": "scripts/whyexist/commands_repo.py",
+      "loc": 737,
+      "role": "init/up 与导入命令；cmd_init 输出 backend 标签与掩码后的 URL"
+    },
+    {
+      "path": "scripts/whyexist/cli.py",
+      "loc": 115,
+      "role": "全局 --db-url 解析、后端早失败、连接建立时序、退出码映射"
+    },
+    {
+      "path": "scripts/whyexist/engine.py",
+      "loc": 151,
+      "role": "编程入口；把 Engine(db_url=...) 写进进程环境后连接"
+    },
+    {
+      "path": "tests/test_mysql_backend.py",
+      "loc": 140,
+      "role": "MySQL 端到端集成测试（默认 skip，setUpClass 会清空目标库所有表）"
+    },
+    {
+      "path": "tests/test_pg_backend.py",
+      "loc": 143,
+      "role": "PostgreSQL 端到端集成测试（默认 skip，setUpClass 会 DROP SCHEMA public）"
+    },
+    {
+      "path": "tests/test_wxg_mysql.py",
+      "loc": 485,
+      "role": "wxg_mysql 客户端集成测试（默认连 127.0.0.1:3307，连不上整类跳过）"
+    },
+    {
+      "path": "tests/test_package_units.py",
+      "loc": 753,
+      "role": "方言翻译纯函数单测（_mysql_translate/_pg_translate/_named_params）"
+    }
+  ],
+  "public_surface": [
+    {
+      "entry": "wxg --db-url <url> <cmd>",
+      "kind": "cli",
+      "where": "scripts/whyexist/cli.py:23-27, scripts/whyexist/cli.py:55-56",
+      "input": "mysql:// | mariadb:// | postgresql:// | postgres:// URL；必须放在子命令之前（全局参数），放在子命令后 argparse 报 unrecognized arguments",
+      "output": "无直接输出；写入 os.environ['WXG_DB_URL'] 后由后续 connect 生效",
+      "side_effects": "改写当前进程环境变量（进程级全局状态），并会被子进程继承；再用 connect() 连接该后端",
+      "exit_codes": "0 正常；2 非法协议（JSON error 到 stderr）或参数位置错误（argparse 英文 stderr）"
+    },
+    {
+      "entry": "wxg init",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_repo.py:44-59",
+      "input": "--root（sqlite 落盘目录，mysql/pg 下只影响 root 字段与导出目录）、--db-url/WXG_DB_URL",
+      "output": "JSON {root, db, backend, schema_version, contract_version, migrated}；backend 取 conn.dialect 或 sqlite；非 sqlite 时 db 为掩码后的 URL",
+      "side_effects": "建 12 张表 + 写 meta(schema_version/contract_version)；sqlite 下创建 graph.sqlite；mysql/pg 下建表在远端且 DDL 隐式提交",
+      "exit_codes": "0 成功（sqlite 实测）；2 失败——MySQL/PG 下必失败（NameError: db_url），但表与 meta 已提交"
+    },
+    {
+      "entry": "环境变量 WXG_DB_URL",
+      "kind": "file",
+      "where": "scripts/whyexist/db.py:425-426",
+      "input": "任意字符串，strip 后生效；空字符串等于未设置",
+      "output": "决定 db_backend() 返回值与 connect() 分支",
+      "side_effects": "无（只读）；但被 cli.py:56 与 engine.py:48 写入，形成进程级隐式全局",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "whyexist.db.db_backend()",
+      "kind": "function",
+      "where": "scripts/whyexist/db.py:429-438",
+      "input": "无参数，读环境变量",
+      "output": "'sqlite' | 'mysql' | 'postgres'",
+      "side_effects": "无",
+      "exit_codes": "非法 scheme 抛 Reject（cli 映射为退出 2）"
+    },
+    {
+      "entry": "whyexist.db.connect(root)",
+      "kind": "function",
+      "where": "scripts/whyexist/db.py:441-465",
+      "input": "root: Path（仅 sqlite 使用）；后端由环境变量决定",
+      "output": "sqlite3.Connection | _MySQLConnection | _PgConnection",
+      "side_effects": "sqlite: mkdir --root、创建 graph.sqlite、PRAGMA foreign_keys/busy_timeout/journal_mode=WAL；mysql: 建立 TCP、SET NAMES utf8mb4、autocommit=0、READ COMMITTED；pg: psycopg.connect(connect_timeout=5, dict_row)；非 sqlite 不创建 --root 目录",
+      "exit_codes": "mysql 连接错误抛 wxg_mysql.MySQLDatabaseError；pg 未装 psycopg / 连接失败抛 Reject——两者都发生在 cli.py:70 的 try 之外，表现为 traceback + 退出 1"
+    },
+    {
+      "entry": "whyexist.db.ensure_db(conn)",
+      "kind": "function",
+      "where": "scripts/whyexist/db.py:468-483",
+      "input": "任意连接，按 conn.dialect 分支查 information_schema / sqlite_master 是否存在 meta 表",
+      "output": "None",
+      "side_effects": "只读；缺失时抛 Reject('状态库未初始化：先运行 `wxg init`')",
+      "exit_codes": "Reject 由 cli 映射为退出 2 + JSON error（实测 mysql 空库成立）"
+    },
+    {
+      "entry": "whyexist.db._table_columns(conn, table)",
+      "kind": "function",
+      "where": "scripts/whyexist/db.py:486-497",
+      "input": "表名",
+      "output": "列名集合",
+      "side_effects": "只读 information_schema（mysql: DATABASE()；pg: current_schema()）或 PRAGMA table_info（sqlite）",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "whyexist.db._is_integrity_error(exc)",
+      "kind": "function",
+      "where": "scripts/whyexist/db.py:500-505",
+      "input": "任意异常",
+      "output": "bool：sqlite3.IntegrityError / errno∈{1022,1062,1169,1557} / sqlstate 以 '23' 开头",
+      "side_effects": "无；被 graph.py:9 导入并被 commands_repo.py:143 用于把仓登记冲突转成可读 Reject",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "whyexist.db.migrate_schema(conn)",
+      "kind": "function",
+      "where": "scripts/whyexist/db.py:509-602",
+      "input": "已建表的连接",
+      "output": "dict migrated：{work_items.X, evidence.generation, features.X, nodes.stale, bites.X, claimed_by.legacy, judged_by.legacy, meta} 计数",
+      "side_effects": "ALTER TABLE 补列、按 legacy 回填 claimed_by/judged_by/claimed_at、judge_history 回填、写 meta 版本号；非幂等行只改一次（第二次调用返回 {}）",
+      "exit_codes": "不适用（异常向上抛）"
+    },
+    {
+      "entry": "whyexist.db.init_db(conn)",
+      "kind": "function",
+      "where": "scripts/whyexist/db.py:605-616",
+      "input": "任意连接",
+      "output": "同 migrate_schema 的 migrated 汇总",
+      "side_effects": "按 dialect 选 SCHEMA_SQL/MYSQL_SCHEMA_SQL/PG_SCHEMA_SQL 建表，再迁移并 commit",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "whyexist.db._mysql_translate / _pg_translate / _named_params / _NoopCursor",
+      "kind": "function",
+      "where": "scripts/whyexist/db.py:292-302, scripts/whyexist/db.py:305-320, scripts/whyexist/db.py:400-408, scripts/whyexist/db.py:411-422",
+      "input": "SQLite 方言 SQL 字符串（+ 可选 dict 命名参数）",
+      "output": "目标方言 SQL 字符串（pg 版把 ? 全量替换成 %s）",
+      "side_effects": "无（纯函数）",
+      "exit_codes": "_named_params 缺参数抛 Reject"
+    },
+    {
+      "entry": "_MySQLConnection / _PgConnection",
+      "kind": "function",
+      "where": "scripts/whyexist/db.py:323-360, scripts/whyexist/db.py:363-397",
+      "input": "底层连接对象",
+      "output": "sqlite3.Connection 的子集：execute / executescript / commit / rollback / close + dialect 属性；execute 返回带 fetchone/fetchall/rowcount/close 的游标",
+      "side_effects": "mysql 构造时执行 SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED；execute 时透明改写 SQL 与占位符",
+      "exit_codes": "不适用（异常向上抛）"
+    },
+    {
+      "entry": "wxg_mysql.connect(url) / MySQLConnection / MySQLCursor / MySQLDatabaseError / is_integrity_error",
+      "kind": "function",
+      "where": "scripts/wxg_mysql.py:37-43, scripts/wxg_mysql.py:136-157, scripts/wxg_mysql.py:160-202, scripts/wxg_mysql.py:575-611, scripts/wxg_mysql.py:614-904",
+      "input": "mysql://user:pass@host:port/db（百分号编码凭据；密码可含 @ : / % ? #）",
+      "output": "连接对象；execute 返回已读完结果的 MySQLCursor（rows 为 list[dict]）",
+      "side_effects": "TCP 连接（连接/读写超时各 5s）、SET NAMES utf8mb4、SET SESSION autocommit=0；close 发 COM_QUIT 并 shutdown socket",
+      "exit_codes": "不适用（失败抛 MySQLDatabaseError，带 errno/sqlstate）"
+    },
+    {
+      "entry": "12 张表（meta/repos/nodes/edges/features/conditions/work_items/feature_nodes/evidence/bites/judge_history/changes）",
+      "kind": "table",
+      "where": "scripts/whyexist/db.py:19-150（sqlite）, scripts/whyexist/db.py:154-285（mysql）, scripts/whyexist/db.py:289（pg 派生）",
+      "input": "无",
+      "output": "无",
+      "side_effects": "由 init_db 创建；mysql 版是有长度上限的 VARCHAR 且去掉部分索引；pg 版由 SCHEMA_SQL.replace 派生",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "Engine(root, db_url=...)",
+      "kind": "function",
+      "where": "scripts/whyexist/engine.py:36-51",
+      "input": "root 路径 + 可选 db_url",
+      "output": "编程入口对象；connect() 返回连接并 ensure_db",
+      "side_effects": "db_url 非空时写 os.environ['WXG_DB_URL']（全局副作用），影响同进程后续所有 connect",
+      "exit_codes": "不适用（抛 Reject）"
+    },
+    {
+      "entry": "wxg.py 的 db 符号 re-export",
+      "kind": "function",
+      "where": "scripts/wxg.py:31-49",
+      "input": "无",
+      "output": "SCHEMA_SQL/MYSQL_SCHEMA_SQL/PG_SCHEMA_SQL/_MySQLConnection/_PgConnection/_NoopCursor/_mysql_translate/_pg_translate/_named_params/_table_columns/_is_integrity_error/connect/db_backend/db_url/ensure_db/init_db/migrate_schema",
+      "side_effects": "无",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "wxg contract 的 backend_rules 字段",
+      "kind": "function",
+      "where": "scripts/wxg_contract.py:219-224, scripts/wxg_contract.py:1021",
+      "input": "无",
+      "output": "JSON 数组，4 条后端契约文本（默认 SQLite、MySQL 内置客户端、PG 需 psycopg、不要混后端）",
+      "side_effects": "同时被 contract --write 生成进 SKILL.md / references/contract.md，verify 校验漂移",
+      "exit_codes": "不适用"
+    }
+  ],
+  "contracts": [
+    {
+      "id": "C1",
+      "statement": "--db-url 是全局参数，优先于 WXG_DB_URL；必须写在子命令之前。",
+      "evidence": ["scripts/whyexist/cli.py:23-27", "scripts/whyexist/cli.py:55-56", "SKILL.md:60-63"],
+      "status": "partial",
+      "note": "只有文档示例，无任何测试；实测评测：写在子命令后 argparse 报 unrecognized arguments、退出 2。"
+    },
+    {
+      "id": "C2",
+      "statement": "URL scheme 只接受 mysql/mariadb/postgresql/postgres，其余抛 Reject，CLI 输出 JSON error 并退出 2。",
+      "evidence": ["scripts/whyexist/db.py:433-438", "scripts/whyexist/cli.py:57-61"],
+      "status": "gap",
+      "note": "实测 sqlite:///x 与 oracle://x 都是退出 2 + 可读 JSON；无测试、BACKEND_RULES 未写这条。"
+    },
+    {
+      "id": "C3",
+      "statement": "不设 WXG_DB_URL 时后端为 sqlite，状态落在 --root/graph.sqlite，WAL + busy_timeout=5000。",
+      "evidence": ["scripts/whyexist/db.py:429-432", "scripts/whyexist/db.py:458-465", "tests/test_wxg.py:1399"],
+      "status": "covered",
+      "note": "test_wxg.py:1399 断言 journal_mode；其余由全量 sqlite 测试间接覆盖。"
+    },
+    {
+      "id": "C4",
+      "statement": "sqlite 下状态库文件不存在时，非 init 命令直接报「状态库未初始化」退出 2，且不留下 0 字节库。",
+      "evidence": ["scripts/whyexist/cli.py:66-69"],
+      "status": "gap",
+      "note": "代码里有显式守卫，但没有针对这个分支的测试断言。"
+    },
+    {
+      "id": "C5",
+      "statement": "mysql/postgres 后端连接成功但库未建表时，报「状态库未初始化：先运行 wxg init」并退出 2。",
+      "evidence": ["scripts/whyexist/db.py:468-483", "tests/test_mysql_backend.py:87"],
+      "status": "gap",
+      "note": "MariaDB 空库实测：退出 2 + 可读 JSON，且不创建 --root 目录；无测试。"
+    },
+    {
+      "id": "C6",
+      "statement": "wxg init 在 mysql 后端返回 backend='mysql'、schema_version=9，并建好全部表。",
+      "evidence": ["tests/test_mysql_backend.py:86-89", "scripts/whyexist/commands_repo.py:44-59"],
+      "status": "gap",
+      "note": "测试默认 skip；启用即失败——cmd_init 里 db_url/re 未导入，NameError 退出 2（实测）。表与 meta 已提交，属于半成功。"
+    },
+    {
+      "id": "C7",
+      "statement": "wxg init 在 postgres 后端返回 backend='postgres'、schema_version=9，并建好全部表。",
+      "evidence": ["tests/test_pg_backend.py:88-91", "scripts/whyexist/commands_repo.py:44-59"],
+      "status": "gap",
+      "note": "同 C6；PG 16.15 实测同样是 NameError 退出 2，但表已建好（init_db 先跑完并 commit）。"
+    },
+    {
+      "id": "C8",
+      "statement": "init 幂等：已迁移库上再跑一次 migrated 为 {}，不改写已有行。",
+      "evidence": ["tests/test_wxg.py:683-696", "scripts/whyexist/db.py:509-602"],
+      "status": "covered",
+      "note": "仅 sqlite；mysql/pg 无等价测试。"
+    },
+    {
+      "id": "C9",
+      "statement": "迁移把旧库补到当前 schema：补 claimed_by/judged_by/judged_at/claimed_at/evidence.generation/coverage_epsilon/drift_limit/conformance/nodes.stale/bites.generation/phase，并回填 judge_history。",
+      "evidence": ["tests/test_wxg.py:635-679", "scripts/whyexist/db.py:516-592"],
+      "status": "covered",
+      "note": "断言完整（列集合、legacy 身份、judge_history 行、doctor legacy-identity）；仅 sqlite。"
+    },
+    {
+      "id": "C10",
+      "statement": "mysql/pg 上 migrate_schema 与 sqlite 行为一致。",
+      "evidence": ["scripts/whyexist/db.py:586-592", "scripts/whyexist/db.py:500-505"],
+      "status": "gap",
+      "note": "无测试。且迁移 SQL 里的 'jh:' || w.id 在 MySQL 是逻辑或：实测 MariaDB 上 'jh:' || 42 = 1，回填 id 会退化成 0/1 并被 INSERT IGNORE 合并。"
+    },
+    {
+      "id": "C11",
+      "statement": "mysql/pg 上 import-file / import-repo 的写入路径与 sqlite 一致（nodes/edges/feature_nodes 落库、stale 标记）。",
+      "evidence": ["tests/test_mysql_backend.py:93-102", "tests/test_pg_backend.py:96-106", "scripts/whyexist/commands_repo.py:204-207", "scripts/whyexist/commands_repo.py:308-311"],
+      "status": "gap",
+      "note": "两个包装都没实现 executemany，实测 MySQL 与 PG 均在这里 AttributeError 退出 2（事务回滚，不落节点）。测试默认 skip，启用即失败。"
+    },
+    {
+      "id": "C12",
+      "statement": "mysql/pg 上并发 work-claim 只有一个成功（退出码 0 与 2）。",
+      "evidence": ["tests/test_mysql_backend.py:109-126", "tests/test_pg_backend.py:112-129", "scripts/whyexist/commands_feature.py:527-532"],
+      "status": "partial",
+      "note": "测试存在但默认 skip 且被 init 崩溃挡在前面；MariaDB 实测两进程并发得 [0,2]，成立。"
+    },
+    {
+      "id": "C13",
+      "statement": "后端连接失败（错密码、端口不通、PG 无服务、未装 psycopg）报可读错误而不是 traceback。",
+      "evidence": ["scripts/wxg_contract.py:221", "references/contract.md:170", "CHANGELOG.md:1297-1298", "scripts/whyexist/cli.py:70"],
+      "status": "gap",
+      "note": "四种情况实测全部是 Python traceback + 退出 1、无 JSON error。原因是 connect() 在 cli 的 try 之外。文档承诺被违反。"
+    },
+    {
+      "id": "C14",
+      "statement": "除标准库外无第三方依赖：MySQL 后端用内置纯标准库客户端，支持 mysql_native_password（含 AuthSwitchRequest），其它插件报错。",
+      "evidence": ["tests/test_wxg_mysql.py:462-481", "scripts/wxg_mysql.py:160-202", "scripts/wxg_mysql.py:733-738"],
+      "status": "covered",
+      "note": "AuthSwitch 用伪造包单测覆盖；真实 MariaDB 上 12 个客户端用例全过。"
+    },
+    {
+      "id": "C15",
+      "statement": "? 占位符只在字符串/注释之外替换，参数按 MySQL 规则转义；数量不匹配抛 ValueError。",
+      "evidence": ["tests/test_wxg_mysql.py:364-396", "scripts/wxg_mysql.py:496-529"],
+      "status": "covered",
+      "note": "覆盖双写引号、引号内 ?、注释内 ?、参数多/少两种情况。"
+    },
+    {
+      "id": "C16",
+      "statement": "结果列按类型转 int/float、NULL 转 None、其余 utf-8 文本；可按列名取值。",
+      "evidence": ["tests/test_wxg_mysql.py:103-123", "scripts/wxg_mysql.py:374-388"],
+      "status": "covered",
+      "note": "客户端级 covered；经 _MySQLConnection 的端到端路径无测试（集成测试 skip）。"
+    },
+    {
+      "id": "C17",
+      "statement": "事务语义：commit/rollback 生效；rowcount 对 UPDATE 是 modified rows（同值更新为 0）。",
+      "evidence": ["tests/test_wxg_mysql.py:193-221", "tests/test_wxg_mysql.py:258-294", "scripts/whyexist/db.py:571-580"],
+      "status": "covered",
+      "note": "与 sqlite 的 matched-rows 语义不同，会改变 migrated 计数（db.py:571 用 rowcount 计数），无跨后端断言。"
+    },
+    {
+      "id": "C18",
+      "statement": "方言翻译：INSERT OR IGNORE→INSERT IGNORE、ON CONFLICT(col) DO UPDATE SET→ON DUPLICATE KEY UPDATE、excluded.x→VALUES(x)；PG 追加 ON CONFLICT DO NOTHING 并剥尾分号、?→%s。",
+      "evidence": ["tests/test_package_units.py:181-222", "scripts/whyexist/db.py:305-320", "scripts/whyexist/db.py:400-408"],
+      "status": "covered",
+      "note": "仅字符串级断言，无一条集成断言这些 SQL 在真实后端可执行；翻译本身是引号无关的字符串替换（见 findings）。"
+    },
+    {
+      "id": "C19",
+      "statement": "_named_params 把 :name 按出现顺序换成 ?、重复占位符重复收集、缺参数抛 Reject。",
+      "evidence": ["tests/test_package_units.py:140-149", "tests/test_package_units.py:225-235"],
+      "status": "covered",
+      "note": "但生产代码没有任何 dict 参数调用点，属于只有测试消费者的兼容层。"
+    },
+    {
+      "id": "C20",
+      "statement": "mysql/pg 连接对象提供 sqlite3.Connection 的所需子集：execute / executemany / executescript / commit / rollback / close，游标有 fetchone/fetchall/rowcount/close。",
+      "evidence": ["scripts/whyexist/db.py:323-397", "scripts/whyexist/commands_repo.py:204", "scripts/whyexist/commands_repo.py:308"],
+      "status": "gap",
+      "note": "实测子集只有 5 个方法，缺 executemany（产品代码却用了 2 处）、cursor()、row_factory、in_transaction；没有任何测试断言这个子集。"
+    },
+    {
+      "id": "C21",
+      "statement": "后端只决定状态库位置，不影响 --root 决定的导出目录；同一个库不要混用后端。",
+      "evidence": ["scripts/wxg_contract.py:223", "references/contract.md:171"],
+      "status": "partial",
+      "note": "文档写明（verify 会校验这段文本不漂移），无测试。"
+    },
+    {
+      "id": "C22",
+      "statement": "mysql/pg 后端下 --root 目录不会被创建（不会留下 .why-exist）。",
+      "evidence": ["scripts/whyexist/db.py:458-459"],
+      "status": "gap",
+      "note": "实测 doctor 跑完后 root 仍不存在；无测试、无文档，属隐性行为。"
+    },
+    {
+      "id": "C23",
+      "statement": "init 不创建数据库本身，要求目标 MySQL/PG 库已存在。",
+      "evidence": ["references/design.md:276", "CHANGELOG.md:1307", "scripts/wxg_mysql.py:223-248"],
+      "status": "partial",
+      "note": "文档写明；无测试。库不存在时表现为连接错误 traceback（见 C13），不是可读提示。"
+    },
+    {
+      "id": "C24",
+      "statement": "wxg contract 的 JSON 含 backend_rules，且与 SKILL.md / references/contract.md 的生成块一致。",
+      "evidence": ["scripts/wxg_contract.py:884", "scripts/wxg_contract.py:1021", "tests/test_wxg.py:490-525"],
+      "status": "partial",
+      "note": "doc 漂移由 verify 测试覆盖；但 contract JSON 的具体字段只断言了 version/schema_version/commands，未断言 backend_rules。"
+    }
+  ],
+  "state_io": [
+    {"target": "graph.sqlite（及 -wal/-shm）", "mode": "write", "where": "scripts/whyexist/db.py:458-465"},
+    {"target": "env:WXG_DB_URL", "mode": "read", "where": "scripts/whyexist/db.py:425-426"},
+    {"target": "env:WXG_DB_URL", "mode": "write", "where": "scripts/whyexist/cli.py:56, scripts/whyexist/engine.py:48"},
+    {"target": "graph.sqlite:meta（schema_version/contract_version）", "mode": "both", "where": "scripts/whyexist/db.py:593-601"},
+    {"target": "graph.sqlite:work_items（迁移补列与 legacy 回填）", "mode": "both", "where": "scripts/whyexist/db.py:516-527, scripts/whyexist/db.py:563-583"},
+    {"target": "graph.sqlite:evidence（generation 回填）", "mode": "both", "where": "scripts/whyexist/db.py:528-538"},
+    {"target": "graph.sqlite:features（coverage_epsilon/drift_limit/conformance）", "mode": "both", "where": "scripts/whyexist/db.py:539-547"},
+    {"target": "graph.sqlite:nodes（stale 列）", "mode": "both", "where": "scripts/whyexist/db.py:548-550"},
+    {"target": "graph.sqlite:bites（generation/phase 列与回填）", "mode": "both", "where": "scripts/whyexist/db.py:551-562"},
+    {"target": "graph.sqlite:judge_history（回填）", "mode": "write", "where": "scripts/whyexist/db.py:585-592"},
+    {"target": "mysql information_schema.tables/columns", "mode": "read", "where": "scripts/whyexist/db.py:471-474, scripts/whyexist/db.py:490-494"},
+    {"target": "postgres information_schema.tables/columns", "mode": "read", "where": "scripts/whyexist/db.py:476-479, scripts/whyexist/db.py:490-494"},
+    {"target": "图形库 12 张表（建表）", "mode": "write", "where": "scripts/whyexist/db.py:605-616"},
+    {"target": "--root 目录（仅 sqlite 创建）", "mode": "write", "where": "scripts/whyexist/db.py:458"},
+    {"target": "导出目录（由 --root 决定，与后端无关）", "mode": "write", "where": "scripts/wxg_contract.py:223"}
+  ],
+  "redundancy": [
+    {
+      "item": "三份 schema：SCHEMA_SQL / MYSQL_SCHEMA_SQL 手抄 / PG_SCHEMA_SQL 由字符串 .replace 派生",
+      "signal": "db.py:19-150、154-285、289；加列要改 2-3 处，且没有任何测试断言三者表/列集合一致",
+      "confidence": "high"
+    },
+    {
+      "item": "两套 integrity-error 分类器",
+      "signal": "db.py:500-505（errno 4 个 + sqlstate 23）与 wxg_mysql.py:120-157（errno 10 个）判定集合不同；产品只用前者，后者只有测试消费者",
+      "confidence": "high"
+    },
+    {
+      "item": "两套 SQL 脚本切分器",
+      "signal": "db.py:347-351 / 384-388 用裸 split(';')；wxg_mysql.py:532-556 有引号/注释感知的 _split_script，产品路径不用它，只被 test_wxg_mysql.py:171 覆盖",
+      "confidence": "high"
+    },
+    {
+      "item": "_named_params 没有生产调用点",
+      "signal": "全仓 grep 无 dict 参数形式的 conn.execute 调用；只有 test_package_units.py:140-149/225-235 在测它",
+      "confidence": "high"
+    },
+    {
+      "item": "PRAGMA 翻译分支与 _NoopCursor 不可达",
+      "signal": "db.py:334-342 / 371-379 只在调用方直接发 PRAGMA 时命中，而产品对 mysql/pg 走 _table_columns（db.py:486-497）；全仓只有 test_wxg.py:654 在 sqlite 连接上发 PRAGMA",
+      "confidence": "high"
+    },
+    {
+      "item": "wxg.py 的 db 内部符号 re-export 基本无消费者",
+      "signal": "wxg.py:31-49 导出 16 个符号；全仓只有 scripts/gen_sample.py:43-45 用到 wxg.connect/init_db，其余 grep 零命中",
+      "confidence": "high"
+    },
+    {
+      "item": "会话初始化分散两层",
+      "signal": "wxg_mysql.py:642-643 做 SET NAMES/autocommit=0；db.py:330 再做 SET SESSION ISOLATION",
+      "confidence": "medium"
+    },
+    {
+      "item": "dialect 分支重复三处",
+      "signal": "db.py:468-483（ensure_db）、486-497（_table_columns）、605-616（init_db）各自 if/elif 三后端，没有统一的 Backend 抽象",
+      "confidence": "high"
+    },
+    {
+      "item": "commands_repo.py 里未使用的导入",
+      "signal": "commands_repo.py:16 导入 ensure_db、migrate_schema，模块内无引用（只有 init_db 被用）",
+      "confidence": "high"
+    },
+    {
+      "item": "PRAGMA foreign_keys = ON 但 schema 无任何外键",
+      "signal": "db.py:461；SCHEMA_SQL 全文无 FOREIGN KEY/REFERENCES",
+      "confidence": "high"
+    },
+    {
+      "item": "db_backend() 每次连接重复解析",
+      "signal": "cli.py:58 调一次做早失败，db.py:442 在 connect 里再调一次",
+      "confidence": "medium"
+    },
+    {
+      "item": "同一批失败模式在文档里写成已达成",
+      "signal": "references/quality.md:49-50 的验收项与现状相反；CHANGELOG.md:1324-1325 把默认跳过的集成测试计入测试总数",
+      "confidence": "high"
+    }
+  ],
+  "rewrite_partition": [
+    {
+      "module": "scripts/whyexist/db.py:292-422（_NoopCursor、_mysql_translate、_pg_translate、_named_params）",
+      "verdict": "rewrite",
+      "reason": "契约清楚（16 条单测把行为钉死），但实现是引号无关的字符串替换：字面量里的 ? 会被改成 %s、% 会被当占位符、:name 在字符串里也会被替换。新增后端等于再抄一遍正则，且没有任何机制保证改译后 SQL 可执行。",
+      "risk": "重写必须把这 16 条断言当规格逐条过；产品 SQL 目前只有 6 种形态（meta upsert/select、INSERT OR IGNORE、features/repos/nodes/edges upsert），先枚举再迁移，避免顺手改掉 rowcount/占位符语义。"
+    },
+    {
+      "module": "scripts/whyexist/db.py:154-289（MYSQL_SCHEMA_SQL、PG_SCHEMA_SQL）",
+      "verdict": "refactor_in_place",
+      "reason": "表与列是对外契约（迁移、doctor、导出都依赖），不能整块重写；但三份手抄 schema 只能靠人肉同步，PG 版还是字符串 .replace 派生。改成单一 schema 模型生成三种 DDL，或至少加一条断言三后端表/列集合一致的测试。",
+      "risk": "MYSQL_SCHEMA_SQL 用了 MariaDB 扩展（CREATE INDEX IF NOT EXISTS、TEXT/LONGTEXT 字面量 DEFAULT），MySQL 8 上大概率建表失败；改结构前必须先定“支持 MariaDB 还是也支持 MySQL 8”。"
+    },
+    {
+      "module": "scripts/whyexist/db.py:323-397（_MySQLConnection、_PgConnection）",
+      "verdict": "refactor_in_place",
+      "reason": "薄适配层思路正确，契约也简单（sqlite3 子集），但缺 executemany 直接打断产品写入路径，且没有测试断言这个子集。补方法 + 加一条「对包装层跑一遍 sqlite 子集」的测试即可，不需要推翻。",
+      "risk": "补齐时容易顺手加 cursor()/row_factory 等产品不用的 API，扩大维护面；子集边界要写进注释并配测试，否则下次还会漏。"
+    },
+    {
+      "module": "scripts/whyexist/db.py:441-616（connect、ensure_db、_table_columns、migrate_schema、init_db）",
+      "verdict": "refactor_in_place",
+      "reason": "迁移语义（非破坏、只迁一次、legacy 回填）是这块最值钱的契约，且 sqlite 上有完整测试；问题在方言分支散落三处、迁移 SQL 里混了 MySQL 不兼容的 || 拼接。收成一个后端接口 + 方言常量即可，行为保持。",
+      "risk": "migrate_schema 的 rowcount 计数在 MySQL 是 modified rows，会改变 migrated 的数值；任何“顺手统一”都可能改掉测试断言的返回形状。"
+    },
+    {
+      "module": "scripts/whyexist/commands_repo.py:44-59（cmd_init）",
+      "verdict": "rewrite",
+      "reason": "16 行、行为清楚，现在却是坏的：db_url 与 re 都没导入，mysql/pg 下 100% NameError。顺带把掩码 URL 的规则写成函数并加测试，比在原地打补丁干净。",
+      "risk": "mysql/pg 的 db 字段（掩码 URL）从没被执行过，没有任何断言；重写前要先定这个字段的格式，否则会“修好”成另一个未记录的形状。"
+    },
+    {
+      "module": "scripts/whyexist/cli.py:55-70（后端选择与连接时序）",
+      "verdict": "refactor_in_place",
+      "reason": "逻辑很短，但 connect() 落在 try 之外，导致四种后端连接失败全部变成 traceback；--db-url 直接写 os.environ 也是在这里定的。把连接移进 try、把 URL 作为参数传递即可，不需要重写整个 CLI。",
+      "risk": "把连接移进 try 会改变 gate/doctor 之外的失败输出形态（现在是 traceback + 1），下游若有脚本依赖退出码 1 会受影响。"
+    },
+    {
+      "module": "scripts/whyexist/engine.py:36-51（db_url 注入环境变量）",
+      "verdict": "rewrite",
+      "reason": "行为简单、边界清楚：Engine 只是想把 URL 传给 connect。现在靠改 os.environ，构造两个 Engine 会互相污染，也会污染同进程的 CLI 逻辑。改成显式参数一路传到 connect。",
+      "risk": "connect(root) 的签名变化会波及 cli 与 cmd_up；这是有意为之的接口收紧，需同时更新调用点。"
+    },
+    {
+      "module": "scripts/wxg_mysql.py",
+      "verdict": "keep",
+      "reason": "全切片唯一“契约清楚 + 测试真实”的部分：12 个客户端用例在真实 MariaDB 12.3 上全过，协议子集与已知边界写在文件头 wxg_mysql.py:19-27，不引入第三方依赖是有意设计。",
+      "risk": "它是自制数据库驱动：无 TLS、无 caching_sha2、无多结果集、无重连、超时固定 5s；MySQL 8 默认认证插件下直接不可用。要保持 keep 就必须把“仅 MariaDB/native 认证”写进对外文档，并停止在这份客户端上扩功能。"
+    },
+    {
+      "module": "tests/test_mysql_backend.py 与 tests/test_pg_backend.py",
+      "verdict": "refactor_in_place",
+      "reason": "它们写的正是该有的端到端契约（init→repo→feature→prepare→claim→write→judge→gate→doctor、并发 claim、serve --once），但 skipUnless + CI 无数据库 ⇒ 永远绿。不需要重写，需要让它们真的跑起来。",
+      "risk": "两个 setUpClass 都是破坏性的（清空目标库所有表 / DROP SCHEMA public），接进 CI 必须用一次性容器，否则会清掉开发者本机库。"
+    },
+    {
+      "module": "tests/test_wxg_mysql.py",
+      "verdict": "keep",
+      "reason": "覆盖到位且能真跑：类型转换、? 转义、rowcount、事务、并发写、大文本、百分号凭据、AuthSwitch（伪造包）、close 幂等。是这次审计里唯一能立刻复现的证据来源。",
+      "risk": "只在有 MariaDB 时运行（连不上整类 skip），CI 仍会静默跳过；多包（>16MB）读写与 LOAD DATA 中止路径没有用例。"
+    },
+    {
+      "module": "scripts/wxg.py:31-49（db 内部符号 re-export）",
+      "verdict": "refactor_in_place",
+      "reason": "这层是给旧测试的兼容垫片，但现在 16 个符号里只有 connect/init_db 有消费者（gen_sample.py），其余 grep 零命中。删到只剩实际使用面，注释写明删除条件。",
+      "risk": "可能有仓外脚本按 wxg._mysql_translate 这类私有名访问；删之前先在 dist 与文档里搜一遍引用。"
+    }
+  ],
+  "implicit_requirements": [
+    "实际只验证过 MariaDB：MYSQL_SCHEMA_SQL 用了 MariaDB 扩展（CREATE INDEX IF NOT EXISTS、TEXT/LONGTEXT 字面量 DEFAULT），MySQL 8 上建表大概率报错，而文档写的是「MariaDB/MySQL」。",
+    "MySQL 账号必须是 mysql_native_password；MySQL 8 默认 caching_sha2_password 下内置客户端直接连不上（wxg_mysql.py:19-27 承认，但对外的 BACKEND_RULES 没写）。",
+    "目标数据库必须事先存在：init 不建库（design.md:276）。",
+    "MySQL 会话必须是 autocommit=0 + READ COMMITTED + utf8mb4，否则 work-claim 的并发语义和回滚都不对（db.py:328-330、wxg_mysql.py:641-643 只是注释，不是文档契约）。",
+    "每条 CLI 命令一个事务、末尾统一 commit（cli.py:77-84）；异常路径靠连接 close 回滚，不允许中间提交。",
+    "所有业务 SQL 必须只用 SQLite 方言的少数形态（INSERT OR IGNORE / ON CONFLICT(col) DO UPDATE SET / excluded.x / ? 占位符）；这条约定没有任何文档，翻译函数只认这几种。",
+    "SQL 字面量里不能出现 ?、% 或 :name——翻译层不识别引号（db.py:400-408 实测会报 ProgrammingError）。",
+    "SQL 里不能用 || 做字符串拼接：迁移里用了（db.py:587），在 MySQL 上退化成逻辑或。",
+    "结果行必须是 dict 或 sqlite3.Row（按列名取值）；任何 row[0] 形式的访问在 mysql/pg 上会 KeyError。",
+    "MySQL/PG 列有长度上限（id 512、path/symbol 700、claim_token 191、actor 191），SQLite 没有；超长值在 MySQL 严格模式会报错，在 INSERT IGNORE 下会被静默截断。",
+    "INSERT IGNORE 的语义比 SQLite OR IGNORE 宽：MySQL 会连截断、类型转换错误一起忽略，只有警告没有异常。",
+    "rowcount 语义按后端不同（MySQL = modified rows，SQLite = matched rows），migrate_schema 的计数与 doctor 的判据都间接依赖它。",
+    "非 sqlite 后端不创建 --root 目录（也不写 .why-exist），但 --root 仍决定导出目录。",
+    "后端是进程级环境变量状态，不是每调用一份配置；Engine(db_url=...) 会改写全局。",
+    "WXG_DB_URL 一旦设置就无法在单条命令里显式选回 SQLite（没有 sqlite:// 支持）。"
+  ],
+  "findings": [
+    "wxg init 在 MySQL 和 PG 上必崩：commands_repo.py:48-49 用了 db_url 和 re，两者都没导入，NameError → exit 2。更糟的是 init_db 已经跑完并 commit，表与 meta 都建好了，属于「报错但已改状态」的半成功。实现在 PG 16.15 与 MariaDB 12.3 上均复现。",
+    "两个连接包装都没有 executemany：db.py:323-397 只实现 execute/executescript/commit/rollback/close，而 commands_repo.py:204、308 用了 executemany。MySQL 与 PG 上 import-file/import-repo 写入路径 100% AttributeError 退出 2，节点因为未提交被回滚。",
+    "后端连接失败一律 traceback + 退出 1：cli.py:70 的 connect 在 try 之外。错密码（1045）、端口不通、PG 无服务、未装 psycopg 四种情况实测都是裸 traceback，直接违反 wxg_contract.py:221 与 CHANGELOG 1.2.0 的「连接报可读错误而不是 traceback」。",
+    "方言翻译是引号无关的字符串替换：db.py:408 把 SQL 里所有 ? 换成 %s，实测 SELECT '?' AS q 变成「1 placeholders but 0 parameters」，SELECT '100%' 报占位符非法。当前产品 SQL 恰好没踩到，但这是新增任何 SQL 都会撞上的地雷。",
+    "迁移回填在 MySQL 上是错的：db.py:587 用 'jh:' || w.id 拼 id，MariaDB 实测 'jh:' || 42 = 1，所有回填行 id 退化成 0/1 并被 INSERT IGNORE 合并成一行，judge_history 历史静默丢失。",
+    "三份 schema 靠手抄同步，PG 版还是 .replace 派生（db.py:19-150/154-285/289），没有任何测试断言三者一致；迁移 DDL 又是跨后端共用一份。加一个列要记得改两处，漏一处只有真连库才会发现。",
+    "两套 integrity-error 判定不一致：db.py:503 只认 4 个 errno，wxg_mysql.py:120-133 认 10 个。repo-add 的「path 已被占用」可读错误转换在 MySQL 上能否命中取决于实际 errno（1062 命中，1452/3819 等不命中）。",
+    "MySQL/PG 的端到端测试默认跳过且启用即失败：test_mysql_backend.py:31、test_pg_backend.py:30 的 skipUnless + CI 无数据库（ci.yml:20-30）⇒ 这条产品线在 CI 永远绿。CHANGELOG.md:1324-1325 还把这些用例计入了测试总数。",
+    "--db-url 不是参数而是写 os.environ（cli.py:56）；Engine 也这么干（engine.py:48）。同一进程构造两个不同后端的 Engine 会互相污染，子进程也会继承。",
+    "MYSQL_SCHEMA_SQL 是 MariaDB 专用方言（CREATE INDEX IF NOT EXISTS、TEXT 字面量 DEFAULT），在 MySQL 8 上大概率建表失败；但对外文档、测试命名、CHANGELOG 都写「MariaDB/MySQL」。本机只有 MariaDB 12.3 与一个无凭据的 mysql:8.0 容器，这一点未能实测。",
+    "INSERT IGNORE 语义比 SQLite OR IGNORE 宽：MySQL 会把数据截断/类型转换错误降级成 warning，SQLite 只忽略约束冲突。同样的代码在 MySQL 上会静默丢数据。",
+    "wxg_mysql 客户端本身是这份切片里质量最高的部分：12 个用例在真实 MariaDB 上全过，协议子集与禁区写在文件头。问题不在客户端，在它上面的方言适配层。",
+    "空 schema 的后端错误处理反而是对的：ensure_db 给可读 Reject + exit 2，且不创建 --root（实测）。这与连接失败路径的 traceback 形成刺眼的不一致。",
+    "死代码与兼容残留清晰可数：_named_params 无生产调用点、PRAGMA 分支与 _NoopCursor 不可达、wxg.py 的 16 个 db re-export 只有 2 个有消费者、PRAGMA foreign_keys=ON 在无外键 schema 上是空操作。",
+    "声称「纯标准库客户端」是有意的产品取舍，代价是 MySQL 8 默认认证、TLS、多结果集全部缺失；这条边界写在 wxg_mysql.py:19-27，但没进 BACKEND_RULES，用户从 SKILL.md 看不出来。"
+  ],
+  "open_questions": [
+    "MySQL/PG 后端到底算不算对外承诺？SKILL.md:427、references/contract.md:169-171、quality.md:49-50 都说能用，代码说不能。要么补齐并进 CI，要么把这条产品线从文档里删掉——现在是两者都不成立。",
+    "要不要为 MySQL 8（caching_sha2/TLS）引入一个可选第三方驱动？如果坚持零依赖，就得接受「只支持 MariaDB + native 认证」，并把这句话写进 BACKEND_RULES。",
+    "schema 的权威定义放哪？三份手抄是 bug 温床。是否可以只维护 SQLite 一份 + 一张列元数据表，由代码生成 MySQL/PG DDL？",
+    "VARCHAR 长度上限是不是隐性契约？超长 node id/path 在 MySQL 上是报错还是被 INSERT IGNORE 截断？要不要在写入前显式 Reject？",
+    "init 半成功（已建表但退出 2）要保留吗？还是应该先做所有可失败检查、再建表？",
+    "方言翻译要不要改成「按语句模板 + 参数化绑定」，而不是正则改字符串？改动量不小，但这是唯一能保证新 SQL 不被静默改坏的办法。",
+    "migrate_schema 里出现 'jh:' || 说明 MySQL 后端从来没有过需要迁移的旧库；那这条迁移路径在 MySQL 上到底要不要保留？",
+    "是否支持显式 sqlite 选择（sqlite:///path）？现在设了 WXG_DB_URL 就没有单命令退回 SQLite 的办法。"
+  ]
+}

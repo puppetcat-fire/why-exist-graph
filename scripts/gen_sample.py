@@ -23,6 +23,7 @@ REQ = f"requirement:{FEATURE}:main"
 UC = f"use_case:{FEATURE}:uc-create-order"
 ACTOR = f"actor:{FEATURE}:clerk"
 COMPONENT = "component:demo:app"
+PATTERN = f"pattern:{FEATURE}:repository"
 CLASSIFIER = "classifier:demo:shop.py:OrderRepo"
 OPERATION = "operation:demo:shop.py:OrderRepo.save"
 SINK = "sink:demo:orders"
@@ -70,6 +71,15 @@ def _build_graph(conn) -> None:
     wxg.upsert_edge(conn, {"src": ACTOR, "dst": UC, "kind": "associates"})
     node(COMPONENT, "component", "订单服务", {"duty": "接收订单并写库"})
     wxg.upsert_edge(conn, {"src": UC, "dst": COMPONENT, "kind": "associates"})
+    node(PATTERN, "pattern", "Repository", {
+        "intent": "把领域对象的持久化收敛到一个边界内",
+        "applicability": "存在多个写路径复用同一持久化逻辑，且需要替换存储实现",
+        "not_applicable": "只有一处 CRUD、或只是给 ORM 再包一层语法糖时不引入",
+        "alternative": "直接调用 ORM / 普通函数封装",
+        "cost": "多一层间接与映射代码",
+        "source": "PoEAA",
+    }, feature_id=FEATURE)
+    wxg.upsert_edge(conn, {"src": COMPONENT, "dst": PATTERN, "kind": "applies"})
 
     node(CLASSIFIER, "classifier", "OrderRepo", {"duty": "订单持久化"}, repo="demo", path="shop.py", symbol="OrderRepo")
     node(OPERATION, "operation", "save", {"http": "POST /orders", "success_code": "code===1"}, repo="demo", path="shop.py", symbol="OrderRepo.save")

@@ -1,0 +1,736 @@
+{
+  "slice": "11-cmd-graph",
+  "modules": [
+    {
+      "path": "scripts/whyexist/commands_graph.py",
+      "loc": 208,
+      "role": "graph 域 7 条命令的 CLI 处理器：写图鉴权委托、target 边界、retract 级联删除、bite 落库与 attrs 投影、evidence 登记与列表"
+    },
+    {
+      "path": "scripts/whyexist/graph.py",
+      "loc": 215,
+      "role": "被本切片调用的写原语（upsert_node/upsert_edge/bind_node）；契约归 06-graph-core，本切片只记录命令层选择调用参数带来的可观察差异"
+    }
+  ],
+  "public_surface": [
+    {
+      "entry": "wxg upsert-node",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_graph.py:20",
+      "input": "--token（必填）+ --data（JSON 字面量或 @文件）：id/kind 必填，可带 name/repo/path/symbol/line_start/line_end/attrs/origin/unmapped/feature_id",
+      "output": "stdout JSON：{\"action\":\"insert\"|\"update\",\"id\":\"...\"}",
+      "side_effects": "写 nodes（同 id 整条覆盖）；写 token 所属 feature 的 feature_nodes；payload.feature_id 存在时再写一条 feature_nodes；节点 id 追加进工单 evidence_ids",
+      "exit_codes": "0 成功；2 缺 token/角色不允许/越界/JSON 或字段非法；argparse 缺必填项也是 2（usage 文本，非 JSON）"
+    },
+    {
+      "entry": "wxg upsert-edge",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_graph.py:36",
+      "input": "--token + --data：src/dst/kind 必填，可带 id/evidence_path/evidence_line/unmapped/attrs",
+      "output": "stdout JSON：{\"action\":\"upsert\",\"id\":\"...\"}",
+      "side_effects": "写 edges（id 缺省为 edge:{kind}:{src}:{dst}）；两端 id 追加进工单 evidence_ids；不写 feature_nodes",
+      "exit_codes": "0 成功；2 缺 token/角色不允许/越界/端点不存在/未知 kind/applies|maps_to 方向非法"
+    },
+    {
+      "entry": "wxg bind",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_graph.py:50",
+      "input": "--token + --node-id（parameter|argument|assertion）+ --bind-to + 可选 --edge-kind（asserts|has_argument|has_input）",
+      "output": "stdout JSON：{\"action\":\"bind\",\"id\":\"...\"}",
+      "side_effects": "写 edges；两端 id 追加进工单 evidence_ids",
+      "exit_codes": "0 成功；2 缺 token/角色不允许/越界/节点 kind 不可 bind/目标不存在/--edge-kind 不在 choices"
+    },
+    {
+      "entry": "wxg retract",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_graph.py:79",
+      "input": "--token + --node-ids 与/或 --edge-ids（逗号分隔、JSON 数组或 @文件；两者都可省略）",
+      "output": "stdout JSON：{\"nodes_deleted\":int,\"edges_deleted\":int,\"bites_deleted\":int,\"work_refs_pruned\":int}",
+      "side_effects": "硬删除 nodes/edges/bites/feature_nodes；从所有非 audit 工单的 target_ids/evidence_ids 移除被删节点 id（保留 * 结尾通配）；不改证据、裁决历史、条件",
+      "exit_codes": "0 成功（含空参数、含不存在的 id）；2 缺 token/角色不允许（scan、observe 之外的写角色都不行）/id 不在 target_ids/edge 端点不在 target_ids"
+    },
+    {
+      "entry": "wxg bite",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_graph.py:109",
+      "input": "--node + --verdict（6 值）+ 可选 --reason/--feature/--actor（或 WXG_ACTOR）",
+      "output": "stdout JSON：{\"node\",\"verdict\",\"feature\",\"generation\",\"phase\",\"actor\"}",
+      "side_effects": "INSERT 一行 bites（历史只增）；覆盖 nodes.attrs_json 的 bite/x_bite_reason；--feature 时把节点写入该 feature 的 feature_nodes 并取当前代与阶段；verdict=UNMAPPED 时把 nodes.unmapped 置 1（之后不清除）",
+      "exit_codes": "0 成功；2 判决不在枚举/缺 actor/节点不存在/feature 不存在/条件不齐导致 current_phase 抛错"
+    },
+    {
+      "entry": "wxg evidence-record",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_graph.py:144",
+      "input": "--feature + --name + --command；可选 --exit-code（默认 0）、--artifact、--work、--actor（或 WXG_ACTOR）",
+      "output": "stdout JSON：{\"id\":\"ev:<uuid>\",\"feature_id\",\"generation\",\"work_item_id\",\"name\",\"exit_code\",\"artifact\",\"sha256\",\"actor\"}",
+      "side_effects": "写 evidence 一行（artifact 用 Path.resolve 后的绝对路径 + SHA-256）；不写工单 evidence_ids、不写条件",
+      "exit_codes": "0 成功；2 feature 不存在/工单不存在或不属于该 feature/name 或 command 为空白/artifact 不是文件/缺 actor"
+    },
+    {
+      "entry": "wxg evidence-list",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_graph.py:198",
+      "input": "--feature",
+      "output": "stdout JSON：{\"feature_id\":...,\"evidence\":[SELECT * 的 evidence 行，含 id/feature_id/generation/work_item_id/name/command/exit_code/artifact_path/artifact_sha256/actor/created_at]}",
+      "side_effects": "无（只读）",
+      "exit_codes": "0 成功；2 feature 不存在"
+    },
+    {
+      "entry": "whyexist.commands_graph.cmd_upsert_node / cmd_upsert_edge / cmd_bind / cmd_retract / cmd_bite / cmd_evidence_record / cmd_evidence_list",
+      "kind": "function",
+      "where": "scripts/wxg.py:147-156",
+      "input": "conn（已连接、已 ensure_db 的库连接）+ argparse 命名空间",
+      "output": "Python dict（与 CLI stdout 同构）；CLI 层负责 json.dumps(indent=2)",
+      "side_effects": "同对应 CLI 命令；异常抛 Reject（不自行 commit）",
+      "exit_codes": "不适用（由 cli.main 映射：Reject/异常 → 2）"
+    },
+    {
+      "entry": "whyexist.commands_graph.prune_work_refs",
+      "kind": "function",
+      "where": "scripts/whyexist/commands_graph.py:58",
+      "input": "conn + removed_ids: set[str]",
+      "output": "int（被改写的工单数）",
+      "side_effects": "遍历全部 work_items（跳 audit），改写 target_ids/evidence_ids 的 JSON；无 token/边界校验，任何持连接者都能调用",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "whyexist.commands_feature._require_write（本切片的鉴权入口）",
+      "kind": "function",
+      "where": "scripts/whyexist/commands_feature.py:717",
+      "input": "conn + args（取 args.token）+ command 名",
+      "output": "claimed 工单 dict",
+      "side_effects": "无写入；失败抛 Reject",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "表 nodes",
+      "kind": "table",
+      "where": "scripts/whyexist/db.py:30",
+      "input": "upsert-node / bite 更新",
+      "output": "id/kind/name/repo/path/symbol/line_start/line_end/attrs_json/origin/unmapped/stale",
+      "side_effects": "本切片是唯一通过 CLI 改 attrs_json.bite 与 unmapped 的入口（upsert-node 也被禁写 bite）；retract 是唯一 DELETE FROM nodes 的入口",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "表 edges",
+      "kind": "table",
+      "where": "scripts/whyexist/db.py:44",
+      "input": "upsert-edge / bind / retract",
+      "output": "id/src/dst/kind/evidence_path/evidence_line/unmapped/attrs_json",
+      "side_effects": "无外键；retract 按 id 或按被删节点端点删除",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "表 bites",
+      "kind": "table",
+      "where": "scripts/whyexist/db.py:114",
+      "input": "bite INSERT；retract DELETE",
+      "output": "自增 id/node_id/feature_id/generation/phase/verdict/reason/actor/created_at",
+      "side_effects": "审计轨迹事实来源；gate/coverage 只读含 phase 的行",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "表 feature_nodes",
+      "kind": "table",
+      "where": "scripts/whyexist/db.py:95",
+      "input": "upsert-node、bite --feature、retract",
+      "output": "feature_id/node_id 复合主键",
+      "side_effects": "决定 scope_ids 的作用域，从而影响 gate/coverage/plan 的输入集合",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "表 evidence",
+      "kind": "table",
+      "where": "scripts/whyexist/db.py:100",
+      "input": "evidence-record",
+      "output": "id/feature_id/generation/work_item_id/name/command/exit_code/artifact_path/artifact_sha256/actor/created_at",
+      "side_effects": "judge/gate 的 BehaviorPassed 采信来源（evidence_qualifies）",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "表 work_items",
+      "kind": "table",
+      "where": "scripts/whyexist/db.py:74",
+      "input": "图写入追加 evidence_ids；retract 裁剪 target_ids/evidence_ids",
+      "output": "target_ids/evidence_ids JSON 文本",
+      "side_effects": "写图的 target 边界与 change-diff 的节点来源；retract 会跨 feature 改写",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "文件 <root>/graph.sqlite（+ -wal/-shm）",
+      "kind": "file",
+      "where": "scripts/whyexist/db.py:454-465",
+      "input": "--root 或默认 ./.why-exist",
+      "output": "SQLite 状态库",
+      "side_effects": "connect 会 mkdir 并创建库文件；CLI 在连接前拦掉未初始化库",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "文件 证据产物（--artifact）",
+      "kind": "file",
+      "where": "scripts/whyexist/commands_graph.py:161-166",
+      "input": "任意存在的文件路径",
+      "output": "绝对路径 + SHA-256 落库",
+      "side_effects": "只读该文件；不复制、不写",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "环境变量 WXG_ACTOR",
+      "kind": "file",
+      "where": "scripts/whyexist/workflow.py:12-20",
+      "input": "bite / evidence-record 缺 --actor 时读取",
+      "output": "actor 字符串（1-80 非空白）",
+      "side_effects": "无",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "环境变量 WXG_DB_URL（与全局 --db-url）",
+      "kind": "file",
+      "where": "scripts/whyexist/cli.py:55-56; scripts/whyexist/db.py:425-438",
+      "input": "mysql:// / postgresql:// / 空",
+      "output": "后端选择",
+      "side_effects": "--db-url 会写进 os.environ，影响同进程后续所有命令",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "stdout/stderr 输出契约",
+      "kind": "file",
+      "where": "scripts/whyexist/cli.py:109-113; scripts/whyexist/cli.py:85-90",
+      "input": "任何命令结果",
+      "output": "成功：stdout 一行 json.dumps(indent=2)；Reject/异常：stderr 一行 {\"error\":...}",
+      "side_effects": "无",
+      "exit_codes": "0 / 2；argparse 自身拼错参数也返回 2 但输出 usage 文本"
+    }
+  ],
+  "contracts": [
+    {
+      "id": "C1",
+      "statement": "upsert-node/upsert-edge/bind/retract 必须先通过 _require_write：token 有效、工单处于 claimed、角色在 ROLES 里包含该命令，否则 Reject（退出码 2）。",
+      "evidence": [
+        "scripts/whyexist/commands_graph.py:21",
+        "scripts/whyexist/commands_graph.py:37",
+        "scripts/whyexist/commands_graph.py:51",
+        "scripts/whyexist/commands_graph.py:80",
+        "scripts/whyexist/commands_feature.py:717-720",
+        "scripts/whyexist/work.py:63-77",
+        "tests/test_wxg.py:465-479"
+      ],
+      "status": "partial",
+      "note": "token/claimed 与 upsert-node 越界有断言；bind/upsert-edge/retract 的越界分支、无效 token 分支、角色拒绝分支都无测试（探针确认行为存在）。"
+    },
+    {
+      "id": "C2",
+      "statement": "target_ids 边界：upsert-node 校验节点 id、upsert-edge 校验 src+dst、bind 校验两端、retract 校验 node_ids 与显式 edge 的端点；id 必须精确命中或命中 * 前缀通配。",
+      "evidence": [
+        "scripts/whyexist/commands_graph.py:29",
+        "scripts/whyexist/commands_graph.py:44",
+        "scripts/whyexist/commands_graph.py:52",
+        "scripts/whyexist/commands_graph.py:83",
+        "scripts/whyexist/commands_graph.py:97",
+        "scripts/whyexist/work.py:88-100",
+        "tests/test_wxg.py:473-479"
+      ],
+      "status": "partial",
+      "note": "只有 upsert-node 越界被断言；bind/upsert-edge/retract 的边界只靠探针。"
+    },
+    {
+      "id": "C3",
+      "statement": "upsert-node 拒绝缺 id 的 --data，返回可读 Reject（退出码 2）。",
+      "evidence": [
+        "scripts/whyexist/commands_graph.py:23-28",
+        "tests/test_wxg.py:812-820"
+      ],
+      "status": "covered",
+      "note": "只断言 {} 与缺 id 两种；缺 kind、--data 非对象、id 前缀不符无测试。"
+    },
+    {
+      "id": "C4",
+      "statement": "图写入一律拒绝 attrs.bite（bite 是唯一写入口，防伪造 KEEP 反证），错误信息含 bite。",
+      "evidence": [
+        "scripts/whyexist/graph.py:26-29",
+        "scripts/whyexist/commands_graph.py:30",
+        "tests/test_wxg.py:848-859",
+        "SKILL.md:298"
+      ],
+      "status": "covered",
+      "note": "x_ 前缀放行，所以伪造 x_bite_reason 不受限；gate 不采信 attrs.bite，风险有限。"
+    },
+    {
+      "id": "C5",
+      "statement": "upsert-node 的 kind/id/attrs 校验：kind 必须在 NODE_KINDS、id 必须含冒号且前缀等于 kind、attrs 必须是对象、键必须在 ATTR_SCHEMA 或 x_ 前缀、声明类型必须匹配。",
+      "evidence": [
+        "scripts/whyexist/graph.py:13-51",
+        "tests/test_wxg.py:1430-1441",
+        "tests/test_package_units.py:153-175"
+      ],
+      "status": "partial",
+      "note": "construction 的 bool 类型与 attrs.bite 有断言；未知 kind、前缀不符、非法字符、attrs 非对象这些 branches 只有包级单测覆盖 check_*，没有走 CLI。"
+    },
+    {
+      "id": "C6",
+      "statement": "同 id 再 upsert-node 是整条覆盖：attrs 整体替换（未提交的键丢失）、name/repo/path/origin 缺省沿用旧值、unmapped 按 payload 重写（缺省清 0）、stale 强制清 0；返回 action=insert/update。",
+      "evidence": [
+        "scripts/whyexist/graph.py:97-119",
+        "scripts/whyexist/commands_graph.py:30",
+        "docs/audit/06-graph-core.md:49"
+      ],
+      "status": "gap",
+      "note": "CLI 路径从不传 merge_attrs，与 import-file 的 merge_attrs=True 相反；无测试断言覆盖语义，探针 P1/P2 确认。"
+    },
+    {
+      "id": "C7",
+      "statement": "upsert-node 把节点挂进 token 所属 feature 的 feature_nodes；payload.feature_id 存在时再挂到该 feature（不校验 feature 是否存在）。",
+      "evidence": [
+        "scripts/whyexist/commands_graph.py:31",
+        "scripts/whyexist/graph.py:130-132",
+        "docs/audit/06-graph-core.md:51"
+      ],
+      "status": "gap",
+      "note": "探针 S8 确认一次 upsert 会写两条 feature_nodes；无任何 CLI 断言。"
+    },
+    {
+      "id": "C8",
+      "statement": "upsert-edge 校验 src/dst/kind 必填、kind ∈ EDGE_KINDS、两端节点已存在；applies 的 src 限 component/classifier/operation 且 dst 必须是 pattern；maps_to 的 src 限 use_case/component/port 且 dst 必须带 repo+path。",
+      "evidence": [
+        "scripts/whyexist/graph.py:140-167",
+        "tests/test_wxg.py:1246-1275",
+        "tests/test_wxg.py:1847-1864"
+      ],
+      "status": "partial",
+      "note": "applies 与 maps_to 两个方向校验有测试；未知 kind、端点不存在、src/dst 缺失无测试。"
+    },
+    {
+      "id": "C9",
+      "statement": "边 id 缺省是 edge:{kind}:{src}:{dst}；显式 id 原样使用并整行覆盖（改 src/dst/kind 都覆盖同一行）；改 kind 会生成新 id，旧边留下。",
+      "evidence": [
+        "scripts/whyexist/graph.py:136-137",
+        "scripts/whyexist/graph.py:168",
+        "docs/audit/06-graph-core.md:55"
+      ],
+      "status": "gap",
+      "note": "探针 P5：显式 id 由 depends 改成 associates 后同一行被改；再用派生 id 写 depends，得到两条边同一对端点。"
+    },
+    {
+      "id": "C10",
+      "statement": "bind 只收 parameter/argument/assertion 节点，bind_to 必须存在；默认边 kind 来自 BIND_EDGE_KIND；parameter/argument 方向是 bind_to→node，assertion 是 node→bind_to。",
+      "evidence": [
+        "scripts/whyexist/graph.py:190-213",
+        "tests/test_wxg.py:229-231",
+        "tests/test_wxg.py:608-630",
+        "docs/audit/06-graph-core.md:56"
+      ],
+      "status": "partial",
+      "note": "只有 happy path；节点 kind 拒绝、目标不存在、方向都没断言。"
+    },
+    {
+      "id": "C11",
+      "statement": "bind --edge-kind 覆盖默认映射，且与节点 kind 不做交叉校验，bind_to 的 kind 也不校验（可造出 use_case -asserts-> parameter）。",
+      "evidence": [
+        "scripts/whyexist/graph.py:198-206",
+        "scripts/wxg_contract.py:462",
+        "docs/audit/06-graph-core.md:57"
+      ],
+      "status": "gap",
+      "note": "探针 P7 现场造出 asserts 边；无测试。"
+    },
+    {
+      "id": "C12",
+      "statement": "upsert-node/upsert-edge/bind 会把涉及的节点 id 去重追加进当前工单 evidence_ids；work-finish 会校验 evidence_ids 全部落在 target_ids 内。",
+      "evidence": [
+        "scripts/whyexist/commands_graph.py:32",
+        "scripts/whyexist/commands_graph.py:46",
+        "scripts/whyexist/commands_graph.py:54",
+        "scripts/whyexist/work.py:103-110",
+        "scripts/whyexist/commands_feature.py:566-570"
+      ],
+      "status": "gap",
+      "note": "这是 change-diff（工单写过哪些节点）与 work-finish 边界的真实数据来源；无直接断言，探针 P7 可见。"
+    },
+    {
+      "id": "C13",
+      "statement": "retract 是硬删除：删 node、删触及它的 edge、删它的 bites、删它的 feature_nodes，并从所有非 audit 工单的 target_ids/evidence_ids 中剔除该 id（保留 * 结尾通配）；返回四个计数。",
+      "evidence": [
+        "scripts/whyexist/commands_graph.py:86-106",
+        "tests/test_wxg.py:371-389",
+        "SKILL.md:214",
+        "scripts/wxg_contract.py:141"
+      ],
+      "status": "partial",
+      "note": "测试覆盖 node/bite/feature_nodes/工单引用；edges_deleted 与跨 feature 裁剪没有断言（测试用例的节点没有边，只有一个 feature 的工单）。"
+    },
+    {
+      "id": "C14",
+      "statement": "retract 的边界只落到被删节点：删节点会连带删除端点不在 token target_ids 内的边；被删节点会把其他 feature/代的工单引用一并裁剪。",
+      "evidence": [
+        "scripts/whyexist/commands_graph.py:86-89",
+        "scripts/whyexist/commands_graph.py:100",
+        "scripts/whyexist/commands_graph.py:63-75"
+      ],
+      "status": "gap",
+      "note": "探针 S2/S3：target 只剩 outA，删 outA 仍删掉 outA→outB 的边；feat-b 工单 evidence_ids 被清空。契约只说「撤回 target_ids 内的节点与边」。"
+    },
+    {
+      "id": "C15",
+      "statement": "retract 对不存在的节点也返回 nodes_deleted 计数 +1（DELETE 不核对存在性），不存在的 edge id 静默跳过；两个参数都省略时成功返回全 0。",
+      "evidence": [
+        "scripts/whyexist/commands_graph.py:85-93",
+        "scripts/whyexist/commands_graph.py:94-99"
+      ],
+      "status": "gap",
+      "note": "探针：target 为 * 时 retract 一个不存在的 id 得到 nodes_deleted=1；显式 edge id 第二次删除返回 0 且不报错。计数会被 CI/代理当成成功依据。"
+    },
+    {
+      "id": "C16",
+      "statement": "一次 CLI 调用 = 一个事务：cli 在 handler 返回后统一 commit，Reject/异常路径不 commit，SQLite 在 close 时回滚，所以 retract 中途失败不会留下半截删除。",
+      "evidence": [
+        "scripts/whyexist/cli.py:71-84",
+        "scripts/whyexist/cli.py:85-93",
+        "scripts/whyexist/db.py:459-465"
+      ],
+      "status": "gap",
+      "note": "探针 S4：同一次调用 node 在 target、edge 端点不在 target 时退出 2，x1 仍在、全表快照不变。无测试；MySQL/PG wrapper 只 close 不显式 rollback（依赖客户端断连回滚）。"
+    },
+    {
+      "id": "C17",
+      "statement": "bite 的 --verdict 必须在 BITE_VERDICTS 内；argparse choices 先拦一次，handler 再校验一次。",
+      "evidence": [
+        "scripts/whyexist/commands_graph.py:110-111",
+        "scripts/wxg_contract.py:121",
+        "scripts/wxg_contract.py:475",
+        "tests/test_wxg.py:308-311"
+      ],
+      "status": "covered",
+      "note": "测试断言的是 argparse 层（错误文本包含 invalid choice）。"
+    },
+    {
+      "id": "C18",
+      "statement": "bite 必须记录执行者：--actor 或 WXG_ACTOR，1-80 个非空白字符，否则 Reject；actor 不做身份校验、不与 ROLES/工单对账。",
+      "evidence": [
+        "scripts/whyexist/commands_graph.py:112",
+        "scripts/whyexist/workflow.py:12-20",
+        "tests/test_wxg.py:527-549"
+      ],
+      "status": "partial",
+      "note": "缺 actor 的断言只覆盖 work-claim/work-judge；bite 的缺 actor 分支无测试（探针确认 Reject 2）；WXG_ACTOR 生效只在探针里验证。"
+    },
+    {
+      "id": "C19",
+      "statement": "每次 bite 追加一行 bites（feature_id/generation/phase/actor/created_at），旧行不改；同一节点重复 bite 是历史叠加而不是覆盖。",
+      "evidence": [
+        "scripts/whyexist/commands_graph.py:123-127",
+        "scripts/whyexist/commands_graph.py:118-121",
+        "tests/test_wxg.py:313-322",
+        "tests/test_wxg.py:1093-1100"
+      ],
+      "status": "covered",
+      "note": "322 行断言两次判决按顺序出现；1096-1100 断言 phase/generation 落库。"
+    },
+    {
+      "id": "C20",
+      "statement": "bite 把最新判决投影到 nodes.attrs_json.bite（有 reason 时写 x_bite_reason），保留节点已有 attrs；该投影仅供展示。",
+      "evidence": [
+        "scripts/whyexist/commands_graph.py:128-133",
+        "scripts/wxg_contract.py:131"
+      ],
+      "status": "gap",
+      "note": "没有测试断言 attrs 投影；gate 明确只采信 bites 表，所以投影错了不会被门禁发现。"
+    },
+    {
+      "id": "C21",
+      "statement": "bite --feature 不经过 target_ids 边界，直接把节点 INSERT OR IGNORE 进该 feature 的 feature_nodes，从而扩大作用域；不带 --feature 时 feature_id/generation/phase 全为 NULL。",
+      "evidence": [
+        "scripts/whyexist/commands_graph.py:118-122",
+        "scripts/whyexist/commands_graph.py:134-141"
+      ],
+      "status": "gap",
+      "note": "探针 S6：feat-b 的 target 只有 requirement:*，bite 一个 classifier 后 coverage.scope_size 从 1 变 2；bites 里出现 feature_id=NULL 的行。"
+    },
+    {
+      "id": "C22",
+      "statement": "bite verdict=UNMAPPED 把 nodes.unmapped 置 1；后续 KEEP/HOLLOW 等判决不会把它清 0（只有 upsert-node 能清）。",
+      "evidence": [
+        "scripts/whyexist/commands_graph.py:132-133",
+        "scripts/whyexist/commands_compiler.py:28-37",
+        "scripts/whyexist/gates.py:166",
+        "scripts/whyexist/gates.py:222"
+      ],
+      "status": "gap",
+      "note": "探针 P8：UNMAPPED→KEEP 后 unmapped 仍为 1。plan 默认排除 unmapped、conformance 用 unmapped 做启发式，所以咬合会改变这两个命令的结果。"
+    },
+    {
+      "id": "C23",
+      "statement": "evidence-record 要求 feature 存在、name/command 去空白后非空、actor 可取值；--work 存在时校验工单存在且属于该 feature；否则 Reject（退出码 2）。",
+      "evidence": [
+        "scripts/whyexist/commands_graph.py:145-158",
+        "scripts/whyexist/workflow.py:30-34",
+        "tests/test_wxg.py:569-583",
+        "tests/test_wxg.py:792-801"
+      ],
+      "status": "partial",
+      "note": "happy path 与「work 属于别的 feature」的判定被间接覆盖（792-801 用 --work 拿旧代）；空 name、feature 不存在、缺 actor 无测试（探针确认）。"
+    },
+    {
+      "id": "C24",
+      "statement": "evidence 的 generation 默认取 feature 当前代；--work 时取工单的 generation，因此可以把证据写进旧代（补历史证据的唯一合法路径），BehaviorPassed 只采信同代。",
+      "evidence": [
+        "scripts/whyexist/commands_graph.py:149-158",
+        "tests/test_wxg.py:792-810",
+        "scripts/whyexist/evidence.py:19-35",
+        "scripts/whyexist/commands_feature.py:637-639"
+      ],
+      "status": "covered",
+      "note": "断言：旧代证据 generation=1，judge 对新代 observe 要求 generation 2 的 evidence。"
+    },
+    {
+      "id": "C25",
+      "statement": "evidence-record --artifact 必须指向存在的文件；落库绝对路径与 SHA-256；产物被删除或 hash 变化后 gate FAIL、doctor 报 evidence-artifact-missing/changed。",
+      "evidence": [
+        "scripts/whyexist/commands_graph.py:159-166",
+        "scripts/whyexist/evidence.py:19-35",
+        "tests/test_wxg.py:569-587",
+        "tests/test_wxg.py:589-606"
+      ],
+      "status": "partial",
+      "note": "hash 与产物删除有测试；--artifact 不存在时的 Reject 分支无测试。"
+    },
+    {
+      "id": "C26",
+      "statement": "evidence-record 接受任意 --exit-code（含非 0）并原样落库；采信侧只认 exit_code=0，doctor 对非 0 只报提示。",
+      "evidence": [
+        "scripts/whyexist/commands_graph.py:178",
+        "scripts/whyexist/evidence.py:19-24",
+        "scripts/whyexist/commands_misc.py:440-441"
+      ],
+      "status": "gap",
+      "note": "无测试记录非 0 退出码，也无测试断言非 0 记录不影响 judge/gate（探针 P14 确认记录成功）。"
+    },
+    {
+      "id": "C27",
+      "statement": "evidence-list 返回该 feature 全部代的 evidence 行（SELECT *），按 created_at,id 排序；不提供按代/工单过滤。",
+      "evidence": [
+        "scripts/whyexist/commands_graph.py:198-206",
+        "tests/test_wxg.py:581-582"
+      ],
+      "status": "partial",
+      "note": "测试只断言 1 条记录；跨代返回、列集合、排序都无断言。created_at 精度到秒 + id 是 uuid4，同秒记录的次序不确定。"
+    },
+    {
+      "id": "C28",
+      "statement": "写命令的成功输出是 stdout 的缩进 JSON 且退出码 0；Reject/异常是 stderr 的 {\"error\":...} 且退出码 2；argparse 的缺参/非法 choices 也退出 2 但输出 usage 文本。",
+      "evidence": [
+        "scripts/whyexist/cli.py:85-90",
+        "scripts/whyexist/cli.py:109-113",
+        "tests/test_wxg.py:61-83"
+      ],
+      "status": "partial",
+      "note": "测试夹具默认 expect=0 隐含成功路径；本切片的 Reject 分支被多处断言；argparse 形态只有探针验证（repo-add 的 invalid choice 断言在别的切片）。"
+    }
+  ],
+  "state_io": [
+    {
+      "target": "graph.sqlite:nodes",
+      "mode": "both",
+      "where": "scripts/whyexist/commands_graph.py:30, 91, 113, 128-133"
+    },
+    {
+      "target": "graph.sqlite:edges",
+      "mode": "both",
+      "where": "scripts/whyexist/commands_graph.py:45, 53, 86-88, 95-98"
+    },
+    {
+      "target": "graph.sqlite:bites",
+      "mode": "both",
+      "where": "scripts/whyexist/commands_graph.py:90, 123-127"
+    },
+    {
+      "target": "graph.sqlite:feature_nodes",
+      "mode": "both",
+      "where": "scripts/whyexist/commands_graph.py:31, 92, 122"
+    },
+    {
+      "target": "graph.sqlite:evidence",
+      "mode": "both",
+      "where": "scripts/whyexist/commands_graph.py:168-184, 200-205"
+    },
+    {
+      "target": "graph.sqlite:work_items",
+      "mode": "both",
+      "where": "scripts/whyexist/commands_graph.py:32, 46, 54, 63-75"
+    },
+    {
+      "target": "graph.sqlite:features",
+      "mode": "read",
+      "where": "scripts/whyexist/commands_graph.py:119, 145, 199（经 ensure_feature）"
+    },
+    {
+      "target": "graph.sqlite:conditions",
+      "mode": "read",
+      "where": "scripts/whyexist/commands_graph.py:121（current_phase → condition_flags）"
+    },
+    {
+      "target": "graph.sqlite:meta",
+      "mode": "read",
+      "where": "scripts/whyexist/db.py:468-483（ensure_db，每个命令入口）"
+    },
+    {
+      "target": "file:<root>/graph.sqlite（+ -wal/-shm）",
+      "mode": "both",
+      "where": "scripts/whyexist/db.py:454-465; scripts/whyexist/cli.py:66-70"
+    },
+    {
+      "target": "file:证据产物（--artifact）",
+      "mode": "read",
+      "where": "scripts/whyexist/commands_graph.py:161-166; scripts/whyexist/evidence.py:11-16"
+    },
+    {
+      "target": "env:WXG_ACTOR",
+      "mode": "read",
+      "where": "scripts/whyexist/workflow.py:12-20"
+    },
+    {
+      "target": "env:WXG_DB_URL",
+      "mode": "both",
+      "where": "scripts/whyexist/cli.py:55-56（写）; scripts/whyexist/db.py:425-438（读）"
+    },
+    {
+      "target": "cwd:./.why-exist（默认 root）",
+      "mode": "read",
+      "where": "scripts/whyexist/cli.py:16; scripts/whyexist/cli.py:53"
+    }
+  ],
+  "redundancy": [
+    {
+      "item": "TOKEN_COMMANDS 与真实 token 拦截",
+      "signal": "TOKEN_COMMANDS 是零消费常量（全仓只有定义，wxg_contract.py:262）；它列 6 条，而 COMMANDS 里 token=True 有 9 条（漏 import-repo/derive/promote）。本切片的 4 条命令真正拦 token 的是 _require_write，不是它。",
+      "confidence": "high"
+    },
+    {
+      "item": "token+role 校验的两套实现",
+      "signal": "_require_write（commands_feature.py:717-720）只被本切片 4 条命令调用；commands_repo.py:193-194、298-299、470-471、543-544 四处内联 require_token+require_role，等价逻辑没有单一入口。",
+      "confidence": "high"
+    },
+    {
+      "item": "feature_nodes 双向写入",
+      "signal": "cmd_upsert_node 写一次（commands_graph.py:31），graph.upsert_node 在 payload.feature_id 存在时再写一次（graph.py:130-132）；同一次命令可能写两个 feature。",
+      "confidence": "high"
+    },
+    {
+      "item": "工单引用裁剪两份实现",
+      "signal": "prune_work_refs（commands_graph.py:58-76）与 doctor --fix 的内联循环（commands_misc.py:571-586）做同一件事：跳过 audit、保留 * 通配、改写 target_ids/evidence_ids。判据不同（已删 id vs 不存在 id），已开始分叉。",
+      "confidence": "high"
+    },
+    {
+      "item": "命令 facade 两套",
+      "signal": "wxg.py:147-156 从 commands_graph 导入 7 个 cmd_*，commands_repo.py:683-693 又原样 re-export 一遍同样的名字与 prune_work_refs；仓内无人从 commands_repo 取这些符号。",
+      "confidence": "high"
+    },
+    {
+      "item": "\"需要 token\" 声明三处",
+      "signal": "COMMANDS[name]['token']（wxg_contract.py:454-470）、WRITE_MODES（wxg_contract.py:662-668）、handler 内实际鉴权（commands_graph.py:21/37/51/80）三处独立维护；verify 只检查 WRITE_MODES 存在，不检查 token 标记与实现一致。",
+      "confidence": "high"
+    },
+    {
+      "item": "通配匹配实现多处",
+      "signal": "target_ids 的 * 语义分散在 require_targets（work.py:88-100）、target_match（work.py:80-85）、scope_ids（workflow.py:116-121）、prune_work_refs（commands_graph.py:68）、doctor（commands_misc.py:390）、query.py:21、blind.py:23、briefing.py:57、conflicts.py:16。",
+      "confidence": "medium"
+    },
+    {
+      "item": "bite 判决双重校验",
+      "signal": "argparse choices（wxg_contract.py:475）与 cmd_bite 内的 membership 检查（commands_graph.py:110-111）重复；错误文本打印 Python list repr。",
+      "confidence": "low"
+    },
+    {
+      "item": "upsert_node 的两种语义共用一个函数",
+      "signal": "merge_attrs 参数开关（graph.py:85, 97-105）：CLI/declare/derive/promote 用覆盖，import-file/import-repo 用合并；同一 API 名承载两种写入契约。",
+      "confidence": "medium"
+    },
+    {
+      "item": "evidence 列定义三份",
+      "signal": "SQLite schema（db.py:100-113）、MySQL schema（db.py:235-247）、PG 复用 SCHEMA_SQL（db.py:289）；而 evidence-list 直接 SELECT * 输出，列名即对外契约。",
+      "confidence": "medium"
+    }
+  ],
+  "rewrite_partition": [
+    {
+      "module": "scripts/whyexist/commands_graph.py:20-55（upsert-node/upsert-edge/bind 处理器）",
+      "verdict": "refactor_in_place",
+      "reason": "编排很薄（校验字段 → require_targets → 调 graph 原语 → 追加 evidence_ids），输出形状与错误可观察；问题在它选择的调用参数（merge_attrs=False、payload 直通）和鉴权来源，不在流程本身。",
+      "risk": "改覆盖/合并参数会立刻改变导入节点与设计角色手写 attrs 的存亡（对应 06-graph-core 的 C7/C8）；改校验（例如校验 bind_to 的 kind）会拒掉现存图库与测试；必须先补 C6/C9/C11/C12 的行为测试再动。"
+    },
+    {
+      "module": "scripts/whyexist/commands_graph.py:58-106（prune_work_refs + cmd_retract）",
+      "verdict": "rewrite",
+      "reason": "行为简单（硬删 + 引用重建），但当前实现有三个可观察错误：删节点连带删 target 外的边、跨 feature 工单引用静默裁剪、不存在的节点也计 1。适合按「校验 → 收集级联集 → 删除 → 重建引用 → 返回真实计数」重写，而不是打补丁。",
+      "risk": "四字段返回形状已被文档（SKILL.md:168）与代理流程依赖；doctor --fix 复制了引用裁剪逻辑，重写后两处必须收敛，否则新删法会被 doctor 改回去；role 矩阵（只有 scan/observe 能 retract）是现行绕过方式，收紧前要决定是否允许建边角色删边。"
+    },
+    {
+      "module": "scripts/whyexist/commands_graph.py:109-141（cmd_bite）",
+      "verdict": "refactor_in_place",
+      "reason": "核心契约清楚且有测试（判决集、actor、历史追加、phase/generation），gate/coverage 都在读它的产出；缺的是 target 边界、--feature 扩作用域、unmapped 粘滞这三处补丁级问题。",
+      "risk": "给它加 claim_token/target 边界会改掉现有的「任何人都能咬」工作流（SKILL.md:53、357 都按无 token 写）；清 unmapped 或改 --feature 的 feature_nodes 写入，会改变 plan/conformance/coverage 的输入集合——这是本切片里最容易被当成「顺手修」而改坏门禁的地方。"
+    },
+    {
+      "module": "scripts/whyexist/commands_graph.py:144-206（evidence-record/evidence-list）",
+      "verdict": "refactor_in_place",
+      "reason": "写一条记录 + 列一张表，行为边界清楚；需要补的是 exit_code/artifact 的组合校验、work 归属之外的工单状态校验，以及把 SELECT * 换成显式列。",
+      "risk": "evidence 列已被 doctor/gate/export 读取，list 输出又被外部脚本当 JSON API 用；改列名或去掉列会静默破坏消费方。generation 从 --work 继承的语义（旧代补证）必须保留。"
+    },
+    {
+      "module": "scripts/whyexist/commands_graph.py:11 + scripts/whyexist/commands_feature.py:717-720（鉴权依赖）",
+      "verdict": "refactor_in_place",
+      "reason": "图写入不应该依赖 feature 模块的私有函数；鉴权应下沉到 work.py 并与 commands_repo 的内联实现合并成单一入口。",
+      "risk": "_require_write、require_token、require_role 都在 wxg.py 的 re-export 面上（wxg.py:83-93, 120）；移动/改名会破坏测试与可能的包级 API 使用；需同步 facade 并接受一次 import 顺序调整。"
+    },
+    {
+      "module": "scripts/whyexist/commands_repo.py:683-693（本切片 7 个命令的兼容 re-export）",
+      "verdict": "freeze",
+      "reason": "它不是本切片的实现，但把 commands_graph 的全部公开名复制了第二份；当前无仓内消费者，删除属于包级 API 变更，先冻结、等外部 import 盘点后再删。",
+      "risk": "冻结期间两套 import 路径并存，新代码可能继续从 commands_repo 取，导致下一次审计仍要追两份；删除时若外部脚本依赖会直接 ImportError。"
+    }
+  ],
+  "implicit_requirements": [
+    "upsert-node 的 attrs 是整体替换：设计角色 upsert 一次、不带原来手写的键，`duty`/`x_note` 等标注会消失；SKILL.md:400 只说了用「不含 construction 的 upsert」清标记，没说其余 attrs 会一起没。",
+    "upsert-node 会把 nodes.unmapped 按 payload 重写（缺省清 0）、把 stale 强制清 0：一次手工 upsert 就能让节点重新进入 plan/conformance 的默认集合。",
+    "upsert-node 会同时写 token 所属 feature 与 payload.feature_id 的 feature_nodes，且不校验后者存在；这是唯一能在一条命令里跨两个 feature 扩作用域的图写入口。",
+    "upsert-edge 的 id 由 kind 派生：改 kind 不是「改一条边」，而是新边 + 旧边残留；同一对端点可以并存多条不同 kind 的边。",
+    "bind 的 --edge-kind 与节点 kind、bind_to 的 kind 都不交叉校验；asserts 可以挂到 use_case→parameter 上，图里会出现语义错边而没有任何报警。",
+    "图写入追加的 work_items.evidence_ids 是 change-diff 与 work-finish 边界的真实数据源，而不是证据表；删节点时它也会被裁剪，等于抹掉「这张单写过哪些节点」的痕迹。",
+    "retract 是硬删除且没有任何撤销/软删标记；被删节点 id 从工单 target_ids 移除后，同一工单再次提交不会报错。",
+    "retract 的计数不可信：不存在的节点也计 1，不存在的边静默 0；调用方无法区分「删了」和「本来就没有」。",
+    "retract 只删节点关联的边和 bite；外部遗留的悬空边/悬空 bite 只能靠 doctor --fix 清理（契约把这条写进了 GATE_RULES）。",
+    "bite 无 token、无 target 边界：它是唯一没有 claim 门槛的图写入口，写 bites + nodes.attrs_json，还能借 --feature 把节点塞进 feature 作用域，从而改变 coverage.scope_size 与 gate 的作用域。",
+    "bite 不传 --feature 时 bites.feature_id/generation/phase 全为 NULL；这些行不进 coverage 的分阶段统计，但 attrs.bite 仍被改写，看起来像「咬过了」。",
+    "bite verdict=UNMAPPED 把 nodes.unmapped 置 1 且不可逆（后续 KEEP 不清），于是「结构性漂移」的判决会反过来改变 plan 的节点集合与 conformance 的启发式解析。",
+    "bite 的 actor 是自由文本：不校验身份、不与 roles/工单关联；gate 的「审计独立性」只比较字符串。",
+    "evidence-record 允许 exit_code 非 0 落库；只有采信侧（evidence_qualifies）过滤 0，doctor 只报提示，所以「失败证据」是合法记录且不影响行为。",
+    "evidence-record 的 --artifact 只校验「存在且是文件」，不校验路径是否在仓/项目内，也不在登记时阻止后续 hash 变化（靠 doctor/gate 兜底）。",
+    "evidence-record 的 --work 可以把证据写进旧 generation，这是补历史证据的唯一路径，也是唯一能绕过「当前代」写入的地方。",
+    "evidence-list 返回 SELECT * 的原始行：列名与集合就是 CLI 契约，且不按代过滤，旧代证据会与新代混在一起。",
+    "CLI 的默认 root 在模块导入时用 Path.cwd() 计算（cli.py:16），`--db-url` 会写进 os.environ（cli.py:55-56）：同进程后续调用会被静默改后端。"
+  ],
+  "findings": [
+    "retract 的 target 边界只保护节点：删除节点会连带删掉端点不在 token target_ids 内的边（探针 S3：target 只剩 outA，outA→outB 的边仍被删）。",
+    "retract 会跨 feature/代裁剪工单引用（探针 S2：feat-b 工单的 evidence_ids 被清空），而这些工单并未参与本次写入；这是本切片最大的静默副作用。",
+    "retract 的返回值不可信：不存在的节点计 nodes_deleted=1，不存在的 edge id 静默返回 0，空参数也成功；没有「没删到」的错误信道。",
+    "retract 与 upsert-edge 的角色互斥：scan/observe 能 retract 不能建边，model-architecture 能建边不能 retract（ROLES 在 wxg_contract.py:247-255）；要删一条刚写错的边，必须再领一张 scan/observe 单。",
+    "upsert-node 是破坏性覆盖（attrs 全量替换、unmapped/stale 清 0），与 import-file 的 merge_attrs=True 语义相反，且没有测试；一次手工 upsert 就能抹掉设计角色手写的标注。",
+    "bite 是唯一无 token、无 target 边界的图写入口，且带 --feature 时会写 feature_nodes：咬合可以直接改变 coverage 的 scope_size 与 gate 的作用域（探针 S6：1→2）。",
+    "bite UNMAPPED 让 nodes.unmapped 置 1 后不可被后续 KEEP 清除（探针 P8），进而改变 plan 的默认排除集合与 conformance 的启发式解析——咬合与规划/一致性之间存在未写下的耦合。",
+    "bind 的 --edge-kind 与 bind_to 的 kind 都不与节点 kind 交叉校验（探针 P7：use_case -asserts-> parameter），图里可以出现语义错边且无告警。",
+    "事务边界是「一次 CLI 调用一个事务」（cli.py:71-84），SQLite 下 Reject 后回滚实测有效（探针 S4），但没有任何测试；MySQL/PG 的 wrapper 只有 close 没有显式 rollback，靠断连回滚。",
+    "evidence-list 用 SELECT * 输出（commands_graph.py:200-205），列名即 CLI 契约；排序 created_at（秒级）+ 随机 uuid，同秒记录的次序不稳定。",
+    "TOKEN_COMMANDS 是彻底的死常量：零消费、只列 6 条而 token=True 有 9 条；真正的 token 拦截在本切片的 _require_write，但同一逻辑在 commands_repo 里又内联了 4 份。",
+    "commands_graph 通过 commands_feature 的私有 _require_write 鉴权，而 feature 模块与 graph 模块没有依赖关系的理由；这是鉴权被拆成两套实现的根因。"
+  ],
+  "open_questions": [
+    "retract 的写边界到底承诺什么：节点级 target 就够，还是边/工单引用也要受边界约束？当前「删节点连带删 target 外的边、跨 feature 裁引用」是设计还是 bug——这决定它该重写还是只补测试。",
+    "upsert-node 的 attrs 整体替换是契约还是历史选择？import-file 用 merge_attrs=True，CLI 用 False；要不要显式化成 --merge/--replace，还是统一成合并（SKILL.md:400 的「清 construction」依赖覆盖语义）？",
+    "bite 该不该也要求 claim_token + target 边界？I5（SKILL.md:327）说图内容写入必须有边界，而 bite 是唯一例外且能扩 feature 作用域；收紧会改掉「任何人可咬」的现有工作流。",
+    "nodes.unmapped 的权威来源是谁：导入器（I7）、bite(UNMAPPED)、upsert payload 三个写点都能改它；目前没有单一规则，重写时按哪个保留？",
+    "retract 的计数要不要修成「真实删除数」并让不存在的 id 报错？调用方（CI/代理/doctor）现在会把 nodes_deleted=1 当成成功依据。",
+    "跨后端事务：MySQL/PG 在 Reject 后只 close 不 rollback，是否要显式 rollback 并补测试？SQLite 的回滚行为目前只被探针验证过。",
+    "evidence 的 exit_code 语义：记录允许任意值、采信只认 0，这是有意的「留失败证据」还是漏洞？是否要求 --artifact 与 --exit-code 组合出现（非 0 时不要求产物）？",
+    "TOKEN_COMMANDS 要不要删（零消费、与 COMMANDS.token 不一致）？删它属于包级 API 变更，需先确认无外部 import；同样的问题也适用于 commands_repo.py:683-693 的兼容 re-export。"
+  ]
+}

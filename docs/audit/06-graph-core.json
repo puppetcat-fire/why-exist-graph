@@ -1,0 +1,545 @@
+{
+  "slice": "06-graph-core",
+  "modules": [
+    {
+      "path": "scripts/whyexist/engine.py",
+      "loc": 151,
+      "role": "Engine 库门面：把一个状态库连接接到 plan/brief/blind_check/gate/impact，自身不做判定、不写库；不含条件状态机迁移"
+    },
+    {
+      "path": "scripts/whyexist/graph.py",
+      "loc": 215,
+      "role": "节点/边/绑定的写入校验与 upsert：kind 白名单、节点 id 前缀与字符集、attrs 守则、applies/maps_to 端点语义、edge id 生成"
+    },
+    {
+      "path": "scripts/whyexist/graph_algo.py",
+      "loc": 406,
+      "role": "纯图算法：悬空边归一化、Kosaraju SCC、Kahn 拓扑分层、Dilworth 最大反链、传递可达；不碰数据库"
+    }
+  ],
+  "public_surface": [
+    {
+      "entry": "wxg upsert-node",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_graph.py:20",
+      "input": "--token <claim_token>；--data <JSON 字面量或 @文件>，需含字符串 id 与 kind，可选 name/repo/path/symbol/line_start/line_end/attrs/origin/unmapped/feature_id",
+      "output": "stdout 缩进 JSON：upsert_node 的返回值 {\"action\":\"insert|update\",\"id\":<id>}",
+      "side_effects": "写 nodes（INSERT ... ON CONFLICT DO UPDATE）；payload 带 feature_id 时写 feature_nodes；命令层随后再写一次 feature_nodes（commands_graph.py:31）并把节点 id 追加进当前工单 evidence_ids；stale 强制清 0",
+      "exit_codes": "0 成功；2 Reject 或后端异常（{\"error\":...} 写 stderr）"
+    },
+    {
+      "entry": "wxg upsert-edge",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_graph.py:36",
+      "input": "--token；--data 需含字符串 src/dst/kind，可选 id/evidence_path/evidence_line/unmapped/attrs",
+      "output": "JSON {\"action\":\"upsert\",\"id\":<edge id>}",
+      "side_effects": "写 edges（upsert）；把 src/dst 追加进工单 evidence_ids；不写 nodes",
+      "exit_codes": "0 成功；2 Reject"
+    },
+    {
+      "entry": "wxg bind",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_graph.py:50",
+      "input": "--token；--node-id <parameter|argument|assertion>；--bind-to <已存在节点>；--edge-kind 可选，choices 为 has_input/has_argument/asserts",
+      "output": "JSON {\"action\":\"bind\",\"id\":<edge id>}",
+      "side_effects": "写 edges；把两端 id 追加进工单 evidence_ids",
+      "exit_codes": "0 成功；2 Reject"
+    },
+    {
+      "entry": "wxg plan",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_compiler.py:23",
+      "input": "--feature <id>；--level auto|design|code；--include-unmapped（默认排除 unmapped 与 stale）",
+      "output": "JSON：feature/level/node_count/edge_count/acyclic/cyclic_components/layers/layer_count/max_antichain/parallelism/bottleneck/dangling{unknown_endpoint,self_loop,duplicate}/excluded_unmapped/excluded_stale；level=code 且作用域无代码节点时多一个 hint",
+      "side_effects": "只读；不写库、不建文件",
+      "exit_codes": "0 成功；2 Reject（feature 不存在等）"
+    },
+    {
+      "entry": "wxg cycles",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_compiler.py:140",
+      "input": "--feature；--without src->dst,...；--break-set；--advise",
+      "output": "JSON：feature/node_count/edge_count/without/cycle_count/cycles[{members,shape,guidance,edges,self_loops}]；可选 break_sets 与 advice、truncated",
+      "side_effects": "只读",
+      "exit_codes": "0 成功；2 Reject（--without 端点不在设计层等）"
+    },
+    {
+      "entry": "wxg impact",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_compiler.py:298",
+      "input": "--feature；--changed <id 列表> 或 --remove-edges src->dst,...",
+      "output": "JSON：changed/affected/direct/indirect/affected_in_scope/cross_feature/depends_on/requirements/uncovered/closed；remove-edges 模式返回 removed/affected/requirements/uncovered/closed",
+      "side_effects": "只读",
+      "exit_codes": "0 成功；2 Reject（两个模式都未给、端点格式错等）"
+    },
+    {
+      "entry": "whyexist.Engine",
+      "kind": "function",
+      "where": "scripts/whyexist/engine.py:33",
+      "input": "Engine(root, *, db_url=None)；上下文管理器；方法 plan(feature, level='auto', include_unmapped=False)、brief(work_id)、blind_check(work_id, output)、gate(feature)、impact(feature, changed)",
+      "output": "dict：plan/brief/blind_check/impact 为对应纯函数模块的输出；gate 为 cmd_gate 的完整 PASS/FAIL 字典（含 checks/coverage/drift 等）",
+      "side_effects": "首次 connect 建 SQLite 文件（见 C23）；db_url 非空时写进程级 WXG_DB_URL；import .contract 时向 sys.path 插入 scripts/ 目录",
+      "exit_codes": "无退出码；失败抛 Reject（错误信息同 CLI）"
+    },
+    {
+      "entry": "whyexist.graph 公开函数",
+      "kind": "function",
+      "where": "scripts/whyexist/graph.py:85",
+      "input": "conn + payload dict（upsert_node/upsert_edge）；bind_node(conn, node_id, bind_to, edge_kind=None)；get_node(conn,id)；find_repo(conn, Path)；check_kind/check_attrs/check_node_id；edge_id(kind,src,dst)",
+      "output": "upsert_node/upsert_edge 返回 {\"action\":...,\"id\":...}；bind_node 返回 {\"action\":\"bind\",\"id\":...}；get_node 返回 dict 或 None；find_repo 返回 repo 行 dict；check_* 返回 None，edge_id 返回字符串",
+      "side_effects": "upsert_node 写 nodes 与 feature_nodes；upsert_edge/bind_node 写 edges；get_node/find_repo/repo_rows 读 nodes/repos",
+      "exit_codes": "无；校验失败抛 Reject"
+    },
+    {
+      "entry": "whyexist.graph_algo 公开函数",
+      "kind": "function",
+      "where": "scripts/whyexist/graph_algo.py:57",
+      "input": "nodes: list[str]、edges: list[tuple[str,str]]；reachable 额外有 start 与 reverse 关键字",
+      "output": "normalize→(nodes, edges, DanglingEdges)；adjacency/reverse_adjacency→dict；strongly_connected_components/topological_layers→list[list[str]]；transitive_reachable/reachable→dict[str,set]/set[str]；max_antichain→int；analyze→GraphAnalysis；有环抛 CyclicGraph",
+      "side_effects": "无（纯函数，不读写库、不读环境变量）",
+      "exit_codes": "无；非法图状态用 CyclicGraph(ValueError) 表达"
+    },
+    {
+      "entry": "whyexist 包级导出",
+      "kind": "function",
+      "where": "scripts/whyexist/__init__.py:22",
+      "input": "from whyexist import analyze / strongly_connected_components / topological_layers / max_antichain / reachable / transitive_reachable / CyclicGraph / GraphAnalysis / Engine",
+      "output": "同 graph_algo 与 Engine",
+      "side_effects": "import 时加载 blind/briefing/engine/planner；engine 再 import .contract，后者改 sys.path（contract.py:12-14）",
+      "exit_codes": "无"
+    },
+    {
+      "entry": "表 nodes / edges / feature_nodes",
+      "kind": "table",
+      "where": "scripts/whyexist/db.py:30",
+      "input": "graph.py 的 upsert 语句；edges 无外键约束，nodes 无 feature 引用约束",
+      "output": "行：nodes(id,kind,name,repo,path,symbol,line_start,line_end,attrs_json,origin,unmapped,stale)；edges(id,src,dst,kind,evidence_path,evidence_line,unmapped,attrs_json)；feature_nodes(feature_id,node_id)",
+      "side_effects": "写路径见 graph.py:120-133/169-186/208-212；读路径见 graph.py:78（get_node）与 workflow.scope_ids",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "表 repos",
+      "kind": "table",
+      "where": "scripts/whyexist/graph.py:56",
+      "input": "repo-add 写入；find_repo 读 path 做前缀匹配",
+      "output": "id/path/language/created_at 行；repo-list 原样输出",
+      "side_effects": "本切片只读（repo_rows/find_repo）；写入口在 commands_repo",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "<root>/graph.sqlite（含 -wal/-shm）",
+      "kind": "file",
+      "where": "scripts/whyexist/db.py:458",
+      "input": "connect(root)：mysql/postgres 后端走 URL，否则 sqlite3.connect(root/'graph.sqlite') 并设 WAL",
+      "output": "SQLite 文件；ensure_db 只检查 meta 表是否存在，不创建",
+      "side_effects": "root 目录不存在时 mkdir(parents=True)；sqlite3.connect 会创建 graph.sqlite，PRAGMA journal_mode=WAL 会创建 -wal/-shm；即使随后 ensure_db 抛 Reject，这些文件已留下（docs/audit/_probe_06.py 实测）",
+      "exit_codes": "不适用"
+    }
+  ],
+  "contracts": [
+    {
+      "id": "C1",
+      "statement": "写节点的 kind 必须在契约 NODE_KINDS 内，否则 Reject（CLI 退出码 2，stderr 输出 {\"error\":...}）",
+      "evidence": ["scripts/whyexist/graph.py:13-15", "tests/test_package_units.py:153-158"],
+      "status": "covered",
+      "note": "未知 kind 在 CLI 路径同样走到 graph.upsert_node；测试直接打函数。"
+    },
+    {
+      "id": "C2",
+      "statement": "写边的 kind 必须在 EDGE_KINDS 内，且 src/dst/kind 三者必须是非空字符串，否则 Reject",
+      "evidence": ["scripts/whyexist/graph.py:140-147"],
+      "status": "gap",
+      "note": "没有测试断言未知边 kind 或缺少 src/dst/kind 的拒绝分支；test_wxg.py:470 只测缺 id。"
+    },
+    {
+      "id": "C3",
+      "statement": "节点 id 必须含 ':'，冒号前的前缀必须等于 kind，且整体只含 [A-Za-z0-9._:\\-@/]，否则 Reject",
+      "evidence": ["scripts/whyexist/graph.py:44-51", "tests/test_package_units.py:160-166"],
+      "status": "covered",
+      "note": "测试覆盖前缀不一致与空格两类；缺少冒号、@// 等合法字符未单独断言。"
+    },
+    {
+      "id": "C4",
+      "statement": "attrs 必须是 JSON 对象；只允许 ATTR_SCHEMA 声明的键或 x_ 前缀键；声明为 str/int/bool 的键做类型校验；否则 Reject",
+      "evidence": ["scripts/whyexist/graph.py:18-41", "tests/test_package_units.py:168-175", "tests/test_wxg.py:1430-1441"],
+      "status": "partial",
+      "note": "x_ 放行、未知键拒绝、bool 类型有测试；attrs 非 dict、str/int 类型不符分支未测。"
+    },
+    {
+      "id": "C5",
+      "statement": "attrs.bite 是只读投影，任何图写入命令（含 upsert-node/apply/import 复用 upsert_node）写该键都 Reject；只有 bite 命令能改它",
+      "evidence": ["scripts/whyexist/graph.py:26-29", "tests/test_wxg.py:848-859", "SKILL.md:298"],
+      "status": "covered",
+      "note": "既测了 CLI 拒绝，也写进了契约文档。"
+    },
+    {
+      "id": "C6",
+      "statement": "upsert-node 返回 {\"action\":\"insert\"|\"update\",\"id\":<id>}，insert/update 由写入前该 id 是否存在决定",
+      "evidence": ["scripts/whyexist/graph.py:95-96", "scripts/whyexist/graph.py:133"],
+      "status": "gap",
+      "note": "没有测试断言这个返回形状；import-file 自己用 existing 参数统计 inserted/updated，不复用返回值，所以测试也测不到。"
+    },
+    {
+      "id": "C7",
+      "statement": "已存在节点被 upsert 时，attrs 整体替换（默认 merge_attrs=False）；name/repo/path/symbol/line_*/origin 缺省时沿用旧值；stale 一律清 0；unmapped 由 payload 的真假值重写",
+      "evidence": ["scripts/whyexist/graph.py:97-118", "tests/test_wxg.py:1404-1428", "docs/audit/_probe_06.py:45-64"],
+      "status": "partial",
+      "note": "只有 construction 从 true 改 false 的间接测试；没有断言旧 attrs 键会消失、stale 会清零、unmapped 会被重写。探针确认三者都发生。"
+    },
+    {
+      "id": "C8",
+      "statement": "merge_attrs=True 时在旧 attrs 上 update，保留设计角色手写的 duty/x_* 等标注（导入、derive、promote、feature-declare 走这条路径）",
+      "evidence": ["scripts/whyexist/graph.py:97-103", "tests/test_wxg.py:353-369"],
+      "status": "covered",
+      "note": "手工改 DB 写入 duty 后重扫，断言 duty 与 x_lang 都在。"
+    },
+    {
+      "id": "C9",
+      "statement": "upsert_node 的 payload 若带 feature_id，就写 feature_nodes(feature_id,node_id)；不校验该 feature 是否存在",
+      "evidence": ["scripts/whyexist/graph.py:130-132", "tests/test_wxg.py:1869-1889"],
+      "status": "partial",
+      "note": "只被 conformance 测试间接依赖（作用域取自 feature_nodes）；不存在的 feature_id 会留下悬空关联，没有测试。"
+    },
+    {
+      "id": "C10",
+      "statement": "upsert_edge 要求 src/dst 节点已存在，否则 Reject（写时引用完整性）",
+      "evidence": ["scripts/whyexist/graph.py:148-151", "references/design.md:1637"],
+      "status": "gap",
+      "note": "derive 历史上撞过这个错误，文档留了记录，但没有测试断言该 Reject；edges 表本身也没有外键。"
+    },
+    {
+      "id": "C11",
+      "statement": "applies 边：src kind 必须是 component/classifier/operation，dst kind 必须是 pattern，否则 Reject",
+      "evidence": ["scripts/whyexist/graph.py:152-158", "tests/test_wxg.py:1246-1275"],
+      "status": "covered",
+      "note": "src 与 dst 两个拒绝分支都有 CLI 级断言，且随后有正向用例。"
+    },
+    {
+      "id": "C12",
+      "statement": "maps_to 边：src kind 必须在 DESIGN_ANCHOR_KINDS（use_case/component/port）内，dst 节点必须带 repo 与 path，否则 Reject",
+      "evidence": ["scripts/whyexist/graph.py:159-167", "tests/test_wxg.py:1847-1867"],
+      "status": "covered",
+      "note": "两个拒绝分支与一个成功分支都有断言。"
+    },
+    {
+      "id": "C13",
+      "statement": "边 id 默认 edge:{kind}:{src}:{dst}；payload 带 id 时原样使用，不做格式校验",
+      "evidence": ["scripts/whyexist/graph.py:136-137", "scripts/whyexist/graph.py:168", "tests/test_package_units.py:177-178", "docs/audit/_probe_06.py:82-87"],
+      "status": "partial",
+      "note": "只测了默认格式；探针确认自定义 id '随便' 会落库。node id 有校验、edge id 没有，是不对称。"
+    },
+    {
+      "id": "C14",
+      "statement": "bind 只接受 parameter/argument/assertion；目标节点必须存在；默认边 kind 取 BIND_EDGE_KIND；parameter/argument 的方向是 bind_to -> node，assertion 是 node -> bind_to",
+      "evidence": ["scripts/whyexist/graph.py:190-213", "tests/test_wxg.py:142-143", "tests/test_wxg.py:229-231"],
+      "status": "partial",
+      "note": "全流程只覆盖了 has_input 和 asserts 的正向绑定；方向本身没有断言；拒绝分支（不可 bind 的 kind、目标不存在、未知 edge kind）无测试。"
+    },
+    {
+      "id": "C15",
+      "statement": "--edge-kind 可取 has_input/has_argument/asserts 中任意值，且不与 node kind 交叉校验",
+      "evidence": ["scripts/wxg_contract.py:462", "scripts/whyexist/graph.py:198-206", "docs/audit/_probe_06.py:67-80"],
+      "status": "gap",
+      "note": "探针确认 parameter 可用 --edge-kind has_argument，生成 operation -has_argument-> parameter 这种语义错边；has_output 反而不在 choices 里，bind 永远建不出输出参数边。"
+    },
+    {
+      "id": "C16",
+      "statement": "find_repo 取路径前缀最长（最具体）的已登记仓；文件不在任何仓内时 Reject 并提示 repo-add",
+      "evidence": ["scripts/whyexist/graph.py:60-72"],
+      "status": "gap",
+      "note": "只有单仓场景被 import-file 测试间接走过；嵌套仓与未登记仓两个分支都没有断言。"
+    },
+    {
+      "id": "C17",
+      "statement": "Engine 只读：各方法不写节点/边/条件/工单；重复调用结果一致",
+      "evidence": ["scripts/whyexist/engine.py:11-15", "README.md:48", "tests/test_engine.py:109-115"],
+      "status": "partial",
+      "note": "测试只比较两次 gate 返回值，没断言库内容不变；而且 connect 在未初始化目录会建文件（C23），'只读' 在文件系统层不成立。"
+    },
+    {
+      "id": "C18",
+      "statement": "Engine.plan 返回 planner 的结果，默认排除作用域内 unmapped 与 stale 节点，并回填 excluded_unmapped/excluded_stale",
+      "evidence": ["scripts/whyexist/engine.py:77-113", "tests/test_engine.py:82-88", "tests/test_plan_cli.py:525-535"],
+      "status": "partial",
+      "note": "Engine 路径只断言 level/edge_count/acyclic；unmapped 排除只在 CLI 测试覆盖；stale 排除在任何路径都没有测试。"
+    },
+    {
+      "id": "C19",
+      "statement": "Engine.brief 返回盲化任务书，含 blind=true 与来自工单 target_ids 的 write_patterns；工单不存在时 Reject",
+      "evidence": ["scripts/whyexist/engine.py:115-117", "tests/test_engine.py:90-99", "tests/test_plan_cli.py:255"],
+      "status": "covered",
+      "note": "happy path 有断言；工单不存在的 Reject 只在 CLI 侧测过，Engine 侧同函数但无直接断言。"
+    },
+    {
+      "id": "C20",
+      "statement": "Engine.blind_check 返回 PASS/FAIL 判定，越界或未声明依赖时 FAIL",
+      "evidence": ["scripts/whyexist/engine.py:119-127", "tests/test_engine.py:90-107"],
+      "status": "covered",
+      "note": "两个方向都断言了。"
+    },
+    {
+      "id": "C21",
+      "statement": "Engine.gate 返回 cmd_gate 的完整字典，result 为 PASS/FAIL；FAIL 不抛异常",
+      "evidence": ["scripts/whyexist/engine.py:129-131", "tests/test_engine.py:109-115"],
+      "status": "partial",
+      "note": "只测了 FAIL 结果与两次调用一致；PASS 路径与'不写库'都没有断言。"
+    },
+    {
+      "id": "C22",
+      "statement": "Engine.impact 返回 build_impact 的闭包字段（affected 含 changed、direct/indirect、cross_feature、depends_on、requirements/uncovered、closed）",
+      "evidence": ["scripts/whyexist/engine.py:133-151", "tests/test_engine.py:123-129"],
+      "status": "partial",
+      "note": "只断言 affected 含 a/b 与 changed；cross_feature、depends_on、uncovered 在 Engine 路径无断言。CLI 的 remove-edges 模式 Engine 不暴露。"
+    },
+    {
+      "id": "C23",
+      "statement": "Engine.connect 在状态库未初始化时抛 Reject（状态库未初始化：先运行 wxg init）；构造时传 db_url 会写入进程级 WXG_DB_URL",
+      "evidence": ["scripts/whyexist/engine.py:43-51", "docs/audit/_probe_06.py:28-43"],
+      "status": "gap",
+      "note": "缺库分支无测试；db_url 分支无测试且 env 不恢复。探针实测：Reject 之前已创建 state/ 与 graph.sqlite、-shm、-wal。"
+    },
+    {
+      "id": "C24",
+      "statement": "close() 只关闭连接并把 _conn 置 None；之后调用方法会静默重连（连接不是终止状态）",
+      "evidence": ["scripts/whyexist/engine.py:43-64", "tests/test_engine.py:131-136"],
+      "status": "gap",
+      "note": "测试只断言 with 之后 _conn is None；close 后重连、close 两次、未 connect 就 close 都没测。"
+    },
+    {
+      "id": "C25",
+      "statement": "graph_algo 是纯函数层：只 import dataclasses，不 import 项目内模块、不读写数据库",
+      "evidence": ["scripts/whyexist/graph_algo.py:19-21", "tests/test_graph_algo.py:11-14"],
+      "status": "partial",
+      "note": "是结构性事实而非断言；独立测试文件只 import 该模块，可作为间接证据。"
+    },
+    {
+      "id": "C26",
+      "statement": "normalize 去重节点并保序，丢弃未知端点边/自环/重复边，三类分别记录在 DanglingEdges 中",
+      "evidence": ["scripts/whyexist/graph_algo.py:57-85", "tests/test_graph_algo.py:17-33"],
+      "status": "covered",
+      "note": "三类丢弃与空图都有断言。"
+    },
+    {
+      "id": "C27",
+      "statement": "strongly_connected_components 返回拓扑序分量（依赖者先出现），分量内按输入顺序排序，迭代实现不受递归深度限制",
+      "evidence": ["scripts/whyexist/graph_algo.py:104-154", "tests/test_graph_algo.py:36-69"],
+      "status": "covered",
+      "note": "顺序断言 + 分量集合与输入顺序无关；'迭代实现'本身没有大图测试。"
+    },
+    {
+      "id": "C28",
+      "statement": "topological_layers 用 Kahn 分层，层内保持输入顺序，孤立点同层；有环抛 CyclicGraph（components 为环 SCC），自环抛且 components=[[x]]",
+      "evidence": ["scripts/whyexist/graph_algo.py:169-198", "tests/test_graph_algo.py:72-96"],
+      "status": "covered",
+      "note": "链、菱形、孤立点、双节点环、自环都断言了。"
+    },
+    {
+      "id": "C29",
+      "statement": "max_antichain 先按 SCC 收缩成宏节点，再算 n - 二分图最大匹配；空图返回 0",
+      "evidence": ["scripts/whyexist/graph_algo.py:322-351", "tests/test_graph_algo.py:99-136"],
+      "status": "covered",
+      "note": "链/V 形/菱形/独立点/双链/三链/环收缩/空图都有断言；大图匹配性能无测试。"
+    },
+    {
+      "id": "C30",
+      "statement": "reachable 返回从 start 出发的可达集、不含 start 自身；reverse=True 走上游；未知 start 返回空集",
+      "evidence": ["scripts/whyexist/graph_algo.py:240-263", "tests/test_graph_algo.py:139-160", "docs/audit/_probe_06.py:112"],
+      "status": "partial",
+      "note": "DAG、叶子、上游、未知起点有断言；但探针显示环图里 start 会出现在结果里（{'a','b'}），与 docstring '不含 start 自身' 冲突，无测试。"
+    },
+    {
+      "id": "C31",
+      "statement": "transitive_reachable 返回每个节点严格可达集（不含自身）；DAG 上走位集传递闭包，环图退化为逐点 DFS，结果同样排除自身",
+      "evidence": ["scripts/whyexist/graph_algo.py:201-237", "tests/test_graph_algo.py:157-160", "references/design.md:575"],
+      "status": "partial",
+      "note": "只在链图上与 reachable 对拍；环图退化分支（历史修过的 bug）没有直接测试，只被 impact/cycles 的 DAG 场景间接覆盖。"
+    },
+    {
+      "id": "C32",
+      "statement": "analyze 一次性返回 SCC、环分量、layers、最大反链与悬空边；自环使 layers=None 但不折叠 parallelism；悬空边上报不吞",
+      "evidence": ["scripts/whyexist/graph_algo.py:383-406", "tests/test_graph_algo.py:163-212"],
+      "status": "covered",
+      "note": "菱形、双节点环、自环、悬空边、确定性、分量集合顺序无关都有断言。"
+    },
+    {
+      "id": "C33",
+      "statement": "analyze 对空图返回 acyclic=True、layers=[]、max_antichain=0；对多个独立环 parallelism 取最大环 SCC 大小",
+      "evidence": ["scripts/whyexist/graph_algo.py:366-380", "docs/audit/_probe_06.py:99-111"],
+      "status": "gap",
+      "note": "空图、两环、'多个环时 parallelism 取 max' 三个分支都没有测试；探针确认空图 layers=[]（不是 None）、双环 parallelism=2。"
+    },
+    {
+      "id": "C34",
+      "statement": "plan 用 graph_algo.analyze 输出对接 CLI：auto 优先 design/depends、无设计边退 code/calls+reads+writes，design 层只留 DESIGN_NODE_KINDS",
+      "evidence": ["scripts/whyexist/planner.py:70-143", "scripts/whyexist/commands_compiler.py:23-70", "tests/test_planner.py:20-109", "tests/test_plan_cli.py:150-228"],
+      "status": "covered",
+      "note": "纯函数与 CLI 两层都断言了层级选择、分层、反链、环、悬空边。"
+    },
+    {
+      "id": "C35",
+      "statement": "cycles 与 impact 复用 graph_algo 的 SCC/传递可达做环枚举与断边代价，不另写图算法",
+      "evidence": ["scripts/whyexist/cycles.py:27-31", "scripts/whyexist/impact.py:83-112", "scripts/whyexist/commands_compiler.py:180-230", "tests/test_cycles.py:17-167", "tests/test_plan_cli.py:684-838"],
+      "status": "covered",
+      "note": "命令侧只做取数与结果整形；环/断边/代价都有测试。"
+    }
+  ],
+  "state_io": [
+    {
+      "target": "graph.sqlite:nodes",
+      "mode": "both",
+      "where": "scripts/whyexist/graph.py:78,120-133（写：ON CONFLICT UPDATE）；读：graph.py:77-79"
+    },
+    {
+      "target": "graph.sqlite:edges",
+      "mode": "both",
+      "where": "scripts/whyexist/graph.py:169-186,208-212（写）；循环里 SELECT 端点存在性见 graph.py:148-151"
+    },
+    {
+      "target": "graph.sqlite:feature_nodes",
+      "mode": "write",
+      "where": "scripts/whyexist/graph.py:132；命令层重复写 commands_graph.py:31"
+    },
+    {
+      "target": "graph.sqlite:repos",
+      "mode": "read",
+      "where": "scripts/whyexist/graph.py:56-72"
+    },
+    {
+      "target": "graph.sqlite:features / conditions / work_items / feature_nodes",
+      "mode": "read",
+      "where": "scripts/whyexist/engine.py:83-99,115-131,136-143（经 ensure_feature/scope_ids/_brief_payload/cmd_gate 间接读）"
+    },
+    {
+      "target": "graph.sqlite:bites / evidence / coverage 相关表",
+      "mode": "read",
+      "where": "scripts/whyexist/engine.py:131（cmd_gate → commands_gates.py:161-247）"
+    },
+    {
+      "target": "<root>/graph.sqlite（+ -wal/-shm）",
+      "mode": "write",
+      "where": "scripts/whyexist/db.py:458-464；由 engine.py:49 与 CLI connect 触发"
+    },
+    {
+      "target": "环境变量 WXG_DB_URL",
+      "mode": "both",
+      "where": "写：scripts/whyexist/engine.py:47-48；读：scripts/whyexist/db.py:425-426"
+    },
+    {
+      "target": "sys.path（进程级全局）",
+      "mode": "write",
+      "where": "scripts/whyexist/contract.py:12-14；engine.py:26 的 import 触发"
+    },
+    {
+      "target": "stdout / stderr",
+      "mode": "write",
+      "where": "scripts/whyexist/cli.py:85-113（命令结果写 stdout，Reject 写 stderr）"
+    }
+  ],
+  "redundancy": [
+    {
+      "item": "engine.plan 与 cmd_plan 各写一份取数组装",
+      "signal": "scripts/whyexist/engine.py:77-113 vs scripts/whyexist/commands_compiler.py:23-70；Engine 版缺 level=code 的 hint，CLI 版缺 Engine 的 no-op 差异，两份已开始漂移",
+      "confidence": "high"
+    },
+    {
+      "item": "engine.impact 与 cmd_impact 各写一份取数组装",
+      "signal": "scripts/whyexist/engine.py:133-151 vs scripts/whyexist/commands_compiler.py:298-313；CLI 的 remove-edges 模式 Engine 不暴露",
+      "confidence": "high"
+    },
+    {
+      "item": "可达性实现三份",
+      "signal": "graph_algo.reachable（graph_algo.py:240-263）无生产调用方，只在 __init__.py:27 导出与测试里用；impact.py:28-61 又自己写 _forward/_backward DFS；transitive_reachable 是第三份",
+      "confidence": "high"
+    },
+    {
+      "item": "'环是否阻塞并行' 的判定规则两份",
+      "signal": "graph_algo.py:366-380（GraphAnalysis.parallelism）与 planner.py:113-124 各自过滤 len(component)>1 并取 max",
+      "confidence": "medium"
+    },
+    {
+      "item": "环检测/环分量计算入口三处",
+      "signal": "graph_algo.topological_layers（Kahn 抛错）、_cyclic_components（SCC 过滤，graph_algo.py:157-166）、cycles._has_cycle（cycles.py:27-31 再跑一遍 SCC）",
+      "confidence": "medium"
+    },
+    {
+      "item": "analyze 内重复归一化与重复 SCC",
+      "signal": "analyze 先 normalize+SCC+_cyclic_components 再 max_antichain；max_antichain 内部又 normalize+SCC，transitive_reachable 再 normalize+topological_layers（graph_algo.py:331-351,383-406）",
+      "confidence": "medium"
+    },
+    {
+      "item": "同一节点被写两次 feature_nodes",
+      "signal": "graph.upsert_node（graph.py:130-132）与 cmd_upsert_node（commands_graph.py:31）各写一次 INSERT OR IGNORE；feature-declare/import 路径也各自批量写",
+      "confidence": "medium"
+    },
+    {
+      "item": "节点 id 规则散在三处",
+      "signal": "importer._node_id（importer.py:18-19）定 kind:repo:path:symbol；graph.check_node_id（graph.py:44-51）定前缀/字符集；requirement 作用域又依赖 requirement:<feature>: 前缀（commands_feature.py:127,163、workflow.py:106）",
+      "confidence": "medium"
+    },
+    {
+      "item": "兼容层 re-export 残留",
+      "signal": "wxg.py:61-72 把 graph 函数整体 re-export 供旧测试；commands_gates.py:33-44 又 re-export 编译器命令；design.md:382 提到的 whyexist/legacy.py 源码已不存在，只剩 __pycache__/legacy.cpython-312.pyc",
+      "confidence": "medium"
+    },
+    {
+      "item": "applies 端点 kind 列表硬编码",
+      "signal": "graph.py:155 写死 ('component','classifier','operation')，而同文件 maps_to 用契约常量 DESIGN_ANCHOR_KINDS（contract.py:19）",
+      "confidence": "low"
+    }
+  ],
+  "rewrite_partition": [
+    {
+      "module": "scripts/whyexist/graph_algo.py",
+      "verdict": "keep",
+      "reason": "纯函数、零内部依赖、零 DB；30 个测试覆盖归一化/SCC/分层/反链/可达/analyze 的主要分支与边界（空图、自环、双环分量、重复边、确定性）；契约以输入输出类型表达，容易继续加测。",
+      "risk": "它的函数同时出现在 whyexist.__init__ 的 __all__ 里，删改签名会连带影响 planner/cycles/impact 与包级 API；reachable 是死代码，删除前要确认没有任何外部使用者（当前仓库内无生产调用）。"
+    },
+    {
+      "module": "scripts/whyexist/graph.py",
+      "verdict": "refactor_in_place",
+      "reason": "写入契约大体清楚（kind/id/attrs/applies/maps_to 都有测试），但校验只覆盖 20 种边里的 2 种、edge id 无校验、attrs 覆盖/合并双语义与 stale/unmapped 复位都是隐式行为；调用方有 9 个包内模块，整模块重写最容易丢掉这些没人写下来的细节。",
+      "risk": "收紧校验会改变 gate/doctor/conformance 看到的图内容（例如给 depends 加端点 kind 校验会拒掉现存测试和外部图库）；改动 attrs 合并策略会直接丢设计角色手写的 duty/x_note。"
+    },
+    {
+      "module": "scripts/whyexist/engine.py",
+      "verdict": "rewrite",
+      "reason": "151 行门面，行为边界简单（把连接接到 5 个纯函数入口），但当前实现与 CLI 组装重复、依赖命令层（_brief_payload/cmd_gate）、有 env 与文件副作用；更适合改成薄包装 + 显式只读连接，顺手消除双份组装。",
+      "risk": "输出形状没有完全锁死：gate 返回完整 cmd_gate 字典、impact 的 cross_feature/depends_on 与 db_url 语义都只有 happy path 测试；重写前应先补 C18/C21/C22/C23/C24 的行为测试，否则会静默改掉库 API 的返回结构。"
+    }
+  ],
+  "implicit_requirements": [
+    "任何节点 upsert 都把 stale 清 0（graph.py:118）：重扫后人工改过的 stale 节点会被一次普通写入重新激活，这条只写在 design.md:237，没有测试。",
+    "upsert 时 payload 里显式 null 会覆盖 name/repo/path/symbol/line_* 为 NULL（payload.get 的缺省值不覆盖显式 None）；探针实测 name 变 NULL。",
+    "attrs 在 CLI 路径是整体替换，只有导入/declare/promote 路径用 merge_attrs=True 合并；SKILL.md:400 只讲了用一次不带 construction 的 upsert 清除标记，没讲其余 attrs 会一起消失。",
+    "unmapped 标志由每次 upsert 的 payload 重写（graph.py:117）：一个被标记 unmapped 的节点若被设计角色再 upsert 一次且不带 unmapped，会静默变回已映射。",
+    "upsert_edge 接受随意的自定义 id（graph.py:168），可以绕开 edge:{kind}:{src}:{dst} 约定，且没有任何格式或冲突校验。",
+    "bind 的 --edge-kind 不检查与节点 kind 的匹配（probe 造出 operation -has_argument-> parameter），未知参数只被 choices 限制在三个值。",
+    "has_output 边无法通过 bind 建立（choices 只有 has_input/has_argument/asserts），只能走 upsert-edge；'入参/出参' 两个方向因此不对称。",
+    "find_repo 用最长路径前缀选最具体的仓（graph.py:69-72），嵌套仓/多仓登记的行为没有文档也没有测试。",
+    "edges 表没有外键（db.py:44-53），写时校验只是应用层约定；dangling edge 靠 doctor 的 orphan-edge 兜底（commands_misc.py:369）。",
+    "upsert_node 写 feature_nodes 时不校验 feature 是否存在（graph.py:130-132），会留下悬空作用域关联，doctor 的 feature-node-missing 检查只看另一个方向。",
+    "只有 applies 与 maps_to 校验端点语义，其余 18 种边 kind 只检查端点存在；契约文档里写的 contains/calls/reads 方向并不被强制。",
+    "Engine 在未初始化目录上 connect 会先创建 .why-exist 目录与 graph.sqlite/-shm/-wal，然后才抛 Reject；cli.py:62-69 明确要求命令不要留下 0 字节库，Engine 没有遵守这条策略。",
+    "Engine(db_url=...) 改的是进程级 WXG_DB_URL，close 不恢复；同进程里后续任何 db_backend()/connect() 都会继续用这个 URL。",
+    "Engine.close 之后调用方法会静默重连，close 不是终止状态，也没有 closed 标志。",
+    "graph_algo.reachable 在环图里会把起点算进可达集（probe：reachable(['a','b'],[('a','b'),('b','a')],'a') == {'a','b'}），与 docstring 的'不含 start 自身'冲突；同模块 transitive_reachable 则显式 seen - {start}。"
+  ],
+  "findings": [
+    "状态机不在这个切片：engine.py 没有任何条件迁移，8 条件的写入只发生在 work-judge（commands_feature.py:636-660 → workflow.set_condition/recompute_ready）与 feature-declare 的 Accepted（commands_feature.py:122-126）；engine.gate 只读条件表。把它当'状态机驱动逻辑'审计会找错对象。",
+    "Engine 的'只读'只在返回值层面成立：未初始化库上首次 connect 会留下 state/、graph.sqlite、-shm、-wal 四个产物再抛 Reject（探针实测），与 cli.py:62-69 的零副作用策略、README.md:48 的'只读'说法不一致，且无测试。",
+    "graph_algo 是这个切片唯一可以无条件 keep 的资产：它不碰 DB、不 import 项目内模块，30 个测试覆盖了归一化/SCC/分层/反链/可达/analyze 的主要分支，连确定性、分量顺序无关、单点自环不折叠并行度这种细边界都有断言。",
+    "graph_algo 同时有死代码与重复实现：reachable 无生产调用方（只在 __init__.py 导出与测试里出现），impact.py 又手写了一份 _forward/_backward DFS；并且 reachable 的环图行为与 docstring 相反。重写/'清理死代码'时要一次性处理这两处，否则删了 reachable 会丢测试语义、留着会继续误导。",
+    "graph.py 的校验承诺远窄于文档暗示：20 种边 kind 里只有 applies/maps_to 校验端点语义，其余只检查节点存在；bind --edge-kind 还能造出语义错边（operation -has_argument-> parameter）。重写前必须先决定'图写入到底承诺哪些校验'，否则扩校验会破坏现存图库与测试（例如 test_package_units.py:644-649 就用了 component -verifies-> use_case 这种反向边）。",
+    "attrs 的'覆盖 vs 合并'双语义、stale 清零、unmapped 重写全是隐性契约：只有 merge_attrs=True 的导入路径有测试（test_wxg.py:353-369），CLI 默认的整包替换只有 construction 一个间接用例。",
+    "Engine 与 CLI 的取数组装已经漂移：Engine.plan 不产生 level=code 的 hint，Engine.impact 没有 remove-edges 模式；两份代码各自演进，是本次最明确的 refactor/rewrite 动机。",
+    "测试覆盖不对称：写路径的拒绝分支（端点缺失、bind 不可绑定 kind、自定义 edge id、feature_id 不存在）几乎全空；graph_algo 的空图、双环、多个环的 parallelism 取值也没有测试。这些恰好是重写时最容易静默改变的边界。"
+  ],
+  "open_questions": [
+    "attrs 整包替换是有意契约还是历史选择？SKILL.md:400 依赖它清除 construction，但同一条路径也会抹掉 duty/x_note；如果改成合并，现有清除手法就要重写。",
+    "自定义 edge id（graph.py:168）要不要保留？保留就该给格式/长度/冲突规则；不保留就直接拒绝 payload.id，但可能有外部导入方依赖它。",
+    "bind 的 --edge-kind 应该与 node kind 交叉校验吗？has_output 为什么不在 choices 里？这是遗漏还是有意只让 upsert-edge 建输出边？",
+    "Engine 是否应该接受注入的只读连接，而不是自己 connect/建文件/改 env？还是保持现状但把'首次连接会建文件'写进文档并补测试？",
+    "reachable 是公开库 API 还是遗留？__init__.__all__ 导出了它但没有生产调用方，删除会影响包级 API 的兼容承诺。",
+    "edges 只校验 2/20 种端点语义，这是有意的宽松设计（把结构判断留给 gate/conformance）还是没做完？这决定 graph.py 重写的范围。"
+  ]
+}

@@ -1,0 +1,774 @@
+{
+  "slice": "07-query-import",
+  "modules": [
+    {
+      "path": "scripts/whyexist/query.py",
+      "loc": 111,
+      "role": "只读查询原语：target_ids 通配展开（resolve_targets）、切片组装（slice_payload）与 slice/get/find 三个命令处理器；只读 nodes/edges/work_items"
+    },
+    {
+      "path": "scripts/whyexist/importer.py",
+      "loc": 215,
+      "role": "Python AST 导入器：单个源码文件 -> classifier/operation/property 节点与 contains/calls/writes 边，认不出的调用建 unmapped 节点+edge；纯函数，不碰状态库"
+    },
+    {
+      "path": "scripts/whyexist/derive.py",
+      "loc": 140,
+      "role": "从代码图推候选设计：按目录把代码节点聚成 component 候选，并用跨组 calls/reads/writes 边 + 文件级 import 对推导组间 depends；纯函数"
+    }
+  ],
+  "public_surface": [
+    {
+      "entry": "wxg slice",
+      "kind": "cli",
+      "where": "scripts/whyexist/query.py:55-75（契约 scripts/wxg_contract.py:624）",
+      "input": "--work <工单id> 或 --ids <id 列表：逗号分隔 / JSON 数组 / @文件>（target_ids 支持后缀 前缀*）；--limit <非负整数>",
+      "output": "stdout 缩进 JSON：nodes[{id,kind,name,repo,path,symbol,line_start,line_end,attrs_json,origin,unmapped,stale}]、edges[{id,src,dst,kind,evidence_path,evidence_line,unmapped,attrs_json}]、missing_ids、patterns、depth=1；给 --limit 时另加 nodes_total/edges_total/truncated",
+      "side_effects": "只读 nodes/edges（work 模式再读 work_items）；不写库、不建文件",
+      "exit_codes": "0 成功；2 Reject（--work/--ids 都没给、工单不存在、--limit<0）或后端异常；argparse 级错误也是 2"
+    },
+    {
+      "entry": "wxg get",
+      "kind": "cli",
+      "where": "scripts/whyexist/query.py:78-83（契约 scripts/wxg_contract.py:625）",
+      "input": "--id <节点 id>",
+      "output": "JSON {\"node\":{...}}：节点整行，attrs_json 被解析成 attrs 对象并从输出里移除",
+      "side_effects": "只读 nodes",
+      "exit_codes": "0 成功；2 Reject（节点不存在）"
+    },
+    {
+      "entry": "wxg find",
+      "kind": "cli",
+      "where": "scripts/whyexist/query.py:86-109（契约 scripts/wxg_contract.py:626）",
+      "input": "--kind <NODE_KINDS 之一>、--path-prefix <字符串>、--from-id <节点 id>（三者可组合，均为 AND）、--limit <非负整数>",
+      "output": "JSON {\"nodes\":[...],\"total\":<截断前条数>,\"truncated\":<bool>}；节点的 attrs_json 同样被解析成 attrs；结果按 id 排序",
+      "side_effects": "只读 nodes/edges；不写库",
+      "exit_codes": "0 成功；2 Reject（--limit<0）或 --kind 非法（argparse）"
+    },
+    {
+      "entry": "wxg derive",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_repo.py:426-533（契约 scripts/wxg_contract.py:344-359）",
+      "input": "--repo <已登记仓>；--feature <id>（必须已存在）；--depth <int，默认 1>；--exclude <逗号分隔目录前缀>；--apply 时另需 --token",
+      "output": "dry-run：JSON {mode:\"dry-run\",feature,repo,strategy:\"package\",depth,exclude_dirs,excluded_nodes,components[{id,name,path,members}],depends[{src,dst,evidence}]}，组件<=1 时附 hint；apply：{mode:\"apply\",feature,repo,components,depends,nodes_written,edges_written,stale_derived}",
+      "side_effects": "dry-run 只读（nodes/edges/repos/features）；apply 写 nodes（origin=derived，attrs x_strategy/x_depth/x_path）、edges（contains、depends 带 x_evidence 前 20 条）、feature_nodes（经 upsert_node 的 feature_id）；把本轮未出现的旧 derived 组件 stale=1；同 id 的人工节点会被覆盖成 derived 且 attrs 整体替换；成员节点通过 contains 边写入，不受 target_ids 约束；每次运行都从磁盘重新解析全仓 import",
+      "exit_codes": "0 dry-run 与 apply 都返回 0（包括推导出 0 个组件的 apply）；2 Reject（仓未登记、feature 不存在、缺 token、角色不符、组件 id 不在工单 target_ids）"
+    },
+    {
+      "entry": "wxg import-file",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_repo.py:153-227（契约 scripts/wxg_contract.py:324-333）",
+      "input": "--file <已登记仓内的文件路径>；--feature <id>（--prepare 时必填）；--prepare 或 --token <claim_token>",
+      "output": "prepare：{mode:\"prepare\",repo,work,nodes,edges,stale_candidates}；write：{mode:\"write\",repo,nodes_inserted,nodes_updated,edges_inserted,stale_marked,stale_nodes,work}",
+      "side_effects": "prepare 建/并入 scan 工单并写 feature_nodes（不写 nodes/edges）；write 写 nodes（merge_attrs=True）、edges、feature_nodes，把本次未出现的同路径节点 stale=1；扫描不在 evidence_ids 里追加节点 id",
+      "exit_codes": "0 成功；2 Reject（文件不存在、仓 language 不是 python、--prepare 缺 --feature、缺 token、节点 id 不在工单 target_ids、节点 id 不合法、语法错误）或后端异常"
+    },
+    {
+      "entry": "wxg import-repo",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_repo.py:230-338（契约 scripts/wxg_contract.py:334-343）",
+      "input": "--repo <已登记仓>；--feature <id>（--prepare 时必填）；--prepare 或 --token",
+      "output": "prepare：{mode,repo,work,files,nodes,edges,stale_candidates}；write：{mode,repo,files,nodes_inserted,nodes_updated,edges_inserted,stale_marked,work}",
+      "side_effects": "递归遍历仓内全部 *.py（跳过任何以 . 开头的路径段），写 nodes/edges/feature_nodes，标 stale；不写 docs/测试以外的过滤",
+      "exit_codes": "0 成功；2 Reject（仓未登记、language 非 python、缺 --feature/--token、target 不覆盖、任一文件语法错误——整批失败）"
+    },
+    {
+      "entry": "wxg repo-add --language",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_repo.py:130-146（契约 scripts/wxg_contract.py:315-322）",
+      "input": "--id、--path（必须是已存在目录）、--language（choices=[\"python\"]，默认 python）",
+      "output": "JSON {action:\"upsert\",repo,path,language}",
+      "side_effects": "写 repos（path 冲突/重复 id 由 ON CONFLICT 与唯一约束处理）；值只作为导入器开关被保存，当前没有第二种语言可选",
+      "exit_codes": "0 成功；2 Reject（路径不是目录、path 被其它 id 占用、--language 非 python 由 argparse 拒绝）"
+    },
+    {
+      "entry": "wxg sync",
+      "kind": "cli",
+      "where": "scripts/whyexist/commands_repo.py:568-630（importer 的另一个消费方，只读）",
+      "input": "--repo <已登记仓>；--limit（默认 50）",
+      "output": "JSON：files/db_nodes/planned_nodes/missing_count/missing/new_count/new/changed_count/changed(+unmapped 标记)/changed_unmapped_count/stale_count/stale/parse_errors/truncated",
+      "side_effects": "只读：对仓内每个 *.py 跑 plan_python 后与库对比，不写库（test_wxg.py:1600 有 hash 断言）",
+      "exit_codes": "0 成功；2 Reject（仓未登记、--limit<0）"
+    },
+    {
+      "entry": "whyexist.importer.plan_python",
+      "kind": "function",
+      "where": "scripts/whyexist/importer.py:22-213",
+      "input": "repo: dict（至少含 id/path）+ absolute: Path（必须位于 repo.path 之内且是存在的 UTF-8 Python 文件）",
+      "output": "(nodes: dict[id->payload], edges: dict[id->payload])；节点 payload 含 id/kind/name/repo/path/symbol/line_start/line_end/attrs/origin:\"scan\"，unmapped 节点额外 unmapped=1 与 attrs.x_note；边 payload 含 id/kind/src/dst/evidence_path/evidence_line/unmapped",
+      "side_effects": "只读目标源码文件；不写库、不建文件、不读环境变量",
+      "exit_codes": "无退出码；SyntaxError -> Reject；非 UTF-8 -> UnicodeDecodeError；文件不在 repo.path 内 -> ValueError"
+    },
+    {
+      "entry": "whyexist.importer._node_id",
+      "kind": "function",
+      "where": "scripts/whyexist/importer.py:18-19（被 scripts/wxg.py:73 re-export）",
+      "input": "kind、repo id、仓内相对 POSIX 路径、symbol（方法写作 Class.method）",
+      "output": "字符串 f\"{kind}:{repo}:{rel}:{symbol}\"",
+      "side_effects": "无",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "whyexist.derive.derive_components / group_key / component_id",
+      "kind": "function",
+      "where": "scripts/whyexist/derive.py:26-140",
+      "input": "nodes[{id,kind,path,...}]、edges[(src,dst,kind)]、repo、depth=1、file_dependencies[(源文件,目标文件)]、exclude_dirs 元组",
+      "output": "{repo,strategy:\"package\",depth,exclude_dirs,excluded_nodes,components[{id,name,path,members}],depends[{src,dst,evidence}]}；无 DB、无文件 I/O",
+      "side_effects": "无（纯函数；import 解析由调用方完成）",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "whyexist.query.resolve_targets / slice_payload",
+      "kind": "function",
+      "where": "scripts/whyexist/query.py:13-52（被 commands_feature.py:19,542-552 的 work-claim 复用）",
+      "input": "conn + target_ids 列表（元素可为精确 id 或后缀 `*` 的前缀模式）",
+      "output": "resolve_targets -> (resolved, missing, patterns)；slice_payload -> 与 slice 命令相同的字典（不含 --limit 字段）",
+      "side_effects": "只读 nodes/edges",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "表 nodes / edges / repos / work_items / feature_nodes",
+      "kind": "table",
+      "where": "scripts/whyexist/db.py:24-53（repos/nodes/edges）、74-117（work_items/feature_nodes/evidence/bites）",
+      "input": "写入来自 importer 产物（经 import-file/import-repo）与 derive --apply；查询只读",
+      "output": "nodes(id,kind,name,repo,path,symbol,line_start,line_end,attrs_json,origin,unmapped,stale)；edges(id,src,dst,kind,evidence_path,evidence_line,unmapped,attrs_json)；repos(id,path,language,created_at)；feature_nodes(feature_id,node_id)",
+      "side_effects": "本切片写 nodes/edges/feature_nodes/repos，读 work_items；无外键约束，引用完整性靠应用层",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "源码仓 .py 文件",
+      "kind": "file",
+      "where": "scripts/whyexist/importer.py:24-25（单个文件）；scripts/whyexist/commands_repo.py:249,387-394（rglob）",
+      "input": "仓内 Python 源文件，按 UTF-8/utf-8-sig 读取（derive 的 import 扫描用 errors=\"replace\"）",
+      "output": "不写文件；只产生内存里的节点/边/文件对",
+      "side_effects": "只读",
+      "exit_codes": "不适用"
+    }
+  ],
+  "contracts": [
+    {
+      "id": "C1",
+      "statement": "resolve_targets 把 target_ids 拆成三类：库中存在的精确 id 原样保留；后缀 `*` 的模式按前缀展开为排序后的现存 id（去重、保持 target_ids 顺序）；其余精确 id 进 missing；模式本身原样进 patterns",
+      "evidence": [
+        "scripts/whyexist/query.py:13-34",
+        "tests/test_wxg.py:431-442",
+        "tests/test_wxg.py:1286-1289"
+      ],
+      "status": "partial",
+      "note": "通配展开 + patterns + missing 为空有断言，精确 id 路径被 --ids 用例间接走到；去重与 missing 非空两个分支无测试。"
+    },
+    {
+      "id": "C2",
+      "statement": "通配模式若一个节点都没匹配到，命令静默成功：nodes=[]、missing_ids=[]、patterns 里仍有该模式，退出码 0",
+      "evidence": [
+        "scripts/whyexist/query.py:21-27",
+        "docs/audit/_probe_07.py（输出：通配未命中的 slice）"
+      ],
+      "status": "gap",
+      "note": "探针确认 `slice --ids '[\"classifier:nope:*\"]'` 返回空结果且不报错；拼错前缀与'作用域为空'在输出上不可区分，没有任何测试或文档提到这个语义。"
+    },
+    {
+      "id": "C3",
+      "statement": "slice 返回的是'命中节点的关联边'：凡 src 或 dst 等于某个命中节点的边（按边 id 去重），不要求边的另一端也在返回的 nodes 里；depth 字段恒为 1，不做遍历",
+      "evidence": [
+        "scripts/whyexist/query.py:37-52",
+        "docs/audit/_probe_07.py（输出：slice 边的另一端不在 nodes 里）"
+      ],
+      "status": "partial",
+      "note": "test_wxg.py:439-441 只断言 nodes/missing/patterns，没有任何测试断言 edges 的形状或'邻居节点不在 nodes 里'。探针：命中 classifier 时返回 contains 边，其 dst 是未返回的 operation。"
+    },
+    {
+      "id": "C4",
+      "statement": "slice payload 恒定包含 depth:1；这是常量而非遍历深度，库内没有任何消费方读取它",
+      "evidence": [
+        "scripts/whyexist/query.py:51",
+        "scripts/whyexist/commands_feature.py:552-560"
+      ],
+      "status": "gap",
+      "note": "grep 全仓无 payload[\"depth\"] 读取点；SKILL.md:187、design.md:733 却把它写成'深度 1 切片'，容易被读成图遍历。"
+    },
+    {
+      "id": "C5",
+      "statement": "slice --limit N 把 nodes 与 edges 各自截到 N 条（不是总数），并额外输出 nodes_total/edges_total（截断前）与 truncated（任一列表被截断）",
+      "evidence": [
+        "scripts/whyexist/query.py:66-74",
+        "tests/test_wxg.py:1277-1289"
+      ],
+      "status": "partial",
+      "note": "测试只断言 nodes 被截断、nodes_total>1、truncated=True；edges 的独立截断与 edges_total 从未被断言，--limit 0 也没测。"
+    },
+    {
+      "id": "C6",
+      "statement": "slice 必须给 --work 或 --ids 之一，两个都给时 --work 生效、--ids 被忽略；--limit 为负 -> Reject（exit 2）",
+      "evidence": [
+        "scripts/whyexist/query.py:56-74"
+      ],
+      "status": "gap",
+      "note": "三个分支都没有测试：--work/--ids 同时给出的优先级、两者都缺的 Reject、--limit<0 的 Reject。用例只覆盖单一路径的正向调用。"
+    },
+    {
+      "id": "C7",
+      "statement": "get 返回节点整行并把 attrs_json 解析成 attrs 对象（输出里不再有 attrs_json）；节点不存在 -> Reject \"节点不存在：<id>\"（exit 2）",
+      "evidence": [
+        "scripts/whyexist/query.py:78-83",
+        "tests/test_wxg.py:367-369"
+      ],
+      "status": "partial",
+      "note": "attrs 解析与 x_lang 保真有断言；attrd_json 被移除、以及不存在节点的 Reject 分支无测试。"
+    },
+    {
+      "id": "C8",
+      "statement": "find 按 kind / path_prefix / from_id 组合过滤（AND），结果按 id 升序，attrs_json 解析成 attrs",
+      "evidence": [
+        "scripts/whyexist/query.py:86-102",
+        "tests/test_wxg.py:346-347",
+        "tests/test_wxg.py:941-943"
+      ],
+      "status": "partial",
+      "note": "只有 --kind 有断言；--path-prefix、--from-id、排序、attrs 解析都没测；命令帮助里的\"入边起点\"语义（dst of edges where src）只能从 SQL 读出来。"
+    },
+    {
+      "id": "C9",
+      "statement": "find 返回 total（截断前）与 truncated（截断后条数 < total）；--limit 0 返回空列表且 truncated=True；--limit<0 -> Reject",
+      "evidence": [
+        "scripts/whyexist/query.py:103-109",
+        "tests/test_wxg.py:1281-1284",
+        "docs/audit/_probe_07.py（输出：find --limit 0）"
+      ],
+      "status": "partial",
+      "note": "limit=1 与 truncated 有断言；limit=0、负值、以及无 limit 时 truncated=False 都没测。"
+    },
+    {
+      "id": "C10",
+      "statement": "find --path-prefix 被直接拼成 SQL `path LIKE ?`（参数为 prefix+\"%\"），不做 LIKE 转义：用户传 % 或 _ 会按通配符生效",
+      "evidence": [
+        "scripts/whyexist/query.py:92-94",
+        "docs/audit/_probe_07.py（输出：find --path-prefix %（LIKE 通配泄漏））"
+      ],
+      "status": "gap",
+      "note": "探针：--path-prefix '%' 命中全部节点（6/6）。文档把它描述为\"路径前缀\"，没有测试也没有说明通配语义。"
+    },
+    {
+      "id": "C11",
+      "statement": "slice/get/find 不过滤 stale 节点与边：stale=1 的行照常出现在查询结果里",
+      "evidence": [
+        "scripts/whyexist/query.py:39-42",
+        "scripts/whyexist/query.py:87-99",
+        "docs/audit/_probe_07.py（输出：find 含 stale 节点）"
+      ],
+      "status": "gap",
+      "note": "探针：手工把节点置 stale=1 后 find 与 slice 仍返回它。plan/gate 会自己滤 stale，所以消费方必须知道这三条查询不滤；无测试。"
+    },
+    {
+      "id": "C12",
+      "statement": "三个只读命令的节点形状不一致：slice 的节点/边带原始 attrs_json 字符串，get/find 的节点带解析后的 attrs 对象",
+      "evidence": [
+        "scripts/whyexist/query.py:39",
+        "scripts/whyexist/query.py:82",
+        "scripts/whyexist/query.py:101",
+        "docs/audit/_probe_07.py（输出：slice 节点字段带 attrs_json / get 节点字段带 attrs）"
+      ],
+      "status": "gap",
+      "note": "同一份\"节点\"在三个命令里两种形状；work-claim 直接把 slice_payload 塞进返回值的 slice 字段，agent 消费时同样拿到 attrs_json。无任何断言。"
+    },
+    {
+      "id": "C13",
+      "statement": "slice/get/find 只读：不改任何表，不在状态库里留下写入",
+      "evidence": [
+        "scripts/whyexist/query.py:1-4",
+        "CONTRIBUTING.md:43",
+        "README.md:152",
+        "references/quality.md:60"
+      ],
+      "status": "gap",
+      "note": "文档三处承诺只读，但没有测试断言（对照：sync/reconcile 都有 db 文件 hash 断言 test_wxg.py:1600、1330-1337）。cli.main:83-84 对每个 needs_db 命令都 commit，查询命令也不例外。"
+    },
+    {
+      "id": "C14",
+      "statement": "plan_python 为顶层 class 建 classifier，为顶层函数/async 函数与类方法建 operation（类方法 symbol 为 Class.method），为类体 plain Assign 与 self.attr 赋值建 property；classifier->成员 contains，operation->property writes",
+      "evidence": [
+        "scripts/whyexist/importer.py:53-113",
+        "scripts/whyexist/importer.py:180-208",
+        "tests/test_wxg.py:334-351",
+        "tests/test_wxg.py:925-945"
+      ],
+      "status": "partial",
+      "note": "classifier 与 operation 有端到端断言；property（类常量与 self.attr 两条创建路径）、contains 的完整成员集、writes 边从没有直接断言，只有探针确认。"
+    },
+    {
+      "id": "C15",
+      "statement": "calls 解析三档：self.<method> 命中本类已定义方法时建已解析 calls 边；裸名命中同文件顶层函数时建已解析 calls 边；其余（外部接收者、内置函数、未知裸名、链式/下标调用）建一个按名字聚合的 unmapped operation 节点 + unmapped=1 的 calls 边",
+      "evidence": [
+        "scripts/whyexist/importer.py:143-172",
+        "scripts/whyexist/importer.py:174-178",
+        "tests/test_plan_cli.py:537-564",
+        "tests/test_wxg.py:925-945"
+      ],
+      "status": "partial",
+      "note": "只有\"链式调用变 unmapped\"与\"两个 len() 聚合成一个节点\"有测试；self.method 解析与裸名命中同文件函数两个正向分支无测试（探针确认可行）。裸名命中还是同名误解析的来源：跨文件的同名函数会误连到本文件函数。"
+    },
+    {
+      "id": "C16",
+      "statement": "unmapped 节点 id 按名字聚合、不含行号：简单名 `operation:<repo>:<rel>:<display>`，复杂表达式 `operation:<repo>:<rel>:<清洗串>:<sha1(display)[:8]>`；行号只写 line_start/line_end（首次出现处，后续不更新）",
+      "evidence": [
+        "scripts/whyexist/importer.py:116-136",
+        "scripts/whyexist/importer.py:169-172",
+        "tests/test_plan_cli.py:537-564",
+        "CHANGELOG.md:1137"
+      ],
+      "status": "partial",
+      "note": "测试断言两处 len() 只产生 1 个 unmapped 节点且 id 不含 @；sha1 分支（链式调用）只在 test_wxg.py:925-945 间接走到，id 稳定性没有直接断言。 按严格口径记 partial：承诺里各有至少一个分支未被直接断言。"
+    },
+    {
+      "id": "C17",
+      "statement": "导入器不产出 reads / imports / inherits / generalizes 边，也不处理 import 语句、继承基类、嵌套 def/class、模块级赋值、参数：这些结构在图里完全不可见",
+      "evidence": [
+        "scripts/whyexist/importer.py:53-211",
+        "scripts/wxg_contract.py:90-111",
+        "docs/audit/_probe_07.py（输出：边 kind 集合 / 是否出现 reads / imports / generalizes）"
+      ],
+      "status": "gap",
+      "note": "边 kind 清单里根本没有 imports/inherits（wxg_contract.py:90-111），upsert-edge 也会拒绝；探针里 `import os`、`from .helpers import thing`、`class Keeper(Base)` 一个节点一条边都不产生。与 design.md:717 的\"解析 contains/calls/reads/writes\"直接矛盾——reads 也从未产生。"
+    },
+    {
+      "id": "C18",
+      "statement": "节点 id 形如 kind:repo:<仓内相对 POSIX 路径>:symbol，行号不进 id；改文件名/移动目录/改名都会得到新 id，旧 id 只能靠 stale 标记保留",
+      "evidence": [
+        "scripts/whyexist/importer.py:18-19",
+        "scripts/whyexist/importer.py:24",
+        "tests/test_plan_cli.py:564",
+        "SKILL.md:443"
+      ],
+      "status": "partial",
+      "note": "只测了 unmapped id 不含 @（行号）；路径进 id 导致的\"移动=新节点\"没有测试，只在 SKILL.md:443 以\"跨文件移动需要人工判断\"提了一句。"
+    },
+    {
+      "id": "C19",
+      "statement": "语法错误 -> Reject(\"Python 语法无法解析：...\")（CLI exit 2）；非 UTF-8 文件 -> UnicodeDecodeError（CLI exit 2，错误文本是 UnicodeDecodeError）；文件不在 repo.path 下 -> ValueError（只有 CLI 层 find_repo 会先挡住）",
+      "evidence": [
+        "scripts/whyexist/importer.py:24-29",
+        "docs/audit/_probe_07.py（输出：重复类名 / 非 UTF-8 / 语法错误 / 仓外文件）"
+      ],
+      "status": "gap",
+      "note": "三条异常路径都没有测试；只有 SyntaxError 被包成 Reject，另外两条以原始异常冒到 cli.main:88-90 的兜底，错误文案对使用者不友好（import-repo 因此会整批中止）。"
+    },
+    {
+      "id": "C20",
+      "statement": "同一文件里重复定义同名类（条件定义等）会让第二遍的 class_ops 查表失败，抛 KeyError；CLI 以 {\"error\":\"KeyError: '<method>'\"} exit 2",
+      "evidence": [
+        "scripts/whyexist/importer.py:67",
+        "scripts/whyexist/importer.py:83",
+        "scripts/whyexist/importer.py:185",
+        "docs/audit/_probe_07.py（输出：重复类名）"
+      ],
+      "status": "gap",
+      "note": "探针：class A/class A 两种定义直接 KeyError 'one'。没有任何测试覆盖；import-repo 只捕获 Reject，所以这个异常会中止整批导入。"
+    },
+    {
+      "id": "C21",
+      "statement": "repo-add --language 只接受 python（argparse choices，非法值 exit 2）；值持久化在 repos.language；import-file/import-repo 在导入前再校验一次，非 python 给出\"当前版本只内置 Python 导入器\"的 Reject",
+      "evidence": [
+        "scripts/wxg_contract.py:320",
+        "scripts/whyexist/commands_repo.py:134-135",
+        "scripts/whyexist/commands_repo.py:157-162",
+        "scripts/whyexist/commands_repo.py:240-243",
+        "tests/test_wxg.py:904-907",
+        "tests/test_wxg.py:909-923"
+      ],
+      "status": "covered",
+      "note": "两条拒绝路径都有 CLI 级断言（argparse 的 invalid choice + 手工把 DB 改成 java 后的拒绝）；happy path 被所有导入测试覆盖。"
+    },
+    {
+      "id": "C22",
+      "statement": "import-file 重导入幂等：已存在节点只更新不新增；merge_attrs=True 保留设计角色写入的 attrs；本次未出现的同 repo+path 节点标 stale=1；节点重新出现时 stale 清回 0",
+      "evidence": [
+        "scripts/whyexist/commands_repo.py:176-227",
+        "tests/test_wxg.py:334-351",
+        "tests/test_wxg.py:353-369",
+        "tests/test_wxg.py:1559-1583"
+      ],
+      "status": "covered",
+      "note": "inserted/updated 计数、attrs 保留、stale 标与清、gate 因 stale FAIL 后清除再恢复都有断言。"
+    },
+    {
+      "id": "C23",
+      "statement": "import-file --prepare 必须带 --feature（否则 Reject），只创建/并入 scan 工单（targets = 本次节点 ∪ stale 节点）并写 feature_nodes，不写 nodes/edges",
+      "evidence": [
+        "scripts/whyexist/commands_repo.py:177-192",
+        "tests/test_wxg.py:337-338",
+        "tests/test_plan_cli.py:544-548"
+      ],
+      "status": "partial",
+      "note": "prepare 的返回字段与\"不写节点\"有间接断言；缺 --feature 的 Reject 分支没有测试；feature_nodes 写入也没有断言。"
+    },
+    {
+      "id": "C24",
+      "statement": "import-repo 递归扫描仓内全部 *.py（跳过以 . 开头的路径段），遇第一个语法错误整批 Reject（错误带相对文件名）；返回 files/nodes/edges 计数（prepare）或写入计数（write）",
+      "evidence": [
+        "scripts/whyexist/commands_repo.py:249-272",
+        "scripts/whyexist/commands_repo.py:276-338",
+        "tests/test_plan_cli.py:567-584"
+      ],
+      "status": "partial",
+      "note": "files=2 与 prepare/write 两阶段有断言；点目录跳过、单文件语法错误中止整批、以及非 Reject 异常（UnicodeDecodeError/KeyError）的行为都没测。"
+    },
+    {
+      "id": "C25",
+      "statement": "import-file 不校验扩展名：仓内任意 UTF-8、语法合法的文件（如 notes.txt 里写 Python）都会被当成模块导入并产生节点",
+      "evidence": [
+        "scripts/whyexist/commands_repo.py:153-163",
+        "docs/audit/_probe_07.py（输出：import-file 非 .py（语法合法））"
+      ],
+      "status": "gap",
+      "note": "探针：import-file 一个内容为 Python 的 notes.txt 成功 prepare。命令 help 写\"按单个 Python 源码文件导入\"，与实现不符；无测试。"
+    },
+    {
+      "id": "C26",
+      "statement": "plan_python 是纯函数：只读传入的文件，返回 (nodes, edges) 字典，不碰状态库、不建文件；sync 的只读承诺依赖这一点",
+      "evidence": [
+        "scripts/whyexist/importer.py:22-31",
+        "scripts/whyexist/importer.py:213",
+        "tests/test_wxg.py:1600"
+      ],
+      "status": "partial",
+      "note": "没有直接测试 plan_python 的纯度；sync 的 db hash 断言只能证明\"这次调用没写库\"，不能证明它不写别的文件。"
+    },
+    {
+      "id": "C27",
+      "statement": "group_key 只取目录部分：depth>0 取前 depth 层用 \".\" 连接，根目录文件返回 \".\"，反斜杠归一成 \"/\"；depth<=0 时取全部目录层",
+      "evidence": [
+        "scripts/whyexist/derive.py:26-41",
+        "tests/test_derive.py:15-26",
+        "docs/audit/_probe_07.py（输出：depth=0 / depth=-1 组件）"
+      ],
+      "status": "partial",
+      "note": "depth=1/2、根文件、Windows 分隔符都有断言；depth=0 与负值没有测试也没有文档（探针确认它们等价于\"全部目录\"，不是报错）。"
+    },
+    {
+      "id": "C28",
+      "statement": "component_id 为 `component:<repo>:<key>`；components 按 id 排序、members 排序、depends 按 (src,dst) 排序且 evidence 去重排序",
+      "evidence": [
+        "scripts/whyexist/derive.py:44-46",
+        "scripts/whyexist/derive.py:121-140",
+        "tests/test_derive.py:38-41",
+        "tests/test_derive.py:90-101"
+      ],
+      "status": "partial",
+      "note": "分组 id 顺序与 evidence 多条保留都有断言；members 排序没有直接断言。 按严格口径记 partial：承诺里各有至少一个分支未被直接断言。"
+    },
+    {
+      "id": "C29",
+      "statement": "只有 classifier/operation/property 参与分组（requirement 等设计节点不进组件）；exclude_dirs 按\"等值或 prefix+\"/\"\"前缀排除并计入 excluded_nodes；被排除目录的 file_dependencies 一并丢弃",
+      "evidence": [
+        "scripts/whyexist/derive.py:20",
+        "scripts/whyexist/derive.py:49-58",
+        "scripts/whyexist/derive.py:83-98",
+        "tests/test_derive.py:43-46",
+        "tests/test_derive.py:108-134"
+      ],
+      "status": "covered",
+      "note": "与设计节点隔离、exclude 跳路径、excluded_nodes 计数、exclude 过滤文件依赖都有断言。"
+    },
+    {
+      "id": "C30",
+      "statement": "depends 有两类来源（跨组 calls/reads/writes 边、调用方传入的文件级 import 对），只保留两端都分到组的跨组对；同组不算，非依赖 kind 忽略，端点没有 component 的文件对丢弃",
+      "evidence": [
+        "scripts/whyexist/derive.py:23",
+        "scripts/whyexist/derive.py:100-119",
+        "tests/test_derive.py:48-106",
+        "tests/test_derive.py:69-88"
+      ],
+      "status": "covered",
+      "note": "跨组 depends、同组不算、非依赖 kind 忽略、未分组端点丢弃、两端都有组保留、证据多值全部有断言。"
+    },
+    {
+      "id": "C31",
+      "statement": "derive 默认 dry-run 且不写库，返回 mode=\"dry-run\" 与 strategy/depth/exclude_dirs/excluded_nodes/components/depends；只推导出 <=1 个组件时附 hint（目录层级不足）",
+      "evidence": [
+        "scripts/whyexist/commands_repo.py:445-468",
+        "scripts/wxg_contract.py:647",
+        "tests/test_plan_cli.py:587-600"
+      ],
+      "status": "partial",
+      "note": "mode/strategy/components/hint 有断言；\"dry-run 不写库\"没有 hash 类断言（contract 文档声称只读）。 按严格口径记 partial：承诺里各有至少一个分支未被直接断言。"
+    },
+    {
+      "id": "C32",
+      "statement": "derive --apply 需要 --token，工单角色必须在 derive 的允许集内，且工单 target_ids 必须覆盖本轮全部 component id；写入 origin=derived 的 component 节点（attrs x_strategy/x_depth/x_path）、component->member 的 contains 边、component->component 的 depends 边（attrs.x_evidence 为前 20 条来源对），返回各类计数",
+      "evidence": [
+        "scripts/whyexist/commands_repo.py:470-533",
+        "scripts/whyexist/work.py:88-100",
+        "tests/test_plan_cli.py:602-626",
+        "tests/test_package_units.py:619-634"
+      ],
+      "status": "partial",
+      "note": "origin=derived 与计数有断言；target 不覆盖的 Reject、角色不符、x_evidence 的前 20 条截断都没有测试；x_evidence 形状被 conformance 当作\"有代码支撑\"（test_package_units.py:619-634）。"
+    },
+    {
+      "id": "C33",
+      "statement": "重跑 derive 时，本轮未出现的 origin=derived 组件被标 stale=1（promote 后的 declared 不动），返回 stale_derived 计数；只标节点，不清理旧节点的 contains/depends 边",
+      "evidence": [
+        "scripts/whyexist/commands_repo.py:474-485",
+        "CHANGELOG.md:1105-1111",
+        "docs/audit/_probe_07.py（输出：重跑后留下的 depends 边 / 旧边指向 stale 组件）"
+      ],
+      "status": "partial",
+      "note": "没有测试覆盖重跑；探针：换 --exclude 重跑后旧 depends 边与旧 contains 边都还在，且指向已 stale 的组件。CHANGELOG 只写了\"stale 只标不删\"，没提边。"
+    },
+    {
+      "id": "C34",
+      "statement": "derive --apply 在推导出 0 个组件时仍然成功（exit 0），不写任何节点/边，但把该仓全部旧 derived 组件标 stale=1（stale_derived>0）；dry-run 同样 0 组件只给 hint",
+      "evidence": [
+        "scripts/whyexist/commands_repo.py:472-485",
+        "scripts/whyexist/work.py:88-100",
+        "docs/audit/_probe_07.py（输出：0 组件 apply）"
+      ],
+      "status": "gap",
+      "note": "require_targets 对空列表恒通过，所以 0 组件 apply 是\"破坏性空操作\"：命令看起来成功，实际让所有旧候选失效。无测试；dry-run 有 hint 会提示，apply 没有任何警告。"
+    },
+    {
+      "id": "C35",
+      "statement": "derive 每次运行都从磁盘重新解析全仓 import（绝对 + 相对、跳过点目录、语法错误静默跳过、解码 errors=\"replace\"），与 importer 的严格 UTF-8 读取是两套策略",
+      "evidence": [
+        "scripts/whyexist/commands_repo.py:380-423",
+        "scripts/whyexist/commands_repo.py:448",
+        "tests/test_package_units.py:690-739"
+      ],
+      "status": "partial",
+      "note": "相对/绝对导入解析有 4 个直接测试；点目录跳过、语法错误跳过、replace 解码都没有测试；也没有测试把 resolver 与 derive_components/cmd_derive 串起来（探针确认端到端可用）。"
+    },
+    {
+      "id": "C36",
+      "statement": "derive --apply 对同 id 的人工组件不做区分：origin 被改写成 derived、name 被改成组件键名、attrs 被 x_strategy/x_depth/x_path 整体替换（人工写的 duty 等丢失），既不跳过也不警告",
+      "evidence": [
+        "scripts/whyexist/commands_repo.py:488-505",
+        "scripts/whyexist/graph.py:97-105",
+        "docs/audit/_probe_07.py（输出：同名人工组件被 apply 后的 origin/name/attrs）"
+      ],
+      "status": "gap",
+      "note": "探针：先 upsert 一个 origin=manual、name=手工组件、attrs.duty=人工职责 的 component:demo:pkg，再 derive --apply，结果 origin=derived、name=pkg、attrs 只剩 x_*。没有测试覆盖；与 2.2.0 引入 promote 时\"derived 与 declared 有唯一转换入口\"的说法冲突。"
+    },
+    {
+      "id": "C37",
+      "statement": "derive --apply 的写入边界只校验 component id：组件的 contains 边写向成员节点（成员 id 通常不在 target_ids 内），depends 边写向另一组件，重跑的 stale 清理按 id 前缀扫全仓——三者都不受当前工单 target_ids 约束",
+      "evidence": [
+        "scripts/whyexist/commands_repo.py:472-473",
+        "scripts/whyexist/commands_repo.py:476-485",
+        "scripts/whyexist/commands_repo.py:506-523",
+        "SKILL.md:463",
+        "docs/audit/_probe_07.py（输出：成员 id 是否在 target_ids 内）"
+      ],
+      "status": "gap",
+      "note": "探针：工单 target_ids=['requirement:f:main','component:demo:*']，apply 仍写出 contains 边 component:demo:. -> operation:demo:app.py:helper，该 operation id 不在 target 内。SKILL.md:463 写\"target_ids 就是写入边界\"，derive 是例外且未记录。"
+    },
+    {
+      "id": "C38",
+      "statement": "derive 的节点取数只过滤 unmapped=0、不过滤 stale：已标 stale 的代码节点仍被分进组件，apply 时还会为它写 contains 边",
+      "evidence": [
+        "scripts/whyexist/commands_repo.py:438-441",
+        "docs/audit/_probe_07.py（输出：dry-run 是否把 stale 代码节点分进组件）"
+      ],
+      "status": "gap",
+      "note": "探针：把 operation:demo:app.py:helper 置 stale=1 后 dry-run，它仍作为成员出现在 component:demo:. 的 members 里。与 plan 的\"排除 stale\"口径（commands_compiler.py:40-45）不一致，无测试。"
+    }
+  ],
+  "state_io": [
+    {
+      "target": "graph.sqlite:nodes",
+      "mode": "both",
+      "where": "读：scripts/whyexist/query.py:15,39,79,87-99；写：scripts/whyexist/commands_repo.py:197-215,301-311 与 488-505（经 graph.upsert_node）"
+    },
+    {
+      "target": "graph.sqlite:edges",
+      "mode": "both",
+      "where": "读：scripts/whyexist/query.py:42,96；写：scripts/whyexist/commands_repo.py:208-211,313-319,506-523（经 graph.upsert_edge）"
+    },
+    {
+      "target": "graph.sqlite:repos",
+      "mode": "both",
+      "where": "读：scripts/whyexist/commands_repo.py:236,432 与 graph.py:60-72（find_repo）；写：scripts/whyexist/commands_repo.py:137-141"
+    },
+    {
+      "target": "graph.sqlite:work_items",
+      "mode": "read",
+      "where": "scripts/whyexist/query.py:57（slice --work 的 get_work）；scripts/whyexist/commands_repo.py:193-195（require_token/require_targets）；写入口在 insert_work/commands_feature"
+    },
+    {
+      "target": "graph.sqlite:feature_nodes",
+      "mode": "write",
+      "where": "scripts/whyexist/commands_repo.py:184,204-207,215,283-287,308-311,325-328；derive 经 graph.upsert_node 的 feature_id 写（commands_repo.py:502 → graph.py:130-132）"
+    },
+    {
+      "target": "源码仓 *.py 文件",
+      "mode": "read",
+      "where": "scripts/whyexist/importer.py:24-25（utf-8-sig）；scripts/whyexist/commands_repo.py:249,387-394（rglob + errors=\"replace\"）"
+    },
+    {
+      "target": "<root>/graph.sqlite（+ -wal/-shm）",
+      "mode": "write",
+      "where": "scripts/whyexist/cli.py:53,66-70（connect）；查询/导入/derive 都经 CLI 连接与提交 cli.py:83-84"
+    },
+    {
+      "target": "环境变量 WXG_DB_URL",
+      "mode": "both",
+      "where": "写：scripts/whyexist/cli.py:55-56（--db-url 覆盖）；读：scripts/whyexist/db.py:425-426（db_backend）"
+    },
+    {
+      "target": "默认工作区 ./.why-exist",
+      "mode": "read",
+      "where": "scripts/whyexist/cli.py:16,53（DEFAULT_ROOT 在 import 时按 cwd 求值；--root 可覆盖）"
+    },
+    {
+      "target": "stdout / stderr",
+      "mode": "write",
+      "where": "scripts/whyexist/cli.py:109-113（结果 JSON）；scripts/whyexist/cli.py:60-61,68-69,85-90（错误 JSON 到 stderr）"
+    }
+  ],
+  "redundancy": [
+    {
+      "item": "\"构成依赖的边 kind\" 有 4 份定义，且互不相同",
+      "signal": "derive.py:23（calls/reads/writes）、briefing.py:28（depends+calls+reads+writes）、gates.py:124（calls/reads/writes）、planner.py:35（calls/reads/writes）；四份常量各自维护，新增 kind 会漏改",
+      "confidence": "high"
+    },
+    {
+      "item": "导入写库循环写了两遍",
+      "signal": "commands_repo.py:196-227（import-file）与 301-338（import-repo）几乎逐行相同：nodes upsert/计数、feature_nodes 批量插、edges upsert/计数、stale 标记；import-repo 的 docstring 也承认\"写入语义与 import-file 一致\"",
+      "confidence": "high"
+    },
+    {
+      "item": "同一个仓被两套 AST 解析器扫两遍、两套错误策略",
+      "signal": "importer.plan_python（utf-8-sig，语法错误 Reject，整批失败）vs commands_repo._import_file_pairs（errors=\"replace\"，语法错误 continue，静默跳过）；derive 每次运行都重新 parse 全仓",
+      "confidence": "high"
+    },
+    {
+      "item": "查询命令的 re-export 兼容层已无人用",
+      "signal": "commands_misc.py:197-204 把 cmd_find/cmd_get/cmd_slice/resolve_targets/slice_payload 从 whyexist.query 再导出，注释写\"保持 CLI 分派不变\"；但 cli.py:81 从 wxg 取 handler、wxg.py:75-81 直接从 query 导入，模块内部也不引用这些名字",
+      "confidence": "high"
+    },
+    {
+      "item": "_node_id 的 re-export 是死兼容层",
+      "signal": "wxg.py:73 `from whyexist.importer import _node_id, plan_python`；全仓无 wxg._node_id / wxg.plan_python 的引用（tests 也不引用），导出的理由是 wxg.py docstring 里的\"旧测试仍按 wxg.xxx 访问\"",
+      "confidence": "high"
+    },
+    {
+      "item": "\"代码节点 kind\" 的集合散在四处",
+      "signal": "derive.py:20（classifier/operation/property）、commands_compiler.py:64（operation/classifier/property/sink/testcase/parameter/assertion）、gates.py:160-168（operation/classifier）、planner.py:38（设计层 DESIGN_NODE_KINDS）；同一概念不同口径",
+      "confidence": "medium"
+    },
+    {
+      "item": "--limit 截断逻辑两份",
+      "signal": "query.py:66-74（slice：nodes/edges 各自截断 + 两个 total）与 query.py:103-109（find：单列表 + total）；两处都手写 truncated 判定，语义不完全一致（slice 是 or，find 是单列表比较）",
+      "confidence": "medium"
+    },
+    {
+      "item": "slice payload 里的 depth:1 是废弃字段",
+      "signal": "query.py:51 恒写 1，但没有任何消费方读取（commands_feature.py:552-560 只透传）；SKILL.md:187/design.md:733 却称\"深度 1 切片\"",
+      "confidence": "high"
+    },
+    {
+      "item": "节点 id 生成与 id 校验分居两地，规则靠约定同步",
+      "signal": "importer.py:18-19 生成 kind:repo:path:symbol；graph.py:44-51 校验前缀与字符集；derive.py:44-46 又定义 component:repo:key。三处字符串拼装，靠 check_node_id 兜底而不是共用构造函数",
+      "confidence": "medium"
+    },
+    {
+      "item": "derive 的 import 解析与 importer 的路径计算各写一遍相对路径逻辑",
+      "signal": "importer.py:24 用 relative_to(repo.path) 得 rel；commands_repo._module_to_rel/_resolve_relative_import（341-377）另写模块名->文件路径；derive.py:35-41 再写一次分隔符归一",
+      "confidence": "low"
+    }
+  ],
+  "rewrite_partition": [
+    {
+      "module": "scripts/whyexist/query.py",
+      "verdict": "refactor_in_place",
+      "reason": "三个只读命令的边界很小、输出键被 work-claim 直接复用，原地改比重写安全；但实现里有 5 个独立缺陷值得一次修掉：LIKE 未转义、slice/get/find 节点形状不一致、depth 常量、两套截断逻辑、通配未命中静默。",
+      "risk": "统一节点形状（attrs_json -> attrs）会改变 work-claim 返回的 slice 字段，agent 侧提示词与外部脚本可能按 attrs_json 解析；转义 LIKE 会让现在把 % 当通配用的调用方行为变化。修之前先补 C2/C5/C6/C9/C11/C12 的行为测试。"
+    },
+    {
+      "module": "scripts/whyexist/query.py#slice_payload 输出形状",
+      "verdict": "freeze",
+      "reason": "slice_payload 的键（nodes/edges/missing_ids/patterns/depth）被 work-claim 原样嵌入返回值，属于 agent 运行时契约；有没有测试都不该在审计里顺手改形状。",
+      "risk": "冻结意味着 C12 的形状不一致（attrs_json vs attrs）只能靠新增字段解决，不能直接替换；迁移前要给消费方一个版本窗口。"
+    },
+    {
+      "module": "scripts/whyexist/importer.py",
+      "verdict": "refactor_in_place",
+      "reason": "不是屎山：单函数、纯内存、无全局状态、节点 payload 字段稳定、unmapped 聚合规则有注释与测试，属于\"可扩展但有洞\"的资产。要补的是护栏而不是重写：重复类名 KeyError、非 UTF-8 崩溃、缺 reads/imports/inherits/嵌套函数、不校验扩展名。",
+      "risk": "任何解析增强都会改变节点集合，进而改变 stale/missing 漂移与 plan 的计数（导入器的 unmapped 占比在真实仓上是 50~58%，见 CHANGELOG 实测）；同时要保证 id 规则不变，否则旧库整批失效。"
+    },
+    {
+      "module": "scripts/whyexist/importer.py#_node_id 与 unmapped 聚合 id 规则",
+      "verdict": "freeze",
+      "reason": "节点 id 是外部主键：work_items.target_ids、feature_nodes、bites.node_id、evidence_ids、导出全部存字面量，没有 id 映射表；改生成规则等于要求全库重建。",
+      "risk": "连\"行号不进 id\"这条也不能回退（旧 id `@21:len` 的教训在 CHANGELOG.md:1137）；若必须改，需要迁移脚本 + 一次性 stale/retract 策略，且要在 id 里保留旧值映射。"
+    },
+    {
+      "module": "scripts/whyexist/derive.py",
+      "verdict": "keep",
+      "reason": "本切片最干净的模块：纯函数、140 行、15 个直接测试覆盖分组/排除/边来源/证据/空仓，输出结构与文档一致；没有 I/O 与全局状态，契约可以用输入输出类型完整表达。",
+      "risk": "它的输入依赖外部约定的 (src,dst) 元组与文件相对路径；depth<=0 的语义没写进文档（现在等价于全部目录，不是报错）。任何改动必须保持 components/depends/excluded_nodes 的键名与排序，否则 conformance 的 x_evidence 与 verify_reports 的断言会连带失败。"
+    },
+    {
+      "module": "scripts/whyexist/commands_repo.py::cmd_derive（仅 --apply 写路径）",
+      "verdict": "freeze",
+      "reason": "分组/依赖算法在 derive.py（判 keep），问题全集中在写路径，而且都是静默改写：0 组件 apply 成功并 stale 掉旧组件（C34）、重跑只 stale 节点不清旧边（C33）、同 id 的人工组件被覆盖成 derived 且 attrs 丢 duty（C36）、成员 contains 边与 stale 清理绕过 target_ids 边界（C37）、stale 代码节点仍参与分组（C38）。这五条要么没测试、要么与文档承诺冲突，先定契约再动。dry-run 与 derive.py 不受影响。",
+      "risk": "冻结意味着\"重跑 derive 会改写人工组织\"继续存在；任何修复都要先定三件事：derived 能否覆盖同名 declared、stale 清理是否受 target_ids 约束、成员边是否算越界写入。改错方向的代价是永久丢设计标注或让 verify_reports 的自动化流程失败。"
+    },
+    {
+      "module": "scripts/whyexist/commands_repo.py::_import_file_pairs（derive 的 import 解析）",
+      "verdict": "refactor_in_place",
+      "reason": "44 行纯函数、4 个相对/绝对导入测试，行为边界清楚；问题是它长在命令层、与 importer 分成两套 AST 解析与两套错误策略。正确动作是挪进 importer 并复用同一次文件读取，而不是重写解析规则。",
+      "risk": "相对导入规则（from . / from .. / from . import x）是 derive depends 的主要来源，规则一动 depends 全变；跳过点目录与 errors=\"replace\" 的宽容策略若改成严格，会让一部分仓在 derive 时直接失败。"
+    }
+  ],
+  "implicit_requirements": [
+    "节点 id 是跨表主键：work_items.target_ids / feature_nodes.node_id / bites.node_id / evidence_ids 都存字面量，没有 id 映射表；改 _node_id 的拼法或 unmapped 聚合粒度，等于要求全库重建 + 所有工单 target 重写。",
+    "unmapped 聚合粒度是计数口径的一部分：plan 默认排除 unmapped、conformance 靠 unmapped 节点名做\"唯一名字启发式\"、sync 输出 changed_unmapped_count。把聚合改成逐调用点，会让 plan 的 excluded_unmapped、conformance 的 resolved_heuristically、sync 的 changed 全部变化。",
+    "importer 在节点上写 attrs.x_lang=\"python\" 与 origin=\"scan\"：export/类图列 x_lang，promote 用 origin=derived 判断可否提升，conformance 用 origin 区分\"derived 组件 contains 覆盖\"与\"真孤立\"。重写导入器时漏掉这两个字段会静默改变导出与一致性报告。",
+    "import-file 的 merge_attrs=True 是设计标注的唯一保护：扫描重导入不能覆盖设计角色写的 duty/x_note（test_wxg.py:353-369）。如果新实现改成整行 upsert，设计正文会被静默清空。",
+    "stale 的置位/清位协议：扫描与 derive 置 stale=1，任何 upsert 都清 0；查询不过滤 stale，plan 过滤，gate 对作用域内 stale 直接 FAIL。重写时若在查询层加 stale 过滤，会改变 agent 看到的工作队列与 doctor 的可见性。",
+    "derive --apply 的\"工单 target 必须预先覆盖 component id\"把 derive 和 work-open 流程绑在一起：tools/verify_reports.py:69-76 与 SKILL.md:374 都按 work-open component:* → derive --apply 的顺序走。",
+    "derive 的 depends 依赖 commands_repo 的 import 解析器与 x_evidence 形状；conformance 把带 x_evidence 的 depends 直接视为\"有代码支撑\"（test_package_units.py:619-634）。改 evidence 结构会让所有 derive 出来的依赖突然变成\"缺支撑\"。",
+    "derive --apply 不区分同 id 的人工节点：origin 改成 derived、name 改成组件键名、attrs 整体替换（探针：duty 丢失）。promote 建立的\"derived→declared 唯一转换入口\"在反方向上不成立，重跑 derive 会把 declared 组件降级。",
+    "derive --apply 的写入边界只覆盖 component id：成员 contains 边写向 target_ids 外的节点，stale 清理按 id 前缀扫全仓。SKILL.md:463 的\"target_ids 就是写入边界\"对 derive 不适用，且没有文档承认这个例外。",
+    "derive 的节点取数不过滤 stale（只过滤 unmapped）：stale 代码节点仍进组件，apply 时为它写 contains 边；与 plan 的\"排除 stale\"口径（commands_compiler.py:40-45）不一致。",
+    "组件 id 由目录深度决定（component:repo:<depth 层目录>）：改 --depth/--exclude 等于换一套 id，旧组件的精确 target 失效，只能靠 `component:repo:*` 通配兜住。这个\"id 随参数漂移\"的规则没有文档承认为契约。",
+    "slice 的节点/边是原始 DB 行（attrs_json 字符串）而不是解析后的对象，work-claim 的 slice 字段原样继承这一点；任何\"顺手统一成 attrs\"都会破坏 agent 侧的消费。",
+    "--limit 的语义是\"节点与边各自截断到 N\"，truncated 表示\"任一被截断\"，不是\"总数不超过 N\"；同时 slice 的 total 字段只在给 --limit 时出现，find 的 total 总是出现。",
+    "find --path-prefix 是未转义的 SQL LIKE 前缀（% 与 _ 生效）；调用方把它当字符串前缀用时会静默扩大命中面。",
+    "id 通配只支持后缀 `*`：`*:foo`、`a*b` 这类写法会被当成精确 id 进入 missing_ids，不展开也不报错；拼错的通配符产生的空切片与\"作用域本来为空\"无法区分。",
+    "两套源码读取策略：importer 严格 utf-8-sig（非 UTF-8 直接崩），derive 的 import 扫描 errors=\"replace\" 并跳过语法错误。同一仓在 import-file 与 derive 下的可用性因此不同，且都没写进文档。",
+    "import-file 不校验扩展名，只校验\"在已登记仓内 + 仓 language=python\"；命令 help 与 design.md 的\"Python 源码文件\"描述比实现严格。",
+    "derive 的 import 解析读的是工作树当前内容，不是状态库：库里的节点集合与 depends 可能来自不同时刻的代码；重跑 derive 会用新代码覆盖旧的 depends 证据，没有版本号或快照校验。",
+    "repo-add --language 是\"只有一个取值的开关\"：值落库并作为导入前置校验，当前没有任何语言分发逻辑；design.md:64-66 说扩展方式是在 wxg.py 增加导入器，但 wxg.py 已无此逻辑，文档过时。"
+  ],
+  "findings": [
+    "已知缺口\"imports/inherits 边不进图\"属实，而且比表述更彻底：边 kind 清单里根本没有 imports/inherits（wxg_contract.py:90-111），upsert-edge 也会拒绝它们；importer 完全不看 ast.Import/ImportFrom 与 ClassDef.bases，探针里 `import os`、`from .helpers import thing`、`class Keeper(Base)` 一个节点一条边都不产生。import 信息只在 derive 时以\"文件对\"形式出现在 depends 的 x_evidence 里（commands_repo.py:380-423,511-522），inherits 连这个出口都没有。",
+    "已知缺口\"人手聚合组件后没有从代码推导组件间依赖的独立命令\"属实，但\"derive 只有分组\"的说法不成立：derive.py 的 derive_components 同时返回 components 与 depends（derive.py:70-140，测试 test_derive.py:48-106 直接断言跨组 calls 与文件级 import 都变成 depends）。真实限制是：depends 只为 derive 自己按目录产出的组件计算，手工 upsert 的 component 拿不到任何代码推导的依赖，也没有 depends-only 命令。",
+    "importer 不是屎山源头，是\"缺护栏的可扩展点\"。正面证据：单函数 215 行、纯内存、无全局状态、payload 字段稳定、unmapped 规则带注释且有测试（test_plan_cli.py:537-564）、id 去行号的设计是被真实重构教训逼出来的（CHANGELOG.md:1137）。负面证据同样硬：重复类名直接 KeyError（探针）、非 UTF-8 抛 UnicodeDecodeError 而不是 Reject、不解析 import/继承/嵌套函数/模块级赋值、不校验扩展名、`reads` 边从未产生。",
+    "`reads` 边是文档与实现直接冲突的一条：design.md:717 写 plan_python 产出 contains/calls/reads/writes，SKILL.md:444 与 README.md:172 又说 conformance 依赖 calls/reads/writes，但 importer 只产出 contains/calls/writes（探针 edge kinds = ['calls','contains','writes']），gates.py 的 CODE_EDGE_KINDS 永远等不到 reads。这不只是缺功能，是文档承诺了一个不存在的输入。",
+    "\"依赖边 kind\"常量有 4 份且不一致（derive.py:23、briefing.py:28、gates.py:124、planner.py:35），其中 briefing 版含 depends、其余不含；新增一个依赖 kind 需要改 4 处，漏一处就出现\"plan 看得见、derive 看不见\"这类口径分裂。",
+    "import-file 与 import-repo 的写库循环是两份几乎逐行相同的代码（commands_repo.py:196-227 vs 301-338），差异只在单文件/多文件的收集阶段；两份都各自维护 stale 标记、feature_nodes 批量插与计数语义，改一处漏一处就会让两个入口行为分叉。",
+    "derive 的重跑只清节点不清边：换 --exclude 重跑后，旧 component 被 stale=1，但它的 contains 与 depends 边原样留在库里（探针实测），指向一个已失效的组件。plan/gate 靠作用域与 stale 过滤不会误算，但 conformance（gates.py:205-216 只按 scope 过滤 depends）与任何直接查 edges 的消费者仍会看到这些边；没有任何命令自动清理它们，只能 retract。",
+    "derive --apply 在推出 0 个组件时是\"破坏性空操作\"：exit 0、nodes_written=0，却把该仓全部旧 derived 组件标 stale=1（探针：components=0, depends=0, nodes_written=0, stale_derived=1）。dry-run 至少给 hint，apply 连警告都没有；而 require_targets 对空列表恒通过，所以工单校验也拦不住。",
+    "derive --apply 会静默改写人工组织的同名组件：探针里先建一个 origin=manual、name=手工组件、attrs.duty=人工职责 的 component:demo:pkg，再跑 apply，结果 origin 变 derived、name 变 pkg、attrs 只剩 x_strategy/x_depth/x_path（duty 丢失）。upsert_node 在 derive 路径没传 merge_attrs（commands_repo.py:488-505），而 promote 建立的\"derived→declared 唯一入口\"只约束正方向。",
+    "derive 的写入边界与 stale 清理都绕过 target_ids：工单 target 是 ['requirement:f:main','component:demo:*']，apply 仍写出 contains 边指向 target 外的 operation:demo:app.py:helper；stale 清理按 `component:<repo>:%` 前缀扫全仓（commands_repo.py:476-485）。SKILL.md:463 写\"target_ids 就是写入边界\"，derive 是未声明的例外；另外取数只过滤 unmapped=0、不过滤 stale（commands_repo.py:438-441），stale 代码节点照样被分进组件并拿到 contains 边。",
+    "query.py 的三个命令对外承诺的\"节点\"是两种形状：slice 返回 attrs_json 字符串，get/find 返回解析后的 attrs 对象（探针）。work-claim 直接把 slice_payload 塞进返回值的 slice 字段，所以 agent 侧也继承了这个不一致；没有任何测试断言过 slice 的节点或边形状。",
+    "只读承诺没有测试支撑：CONTRIBUTING.md:43、README.md:152、references/quality.md:60 都说 gate/verify/slice/get/find 必须只读，但对照 reconcile（test_wxg.py:1330-1337）与 sync（test_wxg.py:1600）都有 db hash 断言，slice/get/find 一个都没有；cli.main:83-84 还会对每个 needs_db 命令执行 commit（当前是 no-op，但没有任何断言挡住未来引入写操作）。",
+    "importer 的错误分型不统一：语法错误包成 Reject（可读中文），非 UTF-8 直接抛 UnicodeDecodeError，仓外文件抛 ValueError；后两者经 cli.main:88-90 变成 {\"error\":\"UnicodeDecodeError: ...\"}，且 import-repo 只捕获 Reject，所以一个 GBK 文件会让整仓导入中止而不是被记为 parse_error。",
+    "wxg.py:73 的 `_node_id`/`plan_python` re-export 与 commands_misc.py:197-204 的 query re-export 都是没人用的兼容层（全仓无 wxg.plan_python / wxg.cmd_find 引用，模块内部也不引用），属于 AGENTS.md 里\"同一个东西两个位置\"那类残留。"
+  ],
+  "open_questions": [
+    "`reads` 边到底是\"没实现\"还是\"已放弃\"？三条文档都说导入器产 reads，而 conformance 的 code_edges 把它算进依赖支撑。要补实现（self.attr 读、Name 读）还是删文档并删掉 gates.py:124 里的 reads？两种都改变现有报告的语义。",
+    "importer 的\"同名裸名调用\"解析要不要保留？它把跨文件同名函数误连到本文件函数（探针里 run 调用 helper() 被连到本文件的 helper），这是启发式而非真解析；保留会制造假 calls 边，删掉会让更多调用变 unmapped。",
+    "derive 的组件 id 绑定目录深度（换 --depth 就换一套 id），现有工单 target 用精确 id 时会失效。是否值得引入\"稳定组件 id + 路径别名\"？代价是要维护一张别名表，收益是重跑 derive 不再需要重新 work-open。",
+    "要不要一个 depends-only 命令，或 `derive --components-from graph`：给手工聚合/手工声明的 component 推导跨组件依赖？derive.py 的计算部分已经具备（nodes 带 path 即可），缺的是\"组件归属\"输入与组件的 target 校验。",
+    "重跑 derive 时旧的 depends/contains 边该删、该标 stale、还是该保留？现在什么都不做（只有节点标 stale）。删会丢审计轨迹，保留会让 edges 表缓慢膨胀并让直接查边的消费者看到失效依赖。",
+    "derived 能不能覆盖同名 declared 组件？现在能，而且是静默覆盖（origin 降级、attrs 清空）。禁止覆盖会让 derive 在\"目录键撞上人工命名\"时直接报冲突；允许覆盖就得给人工组件换 id 规则。",
+    "derive 的成员 contains 边该不该受 target_ids 约束？现在不受（成员 id 从不进 target 校验）。收紧会让 derive 必须先 work-open 成员 id（大仓上等于把整仓节点写进工单），放松则\"写入边界\"这个安全承诺对 derive 失效。",
+    "stale 代码节点该不该参与 derive 分组？现在参与（只过滤 unmapped）。排除它会改变现有 depends 图（stale 节点常常是刚被删的代码），不排除则 derived 组件里会含已不存在的成员。",
+    "find --path-prefix 要不要改成转义 LIKE（LIKE ? ESCAPE '\\\\'）并新增通配参数？直接转义会让当前把 % 当通配的调用方行为变化；不转义则\"前缀\"这个名字是错的。",
+    "三个只读命令的节点形状要不要统一成 attrs？统一是明显的一致性收益，但 slice 的输出被 work-claim 原样嵌入、agent 提示词按它消费；这属于要人判断的兼容性取舍，而不是技术债清单。",
+    "importer 要不要接受非 UTF-8（比如按 PEP 263 的 coding cookie 解码）？现在一个 GBK 文件会让整仓 import-repo 中止，而 derive 的扫描却能跳过它——同一仓在两处可用性不同。",
+    "repo-add --language 现在只有一个合法值，是留在契约里当\"未来扩展点\"，还是降级成隐含 python 并删掉这个参数？design.md:64-66 说扩展要在 wxg.py 加分发，但 wxg.py 已是薄入口，文档与代码位置对不上。"
+  ]
+}

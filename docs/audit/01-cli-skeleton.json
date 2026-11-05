@@ -1,0 +1,638 @@
+{
+  "slice": "01-cli-skeleton",
+  "modules": [
+    {
+      "path": "scripts/whyexist/cli.py",
+      "loc": 115,
+      "role": "从契约 C.COMMANDS 生成 argparse、决定哪些命令连库、分派到 wxg.cmd_*、把返回值/异常翻译成 stdout JSON 与退出码"
+    },
+    {
+      "path": "scripts/wxg.py",
+      "loc": 181,
+      "role": "唯一脚本入口：插入 scripts/ 到 sys.path、把 __main__ 注册成 wxg、re-export 132 个包内符号给分派与旧脚本用"
+    },
+    {
+      "path": "scripts/whyexist/errors.py",
+      "loc": 13,
+      "role": "全包唯一异常类 Reject，用来区分“可预期拒绝”和真实 bug"
+    },
+    {
+      "path": "scripts/whyexist/jsonio.py",
+      "loc": 78,
+      "role": "JSON 序列化/解析策略、@文件参数、id 列表、claim token、UTC 秒级时间戳"
+    },
+    {
+      "path": "scripts/whyexist/temp.py",
+      "loc": 42,
+      "role": "临时目录创建与清理，规避 Windows 受限 token 下 0o700 目录空 DACL 的问题"
+    },
+    {
+      "path": "scripts/whyexist/__init__.py",
+      "loc": 49,
+      "role": "包公开面：Engine 与纯函数层导出、__all__、版本常量"
+    }
+  ],
+  "public_surface": [
+    {
+      "entry": "python scripts/wxg.py <cmd>",
+      "kind": "cli",
+      "where": "scripts/wxg.py:180-181",
+      "input": "argv：50 个子命令之一，全局 --root / --db-url 必须写在子命令前",
+      "output": "stdout：dict 结果 → json.dumps(ensure_ascii=False, indent=2)；str 结果 → 原样文本（role-prompt、contract 不带 --json/--write）；参数层错误 → argparse usage 文本",
+      "side_effects": "sys.path 插入 scripts/；脚本模式把 __main__ 注册为 sys.modules['wxg']；sqlite 后端按需 mkdir <root> 并创建 graph.sqlite；统一 open/commit/close 连接；--db-url 改写进程环境变量",
+      "exit_codes": "0 成功；1 业务 FAIL（verify/doctor/gate/apply/reconcile）或未捕获异常；2 Reject 与 argparse 用法错误"
+    },
+    {
+      "entry": "全局 --root",
+      "kind": "cli",
+      "where": "scripts/whyexist/cli.py:22,53-54",
+      "input": "目录路径；省略时用 DEFAULT_ROOT = Path.cwd()/'.why-exist'（在模块 import 时求值）",
+      "output": "无 stdout 输出；解析后的绝对路径写入 args.root_path 供 handler 读取",
+      "side_effects": "仅路径解析；不创建目录（创建发生在 connect() 或 cmd_up）",
+      "exit_codes": "参数缺失/非法时由 argparse 返回 2"
+    },
+    {
+      "entry": "全局 --db-url",
+      "kind": "cli",
+      "where": "scripts/whyexist/cli.py:23-27,55-61",
+      "input": "URL：mysql:// | mariadb:// | postgresql:// | postgres://；其它协议拒绝",
+      "output": "无直接输出；随后 db_backend() 读出 'sqlite'/'mysql'/'postgres'",
+      "side_effects": "写 os.environ['WXG_DB_URL'] 且不恢复——同进程后续 connect() 与 Engine(db_url=...) 都受影响",
+      "exit_codes": "不支持的协议 → stderr {\"error\": ...} + 2（cli.py:58-61）"
+    },
+    {
+      "entry": "wxg verify",
+      "kind": "cli",
+      "where": "scripts/whyexist/cli.py:65,94-96；scripts/whyexist/commands_misc.py:269-352",
+      "input": "无参数；技能根由 WXG_SKILL_DIR 覆盖，默认包所在技能目录",
+      "output": "stdout JSON {ok, issues[], checks[], version}；ok=False 时 issues 是中文原因列表",
+      "side_effects": "只读 SKILL.md、references/contract.md、design.md、quality.md、tests/test_wxg.py、CHANGELOG.md 与导出样例；在系统临时目录建 wxg-verify-* 跑 gen_sample（写临时状态库+export）后删除；不碰 --root",
+      "exit_codes": "0（ok=true）；1（ok=false）；2（意外的环境错误，经通用兜底）"
+    },
+    {
+      "entry": "wxg contract",
+      "kind": "cli",
+      "where": "scripts/whyexist/cli.py:65；scripts/whyexist/commands_misc.py:250-262",
+      "input": "--json；--write <相对技能根的路径>；--section main|full",
+      "output": "--json → 契约 JSON；否则 markdown；--write → {written, section}（JSON）",
+      "side_effects": "--write 先读目标文件再覆写其契约块：会真实修改 SKILL.md / references/contract.md；相对路径基准是技能根而不是 cwd",
+      "exit_codes": "0；2（目标文件不存在等由通用异常兜底成 {\"error\": \"FileNotFoundError: ...\"}）"
+    },
+    {
+      "entry": "wxg role-prompt",
+      "kind": "cli",
+      "where": "scripts/whyexist/cli.py:65,109-110；scripts/whyexist/commands_misc.py:207-247",
+      "input": "--role（必填，8 个角色之一）；--token；--feature",
+      "output": "纯 markdown 文本（不是 JSON），含状态库绝对路径、CLI 绝对路径、该角色允许命令与边界",
+      "side_effects": "无状态库 IO；不创建 .why-exist（实测已确认）",
+      "exit_codes": "0；2（未知角色）"
+    },
+    {
+      "entry": "wxg up",
+      "kind": "cli",
+      "where": "scripts/whyexist/cli.py:65；scripts/whyexist/commands_repo.py:62-127",
+      "input": "--feature/--repo/--path/--template standard|minimal",
+      "output": "JSON {root, template, repo, feature, gate_result, gate, next[]}",
+      "side_effects": "命令自建连接与提交（cli 传 conn=None）：init_db、可选建 <root>/../demo-repo/demo.py、repo-add、feature-declare、跑一次 gate；幂等",
+      "exit_codes": "0；2"
+    },
+    {
+      "entry": "其余 46 个子命令的统一分派",
+      "kind": "function",
+      "where": "scripts/whyexist/cli.py:78-84,109-113",
+      "input": "argparse Namespace（含 root_path）",
+      "output": "dict → JSON（indent=2）；str → 原样打印；null 也会被打印成 JSON null",
+      "side_effects": "由 handler 决定；needs_db 命令在 handler 返回后统一 conn.commit()，异常时只 close 不 commit",
+      "exit_codes": "0；Reject/异常 → 2"
+    },
+    {
+      "entry": "退出码映射",
+      "kind": "function",
+      "where": "scripts/whyexist/cli.py:94-113",
+      "input": "handler 返回的 dict",
+      "output": "int",
+      "side_effects": "无",
+      "exit_codes": "verify/doctor → ok?0:1；gate → result=='PASS'?0:1；apply → ok?0:1；reconcile → converged?0:1；serve → 恒 0；其它 → 0"
+    },
+    {
+      "entry": "异常兜底",
+      "kind": "function",
+      "where": "scripts/whyexist/cli.py:85-90",
+      "input": "handler 抛出的 Reject 或任意 Exception",
+      "output": "stderr：Reject → {\"error\": str(exc)}；其它 → {\"error\": \"<TypeName>: <msg>\"}；均为紧凑、sort_keys、无缩进",
+      "side_effects": "不打印 traceback；不 commit（sqlite 关闭即回滚）；连接期异常不在此范围",
+      "exit_codes": "2"
+    },
+    {
+      "entry": "build_parser / main",
+      "kind": "function",
+      "where": "scripts/whyexist/cli.py:20-45,48-113",
+      "input": "C.COMMANDS（50 条定义，wxg_contract.py:299）+ argv",
+      "output": "ArgumentParser / int 退出码",
+      "side_effects": "main 可在进程内调用；但 DEFAULT_ROOT 在 import 时已固定，chdir 后不跟随；main 会改 sys.stdout 编码与 os.environ",
+      "exit_codes": "同 CLI"
+    },
+    {
+      "entry": "jsonio.dumps / loads / load_json_arg / load_id_list / new_token / utc_now",
+      "kind": "function",
+      "where": "scripts/whyexist/jsonio.py:15-78",
+      "input": "任意 JSON 值；JSON 文本；'@路径'；逗号分隔 id；无参",
+      "output": "紧凑排序 JSON 字符串；解析值；32 位小写 hex；'YYYY-MM-DDTHH:MM:SSZ'",
+      "side_effects": "load_json_arg 会读任意 @ 文件（utf-8-sig）",
+      "exit_codes": "坏 JSON/坏文件/坏 id 列表 → Reject（CLI 层转 2）"
+    },
+    {
+      "entry": "temp.make_temp_dir / temp_dir",
+      "kind": "function",
+      "where": "scripts/whyexist/temp.py:21-42",
+      "input": "prefix，默认 'wxg-'",
+      "output": "Path（系统临时目录下的新目录）",
+      "side_effects": "建目录：Windows 用默认 ACL，POSIX 用 0o700；temp_dir 退出时 shutil.rmtree(ignore_errors=True)",
+      "exit_codes": "100 次撞名后 RuntimeError（CLI 层转 2）"
+    },
+    {
+      "entry": "状态库 <root>/graph.sqlite（含 meta 表）",
+      "kind": "table",
+      "where": "scripts/whyexist/cli.py:66,70；scripts/whyexist/db.py:458-465,468-483",
+      "input": "root 路径 + 后端选择",
+      "output": "连接对象；meta 表缺失时 Reject('状态库未初始化')",
+      "side_effects": "sqlite：mkdir -p root、创建/打开 graph.sqlite、PRAGMA foreign_keys/busy_timeout=5000/journal_mode=WAL；mysql/pg：只建连接不建库",
+      "exit_codes": "未初始化 → 2（预检或 ensure_db）"
+    },
+    {
+      "entry": "SKILL.md / references/contract.md",
+      "kind": "file",
+      "where": "scripts/whyexist/commands_misc.py:255-261,272-296",
+      "input": "contract --write；verify",
+      "output": "被覆写的契约块 / 漂移问题列表",
+      "side_effects": "contract --write 是仓库内文件写入；verify 只读",
+      "exit_codes": "verify 发现漂移 → 1"
+    }
+  ],
+  "contracts": [
+    {
+      "id": "C1",
+      "statement": "唯一支持的入口是 `python scripts/wxg.py`：cli.py 没有 __main__ guard，也没有 console_scripts/pyproject",
+      "evidence": ["scripts/wxg.py:180-181", "scripts/whyexist/cli.py:48", ".github/workflows/ci.yml:28", "tests/test_wxg.py:20,62-68"],
+      "status": "covered",
+      "note": "CI 与全部测试都通过这个脚本调用；`python -m whyexist.cli` 会静默退出 0 且无输出（没有 __main__ guard），属于假入口，无人断言"
+    },
+    {
+      "id": "C2",
+      "statement": "--root 省略时状态库根是“进程 cwd 下的 .why-exist”，不是技能目录；init 会在那里建库",
+      "evidence": ["scripts/whyexist/cli.py:16,53-54", "scripts/whyexist/commands_repo.py:51", "tests/test_wxg.py:873-882"],
+      "status": "partial",
+      "note": "只有 verify 的零副作用用例把 cwd 当默认根；init 使用默认根建库没有测试（实测可用）"
+    },
+    {
+      "id": "C3",
+      "statement": "--root 被解析成绝对真实路径（Windows 8.3 短路径会被展开），写进 args.root_path，输出里出现的都是这个路径",
+      "evidence": ["scripts/whyexist/cli.py:53-54", "tests/test_wxg.py:48-51,50", "tests/test_wxg.py:894-898"],
+      "status": "covered",
+      "note": "role-prompt 与 init 的输出都靠这条；测试夹具专门 resolve 过再比对"
+    },
+    {
+      "id": "C4",
+      "statement": "--db-url 覆盖 WXG_DB_URL；mysql/mariadb/postgresql/postgres 四个协议被接受，未知协议输出 JSON error 并返回 2",
+      "evidence": ["scripts/whyexist/cli.py:23-27,55-61", "scripts/whyexist/db.py:429-438", "scripts/whyexist/commands_repo.py:47-49"],
+      "status": "partial",
+      "note": "--db-url 路径本身零测试：两个后端测试都用环境变量 WXG_DB_URL（test_mysql_backend.py:54、test_pg_backend.py:56）；未知协议分支实测正确但无断言"
+    },
+    {
+      "id": "C5",
+      "statement": "SQLite 后端下，<root>/graph.sqlite 不存在时命令提前失败：stderr {\"error\": \"状态库未初始化：先运行 `wxg init`\"}、退出 2、不创建 root 目录",
+      "evidence": ["scripts/whyexist/cli.py:66-69", "tests/test_wxg.py:947-955"],
+      "status": "covered",
+      "note": "预检只对 sqlite 生效；mysql/pg 靠 ensure_db 的 Reject（db.py:482-483）"
+    },
+    {
+      "id": "C6",
+      "statement": "verify / contract / role-prompt 永不 connect，在任何目录运行都不创建 .why-exist/ 或 graph.sqlite",
+      "evidence": ["scripts/whyexist/cli.py:62-65,70", "tests/test_wxg.py:873-882"],
+      "status": "partial",
+      "note": "测试只断言了 verify；contract / role-prompt 的零副作用仅由我实测确认，无回归测试"
+    },
+    {
+      "id": "C7",
+      "statement": "up 不受预检与 needs_db 约束：cli 传 conn=None，由 cmd_up 自己 connect/init_db/commit，可在未初始化目录自建状态库",
+      "evidence": ["scripts/whyexist/cli.py:64-65,70", "scripts/whyexist/commands_repo.py:62-73", "tests/test_plan_cli.py:337-351"],
+      "status": "covered",
+      "note": "up 的幂等与 demo 仓创建也有测试（test_plan_cli.py:348-357,519）"
+    },
+    {
+      "id": "C8",
+      "statement": "成功输出走 stdout：dict 用 json.dumps(ensure_ascii=False, indent=2)，字符串结果原样打印；命令输出可被 json.loads 解析",
+      "evidence": ["scripts/whyexist/cli.py:109-113", "tests/test_wxg.py:61-83", "tests/test_wxg.py:894-902"],
+      "status": "covered",
+      "note": "role-prompt / 裸 contract 是唯一两个非 JSON 的成功输出，测试按文本断言"
+    },
+    {
+      "id": "C9",
+      "statement": "可预期拒绝统一为：stderr 单行紧凑 JSON {\"error\": ...}、退出码 2、无 traceback",
+      "evidence": ["scripts/whyexist/cli.py:85-87", "tests/test_wxg.py:531-532,858-859", "tests/test_wxg.py:868-871"],
+      "status": "covered",
+      "note": "断言密度高（test_wxg.py 里 30+ 处 expect=2 并检查 error 文案）"
+    },
+    {
+      "id": "C10",
+      "statement": "非预期异常同样转成 {\"error\": \"<TypeName>: <msg>\"} + 退出 2",
+      "evidence": ["scripts/whyexist/cli.py:88-90"],
+      "status": "gap",
+      "note": "没有任何测试触发过这条分支；它是唯一能保证“后端/环境错误不把 traceback 当成功”的兜底"
+    },
+    {
+      "id": "C11",
+      "statement": "连接期失败（psycopg 连不上、root 不可写、mysql 握手失败）给可读错误而不是 traceback",
+      "evidence": ["scripts/whyexist/cli.py:58-61,70", "scripts/whyexist/db.py:441-465", "SKILL.md:277", "scripts/wxg_contract.py:221"],
+      "status": "gap",
+      "note": "实测 `--db-url postgresql://u:p@127.0.0.1:1/db gate` → 未捕获 Reject('PostgreSQL 连接失败：connection timeout expired')、traceback、退出 1。connect() 在 try 之外（cli.py:70 早于 74）"
+    },
+    {
+      "id": "C12",
+      "statement": "verify：ok=true → 0；ok=false（issues 非空）→ 1",
+      "evidence": ["scripts/whyexist/cli.py:94-96", "scripts/whyexist/commands_misc.py:350-352", "tests/test_wxg.py:481-487", "tests/test_wxg.py:495-501", "tests/test_wxg.py:873-881"],
+      "status": "partial",
+      "note": "失败路径只断言 returncode != 0（test_wxg.py:500），没有断言恰好是 1"
+    },
+    {
+      "id": "C13",
+      "statement": "doctor：ok=true → 0；有问题 → 1；--fix 只修可判定项，问题清单仍在输出里",
+      "evidence": ["scripts/whyexist/cli.py:94-96", "scripts/whyexist/commands_misc.py:558-617", "tests/test_wxg.py:408,586,605"],
+      "status": "covered",
+      "note": "--fix 的写入由 handler 完成、cli 统一 commit；fix 前后问题数有测试"
+    },
+    {
+      "id": "C14",
+      "statement": "gate：result=='PASS' → 0，否则 1；FAIL 时 JSON 带 result/reason，且只读不写库",
+      "evidence": ["scripts/whyexist/cli.py:97-99", "scripts/whyexist/commands_gates.py:320", "tests/test_wxg.py:255-257,299-306,868-871"],
+      "status": "covered",
+      "note": "PASS 与 FAIL 两条分支都有精确断言，另有 sha256 快照证明只读"
+    },
+    {
+      "id": "C15",
+      "statement": "apply：合并成功 ok=true → 0；冲突 ok=false → 1，且一个节点都不写",
+      "evidence": ["scripts/whyexist/cli.py:100-102", "scripts/whyexist/commands_compiler.py:259-295", "tests/test_plan_cli.py:448,483"],
+      "status": "covered",
+      "note": "冲突不写库是 handler 提前 return 保证的，不是事务回滚"
+    },
+    {
+      "id": "C16",
+      "statement": "reconcile：converged=true → 0；有待办动作 → 1",
+      "evidence": ["scripts/whyexist/cli.py:103-105", "scripts/whyexist/commands_gates.py:106", "tests/test_wxg.py:258", "tests/test_wxg.py:1331-1332"],
+      "status": "covered",
+      "note": "两条分支都有测试；契约 reconcile_rules 也写明 0/1/2 的语义"
+    },
+    {
+      "id": "C17",
+      "statement": "serve：退出码恒 0（即使本轮 converged=false），JSON 摘要在 handler 里按趟打印、cli 不重复输出",
+      "evidence": ["scripts/whyexist/cli.py:106-108", "scripts/whyexist/commands_gates.py:143-151", "tests/test_wxg.py:1668-1676"],
+      "status": "covered",
+      "note": "测试按默认 expect=0 断言且解析 stdout 里的单行 JSON"
+    },
+    {
+      "id": "C18",
+      "statement": "serve 的参数校验失败（interval<=0、claim-ttl<0）走 Reject → 2",
+      "evidence": ["scripts/whyexist/commands_gates.py:121-125", "tests/test_wxg.py:1698-1699"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C19",
+      "statement": "argparse 层错误（缺必填、未知子命令、非法 choices、无子命令）输出 usage 文本到 stderr 并退出 2，不是 JSON",
+      "evidence": ["scripts/whyexist/cli.py:28-44", "tests/test_wxg.py:904-907"],
+      "status": "partial",
+      "note": "只有 --language 非法 choices 有断言；缺必填参数、未知子命令实测 exit 2 + usage 文本，无测试"
+    },
+    {
+      "id": "C20",
+      "statement": "--json 标志影响输出格式",
+      "evidence": ["scripts/whyexist/cli.py:95-99,112", "scripts/whyexist/commands_misc.py:251"],
+      "status": "gap",
+      "note": "实际只有 contract 读 args.json；gate 与 coverage 的 --json 是 no-op（它们本来就打印 JSON：cli.py:98 与 112）。没有任何测试比较带/不带该标志的输出"
+    },
+    {
+      "id": "C21",
+      "statement": "stdout 被强制成 UTF-8（sys.stdout.reconfigure），保证中文 JSON 在 Windows 控制台不乱码",
+      "evidence": ["scripts/whyexist/cli.py:49-50", "tests/test_wxg.py:21"],
+      "status": "gap",
+      "note": "测试统一设置 PYTHONIOENCODING/PYTHONUTF8，所以这条代码从未被单独证明；stderr 没有同样处理（错误 JSON 走 stderr）"
+    },
+    {
+      "id": "C22",
+      "statement": "main(argv) 可被进程内调用并返回退出码（不依赖 subprocess）",
+      "evidence": ["scripts/whyexist/cli.py:48-113"],
+      "status": "gap",
+      "note": "全部测试走 subprocess；且 DEFAULT_ROOT 在 import 时固定，进程内先 chdir 再调用会用到旧 cwd"
+    },
+    {
+      "id": "C23",
+      "statement": "jsonio.dumps 是紧凑、键排序、不转义中文的序列化（'{\"a\": 1, \"b\": 2}' 这种固定形态）",
+      "evidence": ["scripts/whyexist/jsonio.py:19-20", "tests/test_package_units.py:27-28", "scripts/whyexist/cli.py:60,68,86,89", "scripts/whyexist/commands_gates.py:149"],
+      "status": "covered",
+      "note": "错误输出与 serve 摘要共用这个格式；成功输出不用它（见 C8），所以 CLI 有两套 JSON 风格"
+    },
+    {
+      "id": "C24",
+      "statement": "utc_now 返回秒级 UTC ISO 串，固定以 'Z' 结尾、无微秒、无时区偏移",
+      "evidence": ["scripts/whyexist/jsonio.py:15-16", "tests/test_package_units.py:80-81"],
+      "status": "partial",
+      "note": "测试只断言 endswith('Z')；格式串（分隔符、长度、UTC 而非本地时间）没有断言"
+    },
+    {
+      "id": "C25",
+      "statement": "new_token 是 uuid4().hex：32 位小写十六进制",
+      "evidence": ["scripts/whyexist/jsonio.py:77-78", "tests/test_package_units.py:75-78", "scripts/whyexist/commands_feature.py:522"],
+      "status": "covered",
+      "note": "claim_token 的格式契约由这个测试兜住"
+    },
+    {
+      "id": "C26",
+      "statement": "loads：None/'' 返回 default；已是容器则原样返回；坏 JSON 抛 Reject",
+      "evidence": ["scripts/whyexist/jsonio.py:23-31", "tests/test_package_units.py:30-39"],
+      "status": "partial",
+      "note": "只测了 dict 透传、空值、坏 JSON；list/int/float/bool 的分支没测"
+    },
+    {
+      "id": "C27",
+      "statement": "load_json_arg：支持 @文件（utf-8-sig，容忍 BOM），错误信息必须带期望形状或文件名+行列号",
+      "evidence": ["scripts/whyexist/jsonio.py:34-59", "tests/test_package_units.py:41-62"],
+      "status": "covered",
+      "note": "空字符串输入会走 json.loads('') → Reject，这条边界没测（loads 对 '' 有特判，load_json_arg 没有）"
+    },
+    {
+      "id": "C28",
+      "statement": "load_id_list：逗号分隔与 JSON 数组/@文件都接受，非字符串数组一律拒绝",
+      "evidence": ["scripts/whyexist/jsonio.py:62-74", "tests/test_package_units.py:64-73", "tests/test_wxg.py:884-892"],
+      "status": "covered",
+      "note": "注意 jsonio.__all__ 里漏了它（jsonio.py:12），但 CHANGELOG.md:638 把它称作公共解析函数"
+    },
+    {
+      "id": "C29",
+      "statement": "make_temp_dir：在系统 temp 下按前缀建唯一目录；Windows 用默认 ACL（不做 0o700）、POSIX 保持 0o700；撞名重试，100 次后 RuntimeError",
+      "evidence": ["scripts/whyexist/temp.py:21-33", "tests/test_wxg.py:47", "tests/test_plan_cli.py:50", "tools/preflight.py:84"],
+      "status": "partial",
+      "note": "只覆盖正常路径：重试分支、100 次耗尽、以及 Windows 分支与 POSIX 分支的差异都没有断言（CI 在两种 OS 上跑全量测试，但没有专门用例）"
+    },
+    {
+      "id": "C30",
+      "statement": "temp_dir 在上下文退出时删除目录且忽略删除失败",
+      "evidence": ["scripts/whyexist/temp.py:36-42"],
+      "status": "gap",
+      "note": "多处使用它做夹具，但没有一个用例断言目录已消失或删除失败被吞掉"
+    },
+    {
+      "id": "C31",
+      "statement": "Reject 是全包唯一异常类：脚本模式与包内 import 必须拿到同一个类对象，跨层 except Reject 才生效",
+      "evidence": ["scripts/whyexist/errors.py:12-13", "scripts/wxg.py:23-24,50", "scripts/whyexist/cli.py:13,85", "tests/test_wxg.py:531-532"],
+      "status": "covered",
+      "note": "由 __main__→sys.modules['wxg'] 的技巧保证；如果它失效，错误会变成 traceback+1 而不是 JSON+2，测试会大面积红"
+    },
+    {
+      "id": "C32",
+      "statement": "分派通过 `getattr(wxg, 'cmd_' + cmd.replace('-','_'))` 拿到 handler；wxg 模块因此必须暴露全部 50 个 cmd_*",
+      "evidence": ["scripts/whyexist/cli.py:71-82", "scripts/whyexist/commands_misc.py:299-303", "tests/test_wxg.py:514-515"],
+      "status": "covered",
+      "note": "verify 自己也用同一 getattr 校验所有命令有 handler，所以漏掉一个 re-export 会被 verify 抓住"
+    },
+    {
+      "id": "C33",
+      "statement": "wxg 模块同时是给旧脚本/测试用的兼容面：wxg.upsert_node / upsert_edge / bind_node / connect / init_db / make_temp_dir / temp_dir / Reject / cmd_init / cmd_export / cmd_feature_declare 可用",
+      "evidence": ["scripts/wxg.py:30-178", "scripts/gen_sample.py:43-104", "tests/test_wxg.py:612-624", "tests/test_plan_cli.py:24,50"],
+      "status": "partial",
+      "note": "真正被外部使用的只有这 11 个名字；其余 74 个导出没有任何消费者（见冗余）"
+    },
+    {
+      "id": "C34",
+      "statement": "以库方式调用 cli.main（scripts/ 不在 sys.path、或没有 wxg.py 兄弟文件）应给出可读错误而不是 traceback",
+      "evidence": ["scripts/whyexist/cli.py:71-72", "scripts/wxg.py:18-24"],
+      "status": "gap",
+      "note": "`import wxg` 在 try 之外；包被单独分发或 main 被别处 import 时是 ModuleNotFoundError → traceback + 1"
+    },
+    {
+      "id": "C35",
+      "statement": "role-prompt 的内容契约：含真实 root 路径、含 --root 的 CLI 命令、audit 角色出现 work-judge/直接裁决、scan 角色出现 work-finish --token",
+      "evidence": ["scripts/whyexist/commands_misc.py:207-247", "tests/test_wxg.py:894-902"],
+      "status": "covered",
+      "note": "只覆盖 audit 与 scan 两个角色；其余 6 个角色的分支段落（model-architecture/model-structure/implement-test）无断言"
+    },
+    {
+      "id": "C36",
+      "statement": "contract --json 的形状（version/schema_version/commands/command_write_modes 键集一致）",
+      "evidence": ["tests/test_wxg.py:518-525", "scripts/whyexist/commands_misc.py:250-252"],
+      "status": "covered",
+      "note": "断言了版本号字面量 2.92.0 与 schema 9，升版本时必须同步改测试（HANDOFF.md:68 有记录）"
+    },
+    {
+      "id": "C37",
+      "statement": "contract --write 把相对路径解析到技能根、以替换契约块的方式改写文档",
+      "evidence": ["scripts/whyexist/commands_misc.py:255-261"],
+      "status": "gap",
+      "note": "零测试的写仓库文件路径；写错 section/文件会直接改坏 SKILL.md。CONTRIBUTING.md:27-28 把它当日常工作流"
+    },
+    {
+      "id": "C38",
+      "statement": "graph.sqlite 存在但没有 meta 表时，ensure_db 拒绝并提示 init（退出 2）",
+      "evidence": ["scripts/whyexist/db.py:468-483", "scripts/whyexist/cli.py:79-80"],
+      "status": "gap",
+      "note": "没有测试构造“空库/半初始化库”；现有迁移测试的夹具都先建了 meta 表（tests/test_wxg.py:963）"
+    }
+  ],
+  "state_io": [
+    {
+      "target": "<root>/graph.sqlite",
+      "mode": "both",
+      "where": "scripts/whyexist/cli.py:66,70；scripts/whyexist/db.py:459"
+    },
+    {
+      "target": "<root>/（目录本身，sqlite 后端）",
+      "mode": "write",
+      "where": "scripts/whyexist/db.py:458（经 cli.py:70 调用）"
+    },
+    {
+      "target": "graph.sqlite:meta（ensure_db 的存在性检查）",
+      "mode": "read",
+      "where": "scripts/whyexist/db.py:481（经 cli.py:80 调用）"
+    },
+    {
+      "target": "环境变量 WXG_DB_URL",
+      "mode": "both",
+      "where": "scripts/whyexist/cli.py:55-56（写）、scripts/whyexist/db.py:426（读）"
+    },
+    {
+      "target": "环境变量 WXG_SKILL_DIR",
+      "mode": "read",
+      "where": "scripts/whyexist/commands_misc.py:271"
+    },
+    {
+      "target": "SKILL.md",
+      "mode": "both",
+      "where": "scripts/whyexist/commands_misc.py:272,289-297（读）；255-260（contract --write 覆写）"
+    },
+    {
+      "target": "references/contract.md",
+      "mode": "both",
+      "where": "scripts/whyexist/commands_misc.py:273,279-285（读）；255-260（写）"
+    },
+    {
+      "target": "references/export-sample/feat-demo/*.md（字节比对）",
+      "mode": "read",
+      "where": "scripts/whyexist/commands_misc.py:332-346"
+    },
+    {
+      "target": "系统临时目录 wxg-*（verify 用 gen_sample 建临时状态库与 export）",
+      "mode": "both",
+      "where": "scripts/whyexist/temp.py:21-42；scripts/whyexist/commands_misc.py:336-348"
+    },
+    {
+      "target": "@file 参数指向的任意文件",
+      "mode": "read",
+      "where": "scripts/whyexist/jsonio.py:40-45"
+    },
+    {
+      "target": "sys.path / sys.modules['wxg']（进程级全局状态）",
+      "mode": "write",
+      "where": "scripts/wxg.py:18-24；scripts/whyexist/contract.py:12-14"
+    },
+    {
+      "target": "sys.stdout 编码",
+      "mode": "write",
+      "where": "scripts/whyexist/cli.py:49-50"
+    }
+  ],
+  "redundancy": [
+    {
+      "item": "三个 --json 标志（gate / coverage / contract），只有 contract 真的读 args.json",
+      "signal": "commands_misc.py:251 是唯一 args.json 用法；gate 分支 cli.py:97-99 与通用分支 cli.py:112 无论如何都打印 JSON，gate --json 与 gate 输出逐字节相同",
+      "confidence": "high"
+    },
+    {
+      "item": "needs_db 硬编码元组 vs 契约里的 command_write_modes",
+      "signal": "cli.py:65 手写 ('verify','contract','role-prompt','up')；契约 wxg_contract.py:640 另有一份“只读/写库”声明；verify 只检查 WRITE_MODES 键存在（commands_misc.py:306-307），从不校验两者一致",
+      "confidence": "high"
+    },
+    {
+      "item": "wxg.py 的 re-export 面：132 个 whyexist 名字，74 个没有任何外部消费者",
+      "signal": "AST 统计：132 个 whyexist 导入 = 50 个 cmd_* + 82 个 helper；helper 里只有 8 个被外部以 wxg.X 使用（connect/init_db/Reject/bind_node/upsert_edge/upsert_node/make_temp_dir/temp_dir），74 个零引用；cmd_* 只有 3 处显式 wxg.cmd_* 使用，其余靠 getattr 动态取",
+      "confidence": "high"
+    },
+    {
+      "item": "DEFAULT_ROOT 定义三处，wxg.py 的副本从未使用",
+      "signal": "cli.py:16、commands_misc.py:20、wxg.py:26；wxg.py:26 无任何引用，另外两处语义相同（import 时求值）",
+      "confidence": "high"
+    },
+    {
+      "item": "wxg.py 导入 `wxg_contract as C` 但全文件不用，也没有外部通过 wxg.C 访问",
+      "signal": "wxg.py:28；随后 30-178 行没有任何 C. 引用，外部也无 wxg.C 用法",
+      "confidence": "high"
+    },
+    {
+      "item": "两套 JSON 序列化风格并用",
+      "signal": "错误与 serve 摘要走 jsonio.dumps（sort_keys、紧凑，cli.py:60,68,86,89；commands_gates.py:149）；成功结果走 json.dumps(indent=2, 不排序，cli.py:95,98,101,104,112)",
+      "confidence": "high"
+    },
+    {
+      "item": "两个 JSON 解析入口，语义与报错文案不同",
+      "signal": "jsonio.loads（jsonio.py:23-31，空值返回 default，用于库内 JSON 列）与 load_json_arg（jsonio.py:34-59，@文件、带行列号，用于 CLI 参数）；两者都各自 try json.loads + Reject",
+      "confidence": "medium"
+    },
+    {
+      "item": "`import wxg` 的双通道：__main__ 注册 + sys.path 注入 + 两处运行期 import",
+      "signal": "wxg.py:18-24 注册；cli.py:72 与 commands_misc.py:300 又各自 import wxg；contract.py:12-14 再插一次 scripts 到 sys.path",
+      "confidence": "medium"
+    },
+    {
+      "item": "build_parser 的 positionals 分支是死路径",
+      "signal": "cli.py:31-32；契约 50 条命令的 positionals 全为空数组（wxg_contract.py:299 起），循环体从不执行",
+      "confidence": "high"
+    },
+    {
+      "item": "whyexist.__version__ = 2.23.0，落后仓库版本 69 个发布且无人读取",
+      "signal": "__init__.py:49；VERSION=2.92.0、wxg_contract.py:18=2.92.0；全仓 grep 只命中定义本身与 CHANGELOG.md:818 的一次同步记录",
+      "confidence": "high"
+    },
+    {
+      "item": "文档里的 wxg.py 行数已过时",
+      "signal": "实际 181 行（python 统计）；SKILL.md:448,472 与 docs/HANDOFF.md:16 写 176；CHANGELOG.md:88 记录“修正 181 → 176”但文件又涨回 181",
+      "confidence": "medium"
+    },
+    {
+      "item": "jsonio.__all__ 漏了 load_id_list",
+      "signal": "jsonio.py:12 只有 5 个名字；load_id_list 定义在 62 行且被 4 个模块显式 import，CHANGELOG.md:638 称其为“公共解析函数”",
+      "confidence": "medium"
+    }
+  ],
+  "rewrite_partition": [
+    {
+      "module": "scripts/whyexist/cli.py",
+      "verdict": "refactor_in_place",
+      "reason": "对外契约最密（退出码 6 条映射、stdout/stderr 分流、needs_db 零副作用）且大部分有精确测试；烂在实现：connect 在兜底外、needs_db 硬编码、两套 JSON 风格、死 --json。形状保留、边界重画，不需要推倒。",
+      "risk": "退出码被 CI（ci.yml:28 的 verify）、测试夹具（test_wxg.py:61-83 先解析 stdout 再退到 stderr）和 agent 提示词共同依赖；改动若只跑全量测试不看契约表，容易把 1/2 的语义悄悄对调。"
+    },
+    {
+      "module": "scripts/wxg.py",
+      "verdict": "rewrite",
+      "reason": "行为简单（插 path、注册 __main__、转发 main），但物理上混了三件事：入口、50 个 handler 的动态注册表、74 个无人用的兼容导出。重写成“入口 + 显式 handler 注册表 + 只保留 gen_sample/tests 实际用的 8 个 helper”，兼容面才有边界。",
+      "risk": "verify 用 getattr(wxg, 'cmd_*') 校验 handler 存在（commands_misc.py:303），分派也用同一路径；重写时若换注册表却漏改这两处，会同时坏掉 verify 和所有命令。仓库外是否有人 import wxg 拿 helper，无法从代码证明。"
+    },
+    {
+      "module": "scripts/whyexist/errors.py",
+      "verdict": "keep",
+      "reason": "13 行、一个异常类、语义清楚；跨层捕获的“只有一份类”约束由 wxg.py 的 __main__ 注册兜住，本身没有可改的空间。",
+      "risk": "几乎没有。唯一危险是未来有人给它加字段/factory，破坏 100+ 处 except Reject 的假设。"
+    },
+    {
+      "module": "scripts/whyexist/jsonio.py",
+      "verdict": "keep",
+      "reason": "6 个函数、12 个直接单测、输出格式被断言钉死（dumps 定形态、token 定长度，utc_now 只钉了结尾 Z）。实现足够短，重写不会更好；需要的是补 utc_now 格式与 load_json_arg 空串两条断言，不是换实现。",
+      "risk": "dumps 的 sort_keys 是错误 JSON 与 serve 摘要的既定格式；换实现（例如改 indent 或 ensure_ascii）会让快照类断言和人工 diff 全变。"
+    },
+    {
+      "module": "scripts/whyexist/temp.py",
+      "verdict": "freeze",
+      "reason": "42 行，唯一实质逻辑是“Windows 用默认 mode、POSIX 用 0o700”。这条逻辑无法在 CI 里验证（受限 token 环境、空 DACL 都是外部条件），行为靠注释与历史事故记录支撑。没有测试覆盖重试/耗尽/分支差异，动它等于拿不可复现的沙箱故障做实验。",
+      "risk": "冻结的代价是这段“为什么不用 tempfile”的知识只存在于注释（temp.py:1-7）与 CHANGELOG；重写者很容易改回 tempfile 或统一 0o700，然后在 DSH Windows 沙箱里以 PermissionError WinError 5 的形式炸掉所有临时目录用例。"
+    },
+    {
+      "module": "scripts/whyexist/__init__.py",
+      "verdict": "refactor_in_place",
+      "reason": "Engine 的库 API 有独立测试（tests/test_engine.py 走真实库），公开面本身合理；但 __version__ 是漂移的假信息，且 __init__ 顶层 import 会把 db/commands/contract 全部拉进来。删版本常量、明确“包导入不做 IO”，是原地改而不是重写。",
+      "risk": "__version__ 虽无人读，但“读包版本”是外部用户最自然的动作；删除前要确认没有发布脚本依赖（tools/ 里无引用）。顶层 import 改懒加载会让 `from whyexist import Engine` 的行为在 import 期副作用上变化，需要确认 engine 的测试不依赖 import 即建连（它不建连）。"
+    }
+  ],
+  "implicit_requirements": [
+    "stdout 必须是可 json.loads 的单一 JSON 文档（除 role-prompt / 裸 contract）；测试夹具先解析 stdout、失败后仅在退出码非 0 时才去读 stderr（test_wxg.py:69-83），这个顺序本身就是契约。",
+    "错误与成功必须走不同流：stdout 成功、stderr 失败。否则夹具会把错误 JSON 当成功结果解析。",
+    "“Reject 之后不写库”靠的是不 commit 就 close（sqlite3 默认隔离级别），cli 从不显式 rollback；换连接实现/换隔离级别会静默破坏这条。",
+    "--root 必须解析成 realpath：Windows 上 tempfile 根可能是 8.3 短路径，测试断言拿 resolve() 后的路径和输出比对（test_wxg.py:48-51）。",
+    "verify 的零副作用是给 CI/仓库根目录用的：它在仓库根跑，不能在那里生成 .why-exist/。这条需求只写在 cli.py:62-64 的注释与 SKILL.md:79。",
+    "stdout 强制 UTF-8 是为了 Windows 默认 cp936 控制台下中文 JSON 不乱码；测试用 PYTHONIOENCODING 掩盖了它的必要性，删掉这行在 CI 里不会红。",
+    "make_temp_dir 的 Windows 分支是给 DSH windows-acl 受限 token 沙箱用的（0o700 显式 DACL 在受限 token 下解析为空，目录创建者自己都写不进）。这条知识只存在于注释、CHANGELOG 与 DSH discussion 引用里。",
+    "临时目录前缀 'wxg-' 是人类识别与清理约定（CHANGELOG 记载早期手敲命令在仓库里堆噪音的历史），不是功能需求。",
+    "wxg 模块的 __main__ 注册是为了让 Reject 类只有一份；删掉它不会立刻报错，但 except Reject 会开始失效，错误全部退化成 traceback+1。",
+    "sys.path 注入 scripts/ 是为了让 `import wxg_contract` / `import gen_sample` 这两个非包模块可达；verify 依赖它（commands_misc.py:334）。",
+    "DEFAULT_ROOT 在 import 时求值：进程模型下等价于 cwd，进程内复用 main() 时会过期。",
+    "--db-url 直接改 os.environ 且不恢复，Engine(db_url=...) 同样如此（engine.py:47-48）——同进程内两个不同后端的状态库不可能并存。",
+    "doctor 无 --fix 时也走 commit（cli.py:83-84），只是没有写入；这层“空提交”是幂等，不是契约。"
+  ],
+  "findings": [
+    "连接期异常在错误兜底之外：cli.py:70 的 connect() 早于 74 行的 try，db.py 抛出的 Reject（PostgreSQL 连接失败、psycopg 未安装）变成 traceback + 退出 1。实测 postgresql://u:p@127.0.0.1:1/db → exit 1 + Traceback。这与 cli.py:88 的意图和 backend_rules（wxg_contract.py:221“未安装时连接报可读错误”）正面冲突。",
+    "needs_db 是一份手写白名单（cli.py:65），与契约的 command_write_modes 各自表述同一件事，且 verify 不校验两者一致。新增一个只读命令时它会默认进入 connect 分支，在干净目录里创建 .why-exist/，破坏“只读命令零副作用”的隐含承诺。",
+    "wxg.py 的 132 个 re-export 里 74 个无消费者，但它同时承担 verify 与分派的 handler 注册表（cli.py:81、commands_misc.py:303）。兼容层与运行期必需机制缠在同一个文件里，所以“删掉没用的导出”和“别动分派”不能分开做。",
+    "`python -m whyexist.cli verify` 会静默成功：退出 0、零输出（cli.py 没有 __main__ guard）。任何用 -m 跑自检的脚本都会得到假绿；CI 用的是脚本路径所以没暴露。",
+    "三个 --json 标志里两个（gate、coverage）完全无效；成功输出与错误输出用两套 JSON 序列化（indent=2 不排序 vs 紧凑排序）。对 json.loads 消费者无害，但任何字节级快照或人读 diff 会被这种不一致误导。",
+    "verify 的失败分支只断言 returncode != 0（test_wxg.py:500），而 gate/apply/reconcile 都是精确断言 0/1。verify 恰好返回 1 这件事没有任何测试兜住，尽管它是 CI 的失败信号。",
+    "contract --write 是零测试的仓库内写操作（commands_misc.py:255-261），却写在 CONTRIBUTING.md:27-28 的日常工作流里；写错 section 或路径会直接改坏 SKILL.md/contract.md。",
+    "whyexist.__version__ 停在 2.23.0，落后真实的 2.92.0 且无人读取；“包版本”这个最自然的探测点给的是错答案。",
+    "argparse 的用法错误与 Reject 都是退出 2，但输出格式是两族（usage 文本 vs JSON），下游只能靠“能不能 json.loads”来区分。"
+  ],
+  "open_questions": [
+    "“只读命令零副作用”到底是公共契约，还是只为 verify 一个命令服务？答案决定 needs_db 继续手写，还是从契约的 WRITE_MODES 派生（并让 verify 交叉校验）。",
+    "仓库外有没有消费者 import wxg 拿 helper？没有的话，74 个无用导出可以全部删掉，只留 handler 注册表 + 8 个实际使用的函数；有的话需要先发兼容说明。",
+    "“错误一律 JSON”是硬契约吗？argparse 的用法错误永远不是 JSON；要不要把 stderr 统一包一层（或者接受两族格式并写进文档）。",
+    "退出码 1 现在同时表示“业务判定失败”（gate FAIL）和“未捕获异常”（连接失败），2 表示“可预期拒绝”。这个分界是有意的吗？如果是，连接失败应该算 2 还是 1？",
+    "成功输出的 indent=2 是否有人依赖（快照、文档粘贴、agent 解析）？若只是人读，统一到 jsonio.dumps 能消掉一套格式。",
+    "serve 恒返回 0 是否可接受？常驻控制器的失败只能从 JSON 里读；作为 CI 步骤它永远是绿。",
+    "是否允许 `from whyexist.cli import main` 这种库式调用？允许的话，cli.py:72 的 import wxg 必须挪进兜底，且 DEFAULT_ROOT 要改成调用时求值。",
+    "`--db-url` 改写进程环境变量不恢复：这是刻意的（让 handler 与 Engine 复用同一套读取逻辑），还是应该改成显式传参？"
+  ]
+}

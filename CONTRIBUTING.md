@@ -13,7 +13,7 @@ PYTHONUTF8=1 python scripts/wxg.py verify
 PYTHONUTF8=1 python -m unittest discover -s tests -v
 ```
 
-两条都必须是绿的（当前期望：`ok:true`，`Ran 42 tests ... OK`）。
+两条都必须是绿的（当前期望：`ok:true`，`Ran 104 tests ... OK`；MySQL/PostgreSQL 后端集成用例在未设对应环境变量时跳过）。
 
 ## 修改契约（重要）
 

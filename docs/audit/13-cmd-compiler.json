@@ -1,0 +1,981 @@
+{
+  "slice": "13-cmd-compiler",
+  "modules": [
+    {
+      "path": "scripts/whyexist/commands_compiler.py",
+      "loc": 387,
+      "role": "8 条编译器命令的 CLI 取数与组装：plan / brief / blind-check / cycles / patch / apply / impact / conflicts；判定逻辑全部下沉到 5 个纯函数模块"
+    },
+    {
+      "path": "scripts/whyexist/planner.py",
+      "loc": 143,
+      "role": "纯函数：按 level 选边、按 design kind 过滤节点，调 graph_algo 算 SCC/波次/最大反链/并行上限并写 bottleneck 文案"
+    },
+    {
+      "path": "scripts/whyexist/impact.py",
+      "loc": 217,
+      "role": "纯函数：反向/正向可达闭包、最短跳数 direct/indirect、断边后的可达损失、无向连通的 requirement 覆盖"
+    },
+    {
+      "path": "scripts/whyexist/cycles.py",
+      "loc": 285,
+      "role": "纯函数：把 SCC 展开成环内边与证据、枚举最小断边集合（组合枚举，≤20 边）、逐条断边建议与环形态/guidance"
+    },
+    {
+      "path": "scripts/whyexist/conflicts.py",
+      "loc": 80,
+      "role": "纯函数：feature 两两之间 target_ids 通配模式重叠与图上实际重叠节点检测"
+    }
+  ],
+  "public_surface": [
+    {
+      "entry": "wxg plan",
+      "kind": "cli",
+      "where": "scripts/wxg_contract.py:527",
+      "input": "--feature 必填；--level auto|design|code（默认 auto）；--include-unmapped",
+      "output": "stdout JSON：feature/level/node_count/edge_count/acyclic/cyclic_components/layers/layer_count/max_antichain/parallelism/bottleneck/dangling{unknown_endpoint,self_loop,duplicate}/excluded_unmapped/excluded_stale（显式 --level code 时加 hint）",
+      "side_effects": "只读；不写表、不建文件。WAL 下读取仍可能更新 -wal/-shm",
+      "exit_codes": "0 成功；2 feature 不存在/状态库未初始化/参数错误；作用域过滤后无节点时因 ValueError 退出 2（bug）"
+    },
+    {
+      "entry": "wxg brief",
+      "kind": "cli",
+      "where": "scripts/wxg_contract.py:563",
+      "input": "--work 必填；--out 可选",
+      "output": "stdout JSON（15 键：brief_version/blind/work_item/feature/role/kind/goal/acceptance/constraints/write_boundary/write_patterns/inputs/produces/forbidden/definition_of_done）；给了 --out 时只输出 {written, work_item}",
+      "side_effects": "只读；--out 时覆盖写目标文件（json.dumps ensure_ascii=False indent=2 + 换行），不建父目录",
+      "exit_codes": "0；2 工单不存在/参数错误/写文件 OSError（通用异常分支）"
+    },
+    {
+      "entry": "wxg blind-check",
+      "kind": "cli",
+      "where": "scripts/wxg_contract.py:570",
+      "input": "--work 必填；--result 必填（JSON 文件，含 nodes/edges）",
+      "output": "stdout JSON：work_item/verdict PASS|FAIL/locality(0-1)/boundary{ok,out_of_bounds}/contract{ok,unexpected_kinds,unknown_kinds,unknown_edge_kinds,malformed}/dependencies{ok,undeclared}",
+      "side_effects": "只读；不写库、不写文件；每次从库里重算任务书",
+      "exit_codes": "0（即使 verdict=FAIL）；2 工单不存在/结果文件缺失或不可解析/顶层非对象"
+    },
+    {
+      "entry": "wxg cycles",
+      "kind": "cli",
+      "where": "scripts/wxg_contract.py:545",
+      "input": "--feature 必填；--without 逗号分隔 src->dst；--break-set；--advise",
+      "output": "stdout JSON：feature/node_count/edge_count/without/cycle_count/cycles[]（members/shape/guidance/edges[]{src,dst,evidence}/self_loops[]）；--break-set 加 break_sets[]{size,edges,cost{lost_pairs,affected_count}} 与 truncated；--advise 加 advice[]{src,dst,in_break_set,lost_count,verdict} 与 truncated",
+      "side_effects": "只读；不写表、不建文件",
+      "exit_codes": "0；2 feature 不存在/--without 格式错或端点不在设计层"
+    },
+    {
+      "entry": "wxg patch",
+      "kind": "cli",
+      "where": "scripts/wxg_contract.py:577",
+      "input": "--work 必填（任意标签，不校验）；--result 必填；--out 必填",
+      "output": "stdout JSON：{written, work_item, nodes(数量), edges(数量)}；--out 文件为规范补丁 {work_item,nodes[],edges[]}",
+      "side_effects": "只写 --out 文件；不读也不写库（但命令仍要求状态库已初始化）",
+      "exit_codes": "0；2 结果文件缺失/不可解析/非对象、--out 不可写"
+    },
+    {
+      "entry": "wxg apply",
+      "kind": "cli",
+      "where": "scripts/wxg_contract.py:585",
+      "input": "--patches 逗号分隔补丁文件；--dry-run",
+      "output": "stdout JSON：ok/conflicts[]/unknown_endpoints[]/nodes[]/edges[]/applied/written_nodes/written_edges",
+      "side_effects": "ok 且非 dry-run 时写 nodes 与 edges（同一事务，先节点后边）；补丁节点带 feature_id 时额外写 feature_nodes；不写 work_items/evidence，不记 actor，不校验 token/target_ids",
+      "exit_codes": "0 成功或 dry-run 成功；1 合并冲突或有未知边端点；2 补丁缺失/不可解析/写库校验失败（Reject 或未捕获异常）"
+    },
+    {
+      "entry": "wxg impact",
+      "kind": "cli",
+      "where": "scripts/wxg_contract.py:592",
+      "input": "--feature 必填；--changed id 列表（逗号/JSON 数组/@文件）；--remove-edges 逗号分隔 src->dst；两个都给时 --remove-edges 静默优先",
+      "output": "--changed：feature/changed/affected/direct/indirect/affected_in_scope/cross_feature/depends_on/requirements/uncovered/closed；--remove-edges：feature/mode=remove-edges/removed[]/affected/requirements/uncovered/closed",
+      "side_effects": "只读；但会为全部 feature 各算一次作用域（cross_feature 所需）",
+      "exit_codes": "0（closed=false 也 0）；2 feature 不存在/两个 flag 都不给/--changed 空串或非数组"
+    },
+    {
+      "entry": "wxg conflicts",
+      "kind": "cli",
+      "where": "scripts/wxg_contract.py:609",
+      "input": "--features 逗号分隔（省略=全部）",
+      "output": "stdout JSON：features[]/coexist_ok/conflicts[]{a,b,overlapping_patterns,overlapping_nodes}",
+      "side_effects": "只读",
+      "exit_codes": "0（检出冲突也 0）；2 --features 里有不存在的 feature"
+    },
+    {
+      "entry": "planner.build_plan",
+      "kind": "function",
+      "where": "scripts/whyexist/planner.py:70",
+      "input": "nodes: list[str]、edge_rows: [(src,dst,kind)]、level、feature_id、node_kinds",
+      "output": "dict：level/node_count/edge_count/acyclic/cyclic_components/layers/layer_count/max_antichain/parallelism/bottleneck/dangling",
+      "side_effects": "无 IO；纯函数",
+      "exit_codes": "不适用；level 非法抛 ValueError；节点集为空时抛 ValueError（max() 空序列）"
+    },
+    {
+      "entry": "planner.select_edges",
+      "kind": "function",
+      "where": "scripts/whyexist/planner.py:48",
+      "input": "nodes、edge_rows、edge kind 白名单",
+      "output": "去重排序后的 (src,dst)，保留至少一端在作用域内的边",
+      "side_effects": "无",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "cycles.find_cycles",
+      "kind": "function",
+      "where": "scripts/whyexist/cycles.py:220",
+      "input": "nodes、edges、evidence_by_edge、removals",
+      "output": "list[dict]：members/shape/guidance/edges[]{src,dst,evidence}/self_loops[]",
+      "side_effects": "无",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "cycles.minimal_break_sets",
+      "kind": "function",
+      "where": "scripts/whyexist/cycles.py:34",
+      "input": "nodes、edges、limit(默认 10)",
+      "output": "dict：break_sets[]{size,edges}、edge_count、truncated",
+      "side_effects": "无；组合枚举，最坏 2^20 次 SCC",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "cycles.break_set_costs",
+      "kind": "function",
+      "where": "scripts/whyexist/cycles.py:84",
+      "input": "nodes、edges、break_sets",
+      "output": "list[dict]：edges/lost_pairs/affected_nodes/affected_count（CLI 只取 lost_pairs 与 affected_count）",
+      "side_effects": "无；每个集合重算一次传递闭包",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "cycles.advise_break_edges",
+      "kind": "function",
+      "where": "scripts/whyexist/cycles.py:120",
+      "input": "nodes、edges、lost_counts_by_edge",
+      "output": "dict：advice[]{src,dst,in_break_set,lost_count,verdict}、truncated",
+      "side_effects": "无；内部再次调用 find_cycles 与 minimal_break_sets",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "cycles.cycle_shape / cycle_guidance",
+      "kind": "function",
+      "where": "scripts/whyexist/cycles.py:184",
+      "input": "环成员 id 列表 / shape 字符串",
+      "output": "parent-child|sibling|self-loop 与对应中文 guidance（未知 shape 返回空串）",
+      "side_effects": "无",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "impact.build_impact",
+      "kind": "function",
+      "where": "scripts/whyexist/impact.py:160",
+      "input": "feature_id、scope、changed、edge_rows、node_kinds、all_scopes",
+      "output": "dict：changed/affected/direct/indirect/affected_in_scope/cross_feature/depends_on/requirements/uncovered/closed",
+      "side_effects": "无",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "impact.edge_removal_impact",
+      "kind": "function",
+      "where": "scripts/whyexist/impact.py:83",
+      "input": "nodes、edge_rows、removed_edges",
+      "output": "list[dict]：src/dst/lost_reachable/lost_count，按 (src,dst) 排序",
+      "side_effects": "无；每条断边重算一次传递闭包",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "impact.requirement_coverage",
+      "kind": "function",
+      "where": "scripts/whyexist/impact.py:115",
+      "input": "affected、all_edges、requirement_ids",
+      "output": "(requirements, uncovered) 两个集合",
+      "side_effects": "无",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "conflicts.detect_conflicts / patterns_overlap",
+      "kind": "function",
+      "where": "scripts/whyexist/conflicts.py:21",
+      "input": "features: {id: [pattern]}、existing_nodes；两个模式字符串",
+      "output": "features/coexist_ok/conflicts[]；bool",
+      "side_effects": "无",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "_brief_payload",
+      "kind": "function",
+      "where": "scripts/whyexist/commands_compiler.py:73",
+      "input": "conn、work_id",
+      "output": "briefing.build_brief 的完整任务书 dict；工单不存在时 Reject",
+      "side_effects": "只读；被 cmd_brief / cmd_blind_check / Engine.brief 共用",
+      "exit_codes": "不适用；异常由命令层转 2"
+    },
+    {
+      "entry": "Engine.plan / Engine.brief / Engine.blind_check / Engine.impact",
+      "kind": "function",
+      "where": "scripts/whyexist/engine.py:77",
+      "input": "root 或 db_url；feature/work/changed",
+      "output": "与 CLI 同名命令的 JSON 近似体；Engine.plan 缺 hint，Engine 无 cycles/patch/apply/conflicts",
+      "side_effects": "只读；db_url 时改写进程环境变量 WXG_DB_URL",
+      "exit_codes": "不适用；Reject 直接抛出（不是退出码）"
+    },
+    {
+      "entry": "nodes / edges 表",
+      "kind": "table",
+      "where": "scripts/whyexist/db.py:30",
+      "input": "id/kind/name/attrs_json/stale/unmapped；src/dst/kind/attrs_json",
+      "output": "图数据",
+      "side_effects": "plan/cycles/brief/blind-check/impact/conflicts 只读；apply 写 nodes 与 edges（含 x_evidence 读取）",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "features / feature_nodes / work_items 表",
+      "kind": "table",
+      "where": "scripts/whyexist/db.py:54",
+      "input": "generation、target_ids、claim_token、evidence_ids",
+      "output": "作用域与工单边界",
+      "side_effects": "切片内全部只读；apply 仅在补丁节点带 feature_id 时写 feature_nodes（不写 work_items）",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "<root>/graph.sqlite",
+      "kind": "file",
+      "where": "scripts/whyexist/db.py:458",
+      "input": "--root 或默认 ./.why-exist",
+      "output": "状态库",
+      "side_effects": "切片内命令都要求它已存在（cli.py:65-70），不会自动建库；apply 写库",
+      "exit_codes": "不适用"
+    },
+    {
+      "entry": "--out 任务书 / 补丁文件",
+      "kind": "file",
+      "where": "scripts/whyexist/commands_compiler.py:110",
+      "input": "brief --out、patch --out",
+      "output": "UTF-8 JSON（indent=2，末尾换行）",
+      "side_effects": "覆盖写，不建父目录、非原子",
+      "exit_codes": "不适用"
+    }
+  ],
+  "contracts": [
+    {
+      "id": "C1",
+      "statement": "wxg plan 只读：执行前后 12 张表内容不变。",
+      "evidence": ["tests/test_plan_cli.py:184-199", "scripts/whyexist/commands_compiler.py:23-70"],
+      "status": "covered",
+      "note": "快照只比表内容；WAL 模式下读仍可能触碰 -wal/-shm。"
+    },
+    {
+      "id": "C2",
+      "statement": "同一状态库上连续两次 wxg plan 输出逐字段相同（确定性）。",
+      "evidence": ["tests/test_plan_cli.py:196-199", "tests/test_planner.py:109-114"],
+      "status": "covered",
+      "note": "函数层还断言节点/边输入顺序反转后结果不变。"
+    },
+    {
+      "id": "C3",
+      "statement": "level=auto 时若有 depends 边走 design 层，否则回退 code 层，输出 level 标明实际层级。",
+      "evidence": ["tests/test_planner.py:41-54", "tests/test_plan_cli.py:201-210", "scripts/whyexist/planner.py:90-100"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C4",
+      "statement": "design 层只保留 component/port/pattern（给定 node_kinds 时），requirement 等不计入 node_count。",
+      "evidence": ["tests/test_plan_cli.py:150-182", "scripts/whyexist/planner.py:102-107"],
+      "status": "covered",
+      "note": "同一条 kind 过滤不适用于 code 层（见 C6）。"
+    },
+    {
+      "id": "C5",
+      "statement": "wxg plan --level design 在过滤后节点集为空时抛 ValueError，退出码 2，无结果 JSON。",
+      "evidence": ["scripts/whyexist/planner.py:114-118", "scripts/whyexist/cli.py:88-90"],
+      "status": "gap",
+      "note": "探针 docs/audit/_probe_13b.py：error 为 ValueError: max() iterable argument is empty。根因：layers==[] 通过了 is not None 判断后 max 空序列。裸 feature 与全代码节点 feature 都会踩到。"
+    },
+    {
+      "id": "C6",
+      "statement": "code 层不做节点 kind 过滤：requirement/use_case 等设计节点也计入 node_count、layers 与反链。",
+      "evidence": ["scripts/whyexist/planner.py:99-109", "docs/audit/_probe_13c.py"],
+      "status": "gap",
+      "note": "探针：裸 feature --level code 返回 node_count=1（只有 requirement 节点）；include-unmapped 场景 node_count=5 含 2 个 unmapped operation。"
+    },
+    {
+      "id": "C7",
+      "statement": "显式 --level code 且作用域内没有代码层节点时，plan 结果带 hint 文案。",
+      "evidence": ["tests/test_plan_cli.py:769-774", "scripts/whyexist/commands_compiler.py:61-69"],
+      "status": "covered",
+      "note": "auto 回退到 code 的空作用域不带 hint；hint 的 kind 白名单是字面量，与 NODE_KINDS 契约脱钩。"
+    },
+    {
+      "id": "C8",
+      "statement": "plan 默认排除 unmapped 节点并返回 excluded_unmapped；--include-unmapped 时计数为 0 且节点纳入统计。",
+      "evidence": ["tests/test_plan_cli.py:525-535", "scripts/whyexist/commands_compiler.py:28-37"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C9",
+      "statement": "plan 排除 stale 节点并返回 excluded_stale 计数。",
+      "evidence": ["scripts/whyexist/commands_compiler.py:38-45"],
+      "status": "gap",
+      "note": "探针 _probe_13c：stale=1 后 excluded_stale=1、node_count 减 1；仓库里没有任何用 stale 夹具测 plan 的用例。"
+    },
+    {
+      "id": "C10",
+      "statement": "排除 unmapped/stale 后，它们关联的边仍留在待分析边集里，被报成 dangling.unknown_endpoint。",
+      "evidence": ["scripts/whyexist/commands_compiler.py:28-47", "scripts/whyexist/planner.py:48-67", "docs/audit/_probe_13b.py"],
+      "status": "gap",
+      "note": "探针：默认 plan 在扫描图上 edge_count=0、dangling 2 条（len/max）；--include-unmapped 后 edge_count=2、dangling=0。噪声从 node_count 转移到 dangling，容易被读成“没有依赖”。"
+    },
+    {
+      "id": "C11",
+      "statement": "无环时 layers/layer_count 有值，parallelism=max_antichain，bottleneck 文案含“最大反链”与层数/最宽。",
+      "evidence": ["tests/test_planner.py:67-75", "tests/test_planner.py:85-90", "scripts/whyexist/planner.py:113-118"],
+      "status": "covered",
+      "note": "文案是契约的一部分（下游/文档在引用），不是纯装饰。"
+    },
+    {
+      "id": "C12",
+      "statement": "有环时 layers=null、cyclic_components 列出 SCC、parallelism 为最大环大小、bottleneck 文案含“最大环”。",
+      "evidence": ["tests/test_planner.py:77-83", "tests/test_plan_cli.py:212-228", "scripts/whyexist/graph_algo.py:366-380"],
+      "status": "covered",
+      "note": "parallelism 的环场景数值只在 graph_algo 层断言过；planner/CLI 只断言文案与 layers。"
+    },
+    {
+      "id": "C13",
+      "statement": "只有自环时 acyclic=false、layers=null、bottleneck 说“单点自环”，parallelism 退回 max_antichain。",
+      "evidence": ["tests/test_planner.py:99-101", "scripts/whyexist/graph_algo.py:374-379"],
+      "status": "partial",
+      "note": "bottleneck 与 layers 有断言；parallelism 的退回值没有测试。"
+    },
+    {
+      "id": "C14",
+      "statement": "悬空边按三类报告：unknown_endpoint / self_loop / duplicate，不静默丢事实。",
+      "evidence": ["tests/test_planner.py:103-107", "scripts/whyexist/planner.py:138-142", "scripts/whyexist/graph_algo.py:57-85"],
+      "status": "partial",
+      "note": "只有 unknown_endpoint 在 plan 层被断言；self_loop 与 duplicate 两个键在任何 plan 测试里都没出现（graph_algo 层测的是 normalize 的 dropped）。"
+    },
+    {
+      "id": "C15",
+      "statement": "plan 输出键集合固定：feature/level/node_count/edge_count/acyclic/cyclic_components/layers/layer_count/max_antichain/parallelism/bottleneck/dangling，命令层再加 excluded_unmapped/excluded_stale（可选 hint）。",
+      "evidence": ["scripts/whyexist/planner.py:126-143", "scripts/whyexist/commands_compiler.py:59-69", "tests/test_plan_cli.py:166-182"],
+      "status": "partial",
+      "note": "没有一份整形状断言；layer_count、dangling 三键、bottleneck 的完整文本都靠零散断言。"
+    },
+    {
+      "id": "C16",
+      "statement": "plan 对不存在的 feature 给 Reject：stderr 输出 {error}，退出码 2。",
+      "evidence": ["tests/test_plan_cli.py:260-263", "scripts/whyexist/cli.py:85-90"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C17",
+      "statement": "Engine.plan 与 wxg plan 输出同一份契约。",
+      "evidence": ["tests/test_engine.py:82-88", "scripts/whyexist/engine.py:77-113"],
+      "status": "partial",
+      "note": "已漂移：Engine.plan 缺 hint（探针）；实现是 cmd_plan 的复制而不是同一函数。"
+    },
+    {
+      "id": "C18",
+      "statement": "wxg brief 只读，返回 blind=true 的固定 15 键任务书；通过 Engine.brief 取到同一份 payload。",
+      "evidence": ["tests/test_briefing.py:122-139", "tests/test_plan_cli.py:230-253", "tests/test_engine.py:90-99", "scripts/whyexist/commands_compiler.py:89-104"],
+      "status": "covered",
+      "note": "Engine 分支只断言 blind 与 write_patterns，没有全量对照。"
+    },
+    {
+      "id": "C19",
+      "statement": "write_boundary = target_ids（支持尾部 *）对 feature 作用域节点展开后的排序去重集合；work-seed 加入的 requirement 节点也在其中。",
+      "evidence": ["tests/test_briefing.py:38-61", "tests/test_plan_cli.py:246-249", "scripts/whyexist/briefing.py:62-69"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C20",
+      "statement": "inputs 只含边界内节点的一跳依赖目标（depends/calls/reads/writes）且目标在边界外；不传递、不采信非依赖边。",
+      "evidence": ["tests/test_briefing.py:84-120", "scripts/whyexist/briefing.py:28", "scripts/whyexist/briefing.py:95-100"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C21",
+      "statement": "produces 由工单 kind 查表决定；未知 kind 为空列表。",
+      "evidence": ["tests/test_briefing.py:141-168", "scripts/whyexist/briefing.py:31-40"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C22",
+      "statement": "wxg brief --out 把任务书写成 JSON 文件（ensure_ascii=False、indent=2、末尾换行），stdout 只返回 {written, work_item}。",
+      "evidence": ["scripts/whyexist/commands_compiler.py:110-116"],
+      "status": "gap",
+      "note": "探针确认文件与返回；--out 分支没有任何测试。"
+    },
+    {
+      "id": "C23",
+      "statement": "brief 对不存在的工单给 Reject，退出码 2。",
+      "evidence": ["tests/test_plan_cli.py:255-258", "scripts/whyexist/commands_compiler.py:76-79"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C24",
+      "statement": "brief --out 指向不可写路径时抛 OSError，经通用异常分支变成退出码 2，error 文案前缀是 OSError: 而不是 Reject 文案。",
+      "evidence": ["scripts/whyexist/cli.py:88-90", "scripts/whyexist/commands_compiler.py:110-114"],
+      "status": "gap",
+      "note": "探针确认；写文件不是原子操作，失败可能留下半截文件（未验证）。"
+    },
+    {
+      "id": "C25",
+      "statement": "blind-check 的 verdict=PASS 要求 boundary/contract/dependencies 三项全 ok；locality 是 0-1 的加权分。",
+      "evidence": ["tests/test_blind.py:35-53", "scripts/whyexist/blind.py:81-107"],
+      "status": "covered",
+      "note": "locality 的精确值只测了干净输出的 1.0；扣分公式（0.4/0.3 权重）没有逐项断言。"
+    },
+    {
+      "id": "C26",
+      "statement": "越界节点进 out_of_bounds、未声明依赖端点进 undeclared，二者都使 verdict=FAIL。",
+      "evidence": ["tests/test_blind.py:59-87", "tests/test_plan_cli.py:294-321"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C27",
+      "statement": "produces 只约束新建节点；更新写入边界内的已有节点不重判产出 kind。",
+      "evidence": ["tests/test_blind.py:88-97", "scripts/whyexist/blind.py:63"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C28",
+      "statement": "未知节点 kind、未知边 kind、畸形条目都使 contract.ok=false 并计入 FAIL。",
+      "evidence": ["tests/test_blind.py:99-114", "scripts/whyexist/blind.py:65-79"],
+      "status": "partial",
+      "note": "函数层用自造 known 列表；CLI 是否真的传 C.NODE_KINDS/C.EDGE_KINDS 只有间接覆盖（test_plan_cli.py:266-292 的 component 通过）。"
+    },
+    {
+      "id": "C29",
+      "statement": "产出文件缺失/不可解析/顶层非 JSON 对象时给 Reject，退出码 2。",
+      "evidence": ["tests/test_plan_cli.py:323-334", "scripts/whyexist/commands_compiler.py:123-131"],
+      "status": "partial",
+      "note": "只有“文件不存在”有测试；不可解析与顶层非对象无测试（探针确认数组输入退出 2）。"
+    },
+    {
+      "id": "C30",
+      "statement": "blind-check verdict=FAIL 时进程退出码仍为 0，不参与 CI 门禁。",
+      "evidence": ["tests/test_plan_cli.py:317-321", "scripts/whyexist/cli.py:94-113"],
+      "status": "partial",
+      "note": "测试的 expect=0 隐含断言；文档未写。想用 blind-check 拦门只能解析 stdout 的 verdict。"
+    },
+    {
+      "id": "C31",
+      "statement": "blind-check 在检查时从库里重新生成任务书，而不是使用执行者当初拿到的那份。",
+      "evidence": ["scripts/whyexist/commands_compiler.py:122"],
+      "status": "gap",
+      "note": "无测试。工单边界事后被 work-open 合并或 feature 换代后，旧产出会按新边界裁决。"
+    },
+    {
+      "id": "C32",
+      "statement": "空产出（无 nodes/edges）判定 PASS、locality=1.0。",
+      "evidence": ["tests/test_blind.py:128-131"],
+      "status": "covered",
+      "note": "与“什么都没做也算通过”同义，属于结构性盲区。"
+    },
+    {
+      "id": "C33",
+      "statement": "cycles 只分析作用域内、非 stale、kind=component/port/pattern 节点之间的 depends 边。",
+      "evidence": ["scripts/whyexist/commands_compiler.py:143-168"],
+      "status": "partial",
+      "note": "测试只用 component + depends；port/pattern 白名单、非 depends 过滤、stale 排除都没有用例。"
+    },
+    {
+      "id": "C34",
+      "statement": "cycles 输出 feature/node_count/edge_count/without/cycle_count/cycles[]，每个环带 members/shape/guidance/edges(evidence)/self_loops。",
+      "evidence": ["scripts/whyexist/commands_compiler.py:181-188", "scripts/whyexist/cycles.py:256-284", "tests/test_plan_cli.py:684-701"],
+      "status": "partial",
+      "note": "CLI 只断言 members 与 edges 数量；shape/guidance 只在纯函数层测过；x_evidence 从 edges.attrs_json 到输出的通路无测试。"
+    },
+    {
+      "id": "C35",
+      "statement": "无环 feature 上 cycles 返回 cycle_count=0、cycles=[]。",
+      "evidence": ["tests/test_plan_cli.py:821-835"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C36",
+      "statement": "--without 在分析前剔除指定依赖边，返回排序后的 without 列表，cycle_count 随之变化；格式错或端点不在设计层时 Reject 退出 2。",
+      "evidence": ["tests/test_plan_cli.py:703-721", "scripts/whyexist/commands_compiler.py:170-179"],
+      "status": "partial",
+      "note": "合法路径有测试；两条 Reject 路径只在探针里验证过。"
+    },
+    {
+      "id": "C37",
+      "statement": "--break-set 按边数从小到大枚举最小断边集合，每项带 evidence 与 cost{lost_pairs,affected_count}。",
+      "evidence": ["tests/test_plan_cli.py:803-819", "tests/test_cycles.py:57-132", "scripts/whyexist/commands_compiler.py:189-210"],
+      "status": "partial",
+      "note": "代价计算只在纯函数层断言；CLI 层没断言 cost 字段。evidence 在 CLI 测试里恒为空数组。"
+    },
+    {
+      "id": "C38",
+      "statement": "--break-set 与 --advise 不受 --without 影响：组合使用时 break_sets/advice 仍基于未移除的图。",
+      "evidence": ["scripts/whyexist/commands_compiler.py:189-230"],
+      "status": "gap",
+      "note": "探针：--without a->b 后 cycle_count=0，但 break_sets 仍返回两条 a<->b 断边，advice 两条都 preferred、lost_count=0。组合语义自相矛盾。"
+    },
+    {
+      "id": "C39",
+      "statement": "--advise 把环内边分三档 preferred/acceptable/avoid，按 verdict→lost_count→(src,dst) 排序。",
+      "evidence": ["tests/test_plan_cli.py:782-801", "tests/test_cycles.py:97-116", "scripts/whyexist/cycles.py:150-172"],
+      "status": "covered",
+      "note": "无环时 advice 为空列表（无测试，但代码路径简单）。"
+    },
+    {
+      "id": "C40",
+      "statement": "最小断边集合枚举的边界：非自环边 >20 条时 truncated=true 且 break_sets=[]；每个 size 档最多返回 10 组，超出静默截断。",
+      "evidence": ["scripts/whyexist/cycles.py:24", "scripts/whyexist/cycles.py:50-55", "scripts/whyexist/cycles.py:73-79", "tests/test_cycles.py:90-94"],
+      "status": "partial",
+      "note": "只有 >20 的截断有测试。探针：6 组二点环（12 条边）返回 10 组、truncated=false，实际最小集合 924 组——调用方无法知道结果不完整。"
+    },
+    {
+      "id": "C41",
+      "statement": "自环单独成环（edges 为空、self_loops 非空），其最小断边集合就是自环本身；环形态 parent-child/sibling 由 component id 前缀判断，guidance 随形态给出。",
+      "evidence": ["tests/test_cycles.py:40-45", "tests/test_cycles.py:85-88", "tests/test_cycles.py:135-169", "scripts/whyexist/cycles.py:176-217"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C42",
+      "statement": "cycles 输出中的 truncated 键只在带 --break-set 或 --advise 时出现。",
+      "evidence": ["scripts/whyexist/commands_compiler.py:210", "scripts/whyexist/commands_compiler.py:229-230"],
+      "status": "gap",
+      "note": "输出形状随 flag 变化；没有测试断言默认输出不含 truncated。"
+    },
+    {
+      "id": "C43",
+      "statement": "patch 把一次执行产出规范成 {work_item,nodes[],edges[]}：节点按 id 去重保留首个、边按三元组去重排序，写到 --out。",
+      "evidence": ["tests/test_reducer.py:28-56", "scripts/whyexist/commands_compiler.py:246-256"],
+      "status": "partial",
+      "note": "规范化规则只在纯函数层测；CLI 测试把 patch 当夹具，没有断言 --out 文件内容。"
+    },
+    {
+      "id": "C44",
+      "statement": "patch 不校验 --work 是否存在于 work_items，任意标签都接受并写进补丁。",
+      "evidence": ["tests/test_plan_cli.py:480-481", "scripts/whyexist/commands_compiler.py:246"],
+      "status": "partial",
+      "note": "测试用 w1/w2 隐含覆盖；文档没写。"
+    },
+    {
+      "id": "C45",
+      "statement": "patch 的 --result 缺失/不可解析/非对象时 Reject 退出 2；--out 不可写时走通用异常退出 2。",
+      "evidence": ["scripts/whyexist/commands_compiler.py:237-250"],
+      "status": "gap",
+      "note": "与 blind-check 同构但没有任何专门用例。"
+    },
+    {
+      "id": "C46",
+      "statement": "apply 在合并冲突或未知边端点时返回 ok=false、退出码 1、不写库。",
+      "evidence": ["tests/test_plan_cli.py:459-491", "tests/test_reducer.py:82-122", "scripts/whyexist/commands_compiler.py:278-282"],
+      "status": "covered",
+      "note": "冲突有 CLI 测试；未知端点只有纯函数测试。"
+    },
+    {
+      "id": "C47",
+      "statement": "apply --dry-run 只合并与校验：applied=false、written_nodes=0、written_edges=0、不写库。",
+      "evidence": ["tests/test_plan_cli.py:493-515", "scripts/whyexist/commands_compiler.py:280-282"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C48",
+      "statement": "apply 成功时先写全部节点再写全部边，返回 applied=true 与 written_nodes/written_edges。",
+      "evidence": ["tests/test_plan_cli.py:414-457", "scripts/whyexist/commands_compiler.py:284-294"],
+      "status": "covered",
+      "note": "只断言两个节点落库；边的写入结果没有断言。"
+    },
+    {
+      "id": "C49",
+      "statement": "apply 中途写库校验失败时不留下半截状态（同一事务回滚）。",
+      "evidence": ["scripts/whyexist/commands_compiler.py:284-287", "scripts/whyexist/cli.py:83-84"],
+      "status": "gap",
+      "note": "探针：合法节点 + 非法 applies 边 → 退出 2，节点未落库。没有任何测试覆盖半写/回滚；MySQL/PG 后端下依赖连接断开回滚，同样无测试。"
+    },
+    {
+      "id": "C50",
+      "statement": "apply 不要求 claim_token/角色，也不校验 target_ids 写边界。",
+      "evidence": ["scripts/whyexist/commands_compiler.py:259-295", "SKILL.md:450"],
+      "status": "partial",
+      "note": "文档只承认绕过 target_ids；token/角色完全没有提及，也没有测试。与 upsert-node 的写入契约（graph.py 命令层要 token+role+require_targets）相反。"
+    },
+    {
+      "id": "C51",
+      "statement": "apply 不写 feature_nodes（除非补丁节点自带 feature_id）、不追加 work_items.evidence_ids、不记录 actor。",
+      "evidence": ["scripts/whyexist/commands_compiler.py:284-294", "scripts/whyexist/graph.py:130-132"],
+      "status": "gap",
+      "note": "探针：节点带 feature_id 时确实插入 feature_nodes；不带时节点游离。无测试。"
+    },
+    {
+      "id": "C52",
+      "statement": "apply 把补丁节点的其余字段透传给 upsert_node：origin/unmapped/feature_id 生效，stale 被 upsert_node 强制写成 0。",
+      "evidence": ["scripts/whyexist/commands_compiler.py:284-287", "scripts/whyexist/graph.py:106-119"],
+      "status": "gap",
+      "note": "探针：origin=derived、unmapped=1、feature_id=feat-d、stale=1→0 全部生效。可绕过 promote 的 origin 语义，也能把节点挂进任意 feature。"
+    },
+    {
+      "id": "C53",
+      "statement": "apply 只在补丁之间比较节点内容；与库中已有节点的覆盖不产生冲突、不留审计。",
+      "evidence": ["scripts/whyexist/reducer.py:55-102"],
+      "status": "gap",
+      "note": "existing_ids 只用于边端点已知性；内容冲突仅比 patches 之间。后写覆盖先写是静默的。"
+    },
+    {
+      "id": "C54",
+      "statement": "apply 的 --patches 为空、补丁文件缺失/不可解析/非对象时 Reject 退出 2。",
+      "evidence": ["scripts/whyexist/commands_compiler.py:262-276"],
+      "status": "partial",
+      "note": "空列表探针退出 2；其余路径无测试。"
+    },
+    {
+      "id": "C55",
+      "statement": "apply 的退出码：合并失败 1、参数/解析/写库校验失败 2、成功或 dry-run 成功 0。",
+      "evidence": ["scripts/whyexist/cli.py:100-102", "tests/test_plan_cli.py:448-451", "tests/test_plan_cli.py:483-486"],
+      "status": "partial",
+      "note": "0/1 有断言；校验失败 2 只在探针里观察过。"
+    },
+    {
+      "id": "C56",
+      "statement": "impact --changed 输出反向可达 affected、正向 depends_on、以及按最短跳数拆的 direct/indirect。",
+      "evidence": ["tests/test_impact.py:42-116", "tests/test_plan_cli.py:360-379", "scripts/whyexist/impact.py:181-191"],
+      "status": "partial",
+      "note": "纯函数全覆盖；CLI 只断言 affected 与 closed，没断言 direct/indirect/depends_on。"
+    },
+    {
+      "id": "C57",
+      "statement": "requirement 覆盖用无向连通判断，命中任意 requirement 即算覆盖；requirement 节点本身直接计入。",
+      "evidence": ["tests/test_impact.py:79-102", "scripts/whyexist/impact.py:115-135"],
+      "status": "covered",
+      "note": "requirement_ids 来自全图（不限本 feature），跨 feature 的 requirement 也能让 closed=true。"
+    },
+    {
+      "id": "C58",
+      "statement": "closed=false 的节点列在 uncovered；closed=true 表示没有 uncovered。",
+      "evidence": ["tests/test_impact.py:93-97", "tests/test_plan_cli.py:360-379", "scripts/whyexist/impact.py:194-216"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C59",
+      "statement": "cross_feature 列出作用域外的受影响节点及其所属 feature。",
+      "evidence": ["tests/test_impact.py:104-116", "scripts/whyexist/impact.py:196-203"],
+      "status": "partial",
+      "note": "CLI 层没有测试（需要第二个 feature 的作用域）；all_scopes 的构造只在 Engine/CLI 取数层。"
+    },
+    {
+      "id": "C60",
+      "statement": "非依赖边（satisfies/associates/contains）不传播影响，但参与需求覆盖判断。",
+      "evidence": ["tests/test_impact.py:118-121", "tests/test_impact.py:80-83", "scripts/whyexist/impact.py:174-177"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C61",
+      "statement": "--remove-edges 输出 mode=remove-edges 与 removed[]{src,dst,lost_reachable,lost_count}/affected/requirements/uncovered/closed；lost_reachable 是断前可达减断后可达。",
+      "evidence": ["tests/test_plan_cli.py:838-861", "tests/test_impact.py:134-149", "scripts/whyexist/commands_compiler.py:314-345"],
+      "status": "covered",
+      "note": "只测了链式单边；替代路径（不丢可达）只在纯函数层测。"
+    },
+    {
+      "id": "C62",
+      "statement": "--remove-edges 不校验端点是否存在：未知边的 lost_reachable=[]、lost_count=0、closed=true。",
+      "evidence": ["scripts/whyexist/commands_compiler.py:315-324", "scripts/whyexist/impact.py:96-103"],
+      "status": "gap",
+      "note": "探针确认；无测试。写错 id 会被当成“断边无影响”。"
+    },
+    {
+      "id": "C63",
+      "statement": "同时给 --changed 与 --remove-edges 时 remove-edges 静默优先，--changed 被忽略且不报参数冲突。",
+      "evidence": ["scripts/whyexist/commands_compiler.py:314-348", "scripts/wxg_contract.py:599"],
+      "status": "gap",
+      "note": "帮助文本写“与 --remove-edges 二选一”，代码没有互斥校验；探针返回 mode=remove-edges。"
+    },
+    {
+      "id": "C64",
+      "statement": "impact 不校验 --changed 里的节点是否存在，任意 id 原样进入 changed/affected。",
+      "evidence": ["tests/test_plan_cli.py:735-739"],
+      "status": "covered",
+      "note": "测试正是用图里不存在的 a:b,c:d 断言原样返回——这条行为被显式固化了。"
+    },
+    {
+      "id": "C65",
+      "statement": "两个 flag 都不给 → Reject 退出 2；--changed 空串 → Reject 2；--changed 非数组 JSON → Reject 2。",
+      "evidence": ["scripts/whyexist/commands_compiler.py:347-351", "tests/test_plan_cli.py:741-744", "tests/test_plan_cli.py:381-385"],
+      "status": "partial",
+      "note": "空串与非数组有测试；“两个都不给”的 Reject 无测试。"
+    },
+    {
+      "id": "C66",
+      "statement": "--changed 支持逗号分隔、JSON 数组与 @文件三种写法。",
+      "evidence": ["scripts/whyexist/jsonio.py:load_id_list", "tests/test_plan_cli.py:735-739", "tests/test_plan_cli.py:381-385"],
+      "status": "partial",
+      "note": "@文件只探针验证过，无用例；load_id_list 本身没有测试文件。"
+    },
+    {
+      "id": "C67",
+      "statement": "impact 只读。",
+      "evidence": ["scripts/whyexist/commands_compiler.py:298-359"],
+      "status": "gap",
+      "note": "没有像 plan 那样的执行前后全表快照断言；只读性靠代码审查。"
+    },
+    {
+      "id": "C68",
+      "statement": "conflicts 两两比较当前代 work_items 的 target_ids，模式重叠即冲突，返回 features/coexist_ok/conflicts[a,b,overlapping_patterns,overlapping_nodes]。",
+      "evidence": ["tests/test_conflicts.py:36-82", "tests/test_plan_cli.py:387-411", "scripts/whyexist/commands_compiler.py:374-385"],
+      "status": "covered",
+      "note": "overlapping_patterns 的排序断言在 test_conflicts.py:54；重叠节点要求同时匹配双方模式。"
+    },
+    {
+      "id": "C69",
+      "statement": "模式重叠在图上尚无节点时也算冲突。",
+      "evidence": ["tests/test_conflicts.py:57-62", "scripts/whyexist/conflicts.py:47-75"],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C70",
+      "statement": "通配语义只有尾部 *：嵌套前缀算重叠，互不为前缀不算；单个 feature 不与自己冲突，空集合 coexist_ok=true。",
+      "evidence": ["tests/test_conflicts.py:15-33", "tests/test_conflicts.py:75-82", "scripts/whyexist/conflicts.py:14-39"],
+      "status": "covered",
+      "note": "只有尾部 * 与 work.require_targets/scope_ids 一致；中途 * 会被当成普通字符。"
+    },
+    {
+      "id": "C71",
+      "statement": "--features 只检查给定 feature；其中有不存在的 feature 时 Reject 退出 2。",
+      "evidence": ["scripts/whyexist/commands_compiler.py:369-375"],
+      "status": "gap",
+      "note": "探针：--features feat-c,feat-d 正常、未知 feature 退出 2；无测试。"
+    },
+    {
+      "id": "C72",
+      "statement": "conflicts 只看当前代的 work_items，且不过滤 status：已完成/已判定的工单边界仍参与比较。",
+      "evidence": ["scripts/whyexist/commands_compiler.py:376-379"],
+      "status": "gap",
+      "note": "无测试；测试夹具只有 ready 单。旧单 target_ids 会把已交付区域继续算成冲突。"
+    },
+    {
+      "id": "C73",
+      "statement": "检出冲突时退出码仍为 0（只报告，不拦门）。",
+      "evidence": ["tests/test_plan_cli.py:394-399", "scripts/whyexist/cli.py:94-113", "SKILL.md:370"],
+      "status": "partial",
+      "note": "测试 expect=0 隐含；文档明确“只报告，不拦门”。"
+    },
+    {
+      "id": "C74",
+      "statement": "切片的参数错误统一走 Reject：stdout 空、stderr 输出 {error}、退出码 2；未捕获异常同样退出 2 但 error 是 TypeName: msg。",
+      "evidence": ["scripts/whyexist/cli.py:85-90"],
+      "status": "partial",
+      "note": "切片内只对 plan/brief/impact 的少数错误分支有断言；argparse 的 choices/required 错误输出 usage 文本而非 JSON。"
+    },
+    {
+      "id": "C75",
+      "statement": "状态库未初始化时切片内命令不建库，直接退出 2。",
+      "evidence": ["scripts/whyexist/cli.py:65-70"],
+      "status": "covered",
+      "note": "由 test_wxg.py 的只读命令用例覆盖（跨切片证据，不属于本片测试文件）。"
+    }
+  ],
+  "state_io": [
+    {"target": "graph.sqlite:features", "mode": "read", "where": "scripts/whyexist/workflow.py:25-34"},
+    {"target": "graph.sqlite:feature_nodes", "mode": "read", "where": "scripts/whyexist/workflow.py:104-109"},
+    {"target": "graph.sqlite:nodes", "mode": "read", "where": "scripts/whyexist/commands_compiler.py:28-32"},
+    {"target": "graph.sqlite:nodes", "mode": "write", "where": "scripts/whyexist/commands_compiler.py:284-287"},
+    {"target": "graph.sqlite:edges", "mode": "read", "where": "scripts/whyexist/commands_compiler.py:46-47"},
+    {"target": "graph.sqlite:edges", "mode": "write", "where": "scripts/whyexist/commands_compiler.py:286-287"},
+    {"target": "graph.sqlite:edges.attrs_json(x_evidence)", "mode": "read", "where": "scripts/whyexist/commands_compiler.py:160-168"},
+    {"target": "graph.sqlite:work_items", "mode": "read", "where": "scripts/whyexist/commands_compiler.py:73-104"},
+    {"target": "graph.sqlite:work_items.target_ids", "mode": "read", "where": "scripts/whyexist/commands_compiler.py:376-379"},
+    {"target": "graph.sqlite:feature_nodes", "mode": "write", "where": "scripts/whyexist/graph.py:130-132"},
+    {"target": "<root>/graph.sqlite（连接与 PRAGMA）", "mode": "read", "where": "scripts/whyexist/db.py:458-465"},
+    {"target": "env:WXG_DB_URL", "mode": "both", "where": "scripts/whyexist/cli.py:55-56"},
+    {"target": "env:WXG_DB_URL（Engine）", "mode": "write", "where": "scripts/whyexist/engine.py:47-48"},
+    {"target": "--out 任务书文件（brief）", "mode": "write", "where": "scripts/whyexist/commands_compiler.py:110-114"},
+    {"target": "--out 补丁文件（patch）", "mode": "write", "where": "scripts/whyexist/commands_compiler.py:246-250"},
+    {"target": "--result 执行产出（blind-check/patch）", "mode": "read", "where": "scripts/whyexist/commands_compiler.py:123-129"},
+    {"target": "cwd 默认根 .why-exist", "mode": "read", "where": "scripts/whyexist/cli.py:16"}
+  ],
+  "redundancy": [
+    {
+      "item": "Engine.plan 与 cmd_plan 两份取数+过滤逻辑",
+      "signal": "scripts/whyexist/commands_compiler.py:23-70 与 scripts/whyexist/engine.py:77-113 几乎逐行相同；已漂移：Engine 版没有 hint。",
+      "confidence": "high"
+    },
+    {
+      "item": "target_ids 通配匹配规则 6 份实现",
+      "signal": "blind.py:21-25、briefing.py:56-59、conflicts.py:14-39、query.py:19-25、work.py:80-85、workflow.py:117-122 各写一遍“尾部 * = 前缀匹配”。",
+      "confidence": "high"
+    },
+    {
+      "item": "依赖边 kind 集合多处定义",
+      "signal": "planner.DESIGN_EDGE_KINDS/CODE_EDGE_KINDS（planner.py:32-35）、briefing.DEPENDENCY_EDGE_KINDS（briefing.py:28，被 impact.py:19 反向依赖）、gates.CODE_EDGE_KINDS（gates.py:124）、derive.DEPENDENCY_EDGE_KINDS（derive.py:23）。",
+      "confidence": "high"
+    },
+    {
+      "item": "设计层节点 kind 三元组重复",
+      "signal": "planner.DESIGN_NODE_KINDS（planner.py:38）与 commands_compiler.py:156 的字面量 (component, port, pattern) 各一份；hint 又用第三份 code kind 字面量（commands_compiler.py:64）。",
+      "confidence": "high"
+    },
+    {
+      "item": "编译器命令 re-export 兼容层",
+      "signal": "commands_gates.py:33-44 与 commands_repo.py:708-719 重复导出 _brief_payload/cmd_apply/.../cmd_plan，但 wxg.py:108-118 直接从 commands_compiler 导入，没有任何调用方使用这两份转口。",
+      "confidence": "high"
+    },
+    {
+      "item": "--advise 重复计算环与断边集合",
+      "signal": "cmd_cycles 已算 find_cycles（commands_compiler.py:180），--advise 分支又在 cycles.advise_break_edges 内部再算 find_cycles 与 minimal_break_sets（cycles.py:135、143）；同时带 --break-set 时 minimal_break_sets 被执行两次。",
+      "confidence": "high"
+    },
+    {
+      "item": "纯函数返回值没人消费",
+      "signal": "break_set_costs 返回 affected_nodes（cycles.py:113）但 CLI 只取 lost_pairs/affected_count（commands_compiler.py:203-207）；minimal_break_sets 返回 edge_count（cycles.py:49/55/78）CLI 从不读。",
+      "confidence": "high"
+    },
+    {
+      "item": "cmd_impact 在 remove-edges 分支白算全部 feature 作用域",
+      "signal": "commands_compiler.py:311-312 无条件构造 all_scopes，remove-edges 分支（314-345）完全不用它。",
+      "confidence": "high"
+    },
+    {
+      "item": "cmd_conflicts 每个 feature 查两次 ensure_feature",
+      "signal": "commands_compiler.py:371-372 先校验一遍，374-375 再 ensure_feature 一遍取 generation。",
+      "confidence": "high"
+    },
+    {
+      "item": "cmd_plan 重复扫描 nodes 表",
+      "signal": "commands_compiler.py:28-32、38-43、48-51 三次全表读；每次 scope_ids 还要再读一遍 nodes（workflow.py:97）。",
+      "confidence": "medium"
+    },
+    {
+      "item": "test_plan_cli.py 越界收纳非 plan 测试",
+      "signal": "865 行/39 个用例里只有约 24 个属于本片；up/derive/promote/gate/import/feature-status 的夹具与 test_wxg.py 重复（文件头注释自认是复制夹具）。",
+      "confidence": "high"
+    },
+    {
+      "item": "plan 的 dangling 自环/重复键无任何断言",
+      "signal": "planner.py:138-142 输出三个键，测试只用到 unknown_endpoint（tests/test_planner.py:103-107）；self_loop/duplicate 形同未验证的装饰字段。",
+      "confidence": "medium"
+    },
+    {
+      "item": "cycles 自己实现 _has_cycle",
+      "signal": "cycles.py:27-31 用 SCC 重写环检测，graph_algo 里已有 _cyclic_components（graph_algo.py:157-166）与 CyclicGraph 语义。",
+      "confidence": "medium"
+    },
+    {
+      "item": "layer_count 与 len(layers) 同源重复",
+      "signal": "planner.py:134 输出 layer_count = len(layers)，layers 本身也在输出里。",
+      "confidence": "low"
+    }
+  ],
+  "rewrite_partition": [
+    {
+      "module": "scripts/whyexist/planner.py",
+      "verdict": "refactor_in_place",
+      "reason": "契约清楚（层级选择、bottleneck 文案、dangling 三键），纯函数、有 13 条函数级测试，不值得重写；但必须先修空节点集崩溃（planner.py:114-118），并把 design kind 过滤与 code 层计数语义写进契约。",
+      "risk": "bottleneck 是中文人读文案，测试按子串断言（tests/test_planner.py:85-97）；改文案会连带改测试与 SKILL.md:366。plan JSON 被 Engine 与导出样例消费，键改名会漂移。"
+    },
+    {
+      "module": "scripts/whyexist/commands_compiler.py：plan/brief/blind-check 部分",
+      "verdict": "refactor_in_place",
+      "reason": "CLI 只是取数+组装，命令边界清楚；主要问题是与 Engine 重复、--out 分支无测试、错误分类（OSError→2）没写进契约。",
+      "risk": "plan 的 hint 与 excluded_* 是文档明确承诺的字段（SKILL.md:366、README.md:44）；修 hint 逻辑要同步删掉 commands_compiler.py:64 的字面量。"
+    },
+    {
+      "module": "scripts/whyexist/commands_compiler.py：cycles 部分",
+      "verdict": "refactor_in_place",
+      "reason": "取数与 evidence 组装无问题；必须修 --without 与 --break-set/--advise 的组合语义（commands_compiler.py:189-230），并把 truncated/10 组上限做成显式契约。",
+      "risk": "break_sets 的嵌套形状（edges[] 里再带 evidence，cost 只留两个键）已被 SKILL.md:376 与 README:55 引用，改结构会破坏文档与 test_plan_cli.py:803-819。"
+    },
+    {
+      "module": "scripts/whyexist/commands_compiler.py：patch 部分",
+      "verdict": "refactor_in_place",
+      "reason": "只有 20 行，行为简单：读文件→normalize→写文件。问题只是没校验 --work、错误分支无测试。",
+      "risk": "补丁文件被 SKILL.md:450 定义为“操作日志”；如果加校验（要求 work 存在且 claimed），会让离线出补丁的用法失效。"
+    },
+    {
+      "module": "scripts/whyexist/commands_compiler.py：apply 部分",
+      "verdict": "freeze",
+      "reason": "行为不明且无测试：免 token/role、绕过 target_ids、透传 origin/stale/unmapped/feature_id、不经 work_items 记证据、只查补丁间冲突不查库内已有节点。这些语义只被 SKILL.md:450 提了一句，没有任何测试固定，改它等于在盲改生产写库路径。",
+      "risk": "改严（要求 token/target/证据）会让现有“补丁文件即日志”的工作流报错；改松会继续让 apply 成为绕过 upsert-node 写入契约的后门。先补测试和契约条目，再决定方向。"
+    },
+    {
+      "module": "scripts/whyexist/commands_compiler.py：impact/conflicts 部分",
+      "verdict": "refactor_in_place",
+      "reason": "两段都是薄壳，域逻辑在纯函数里且测试较足；需要修的是壳层语义：--changed/--remove-edges 互斥、--remove-edges 端点校验、conflicts 的 status/世代过滤写清楚。",
+      "risk": "impact 的 closed 是“连到任意 requirement”（跨 feature），改成 feature 内闭环会改变调用方对交付门的预期；conflicts 加 status 过滤会让历史工单边界不再报警。"
+    },
+    {
+      "module": "scripts/whyexist/impact.py",
+      "verdict": "keep",
+      "reason": "纯函数、确定性、15 条测试覆盖闭包/跳数/断边/覆盖；模块只是被命令层用得不够严谨，问题不在模块本身。",
+      "risk": "requirement_ids 由调用方传全图 requirement，模块语义是“任意 requirement”；若未来要在模块内做 feature 内闭环，需要同时改 commands_compiler 与 Engine.impact。"
+    },
+    {
+      "module": "scripts/whyexist/cycles.py:34-173（minimal_break_sets / break_set_costs / advise_break_edges）",
+      "verdict": "rewrite",
+      "reason": "行为边界清楚（求最小反馈边集合并给代价），但实现是 2^n 组合枚举 + 每档静默截断 10 组 + truncated 只表达“边太多”；advise 内部又重跑 find_cycles/minimal_break_sets，且与 --without 的交互在 CLI 层就错了。这三点叠起来，重写成一个“按 SCC 求有界最小反馈边、显式报告不完整”的小函数，比在原地打补丁更省事，也更容易单测。",
+      "risk": "返回条数、排序与 edge 顺序会变：test_cycles.py:62-88、tests/test_plan_cli.py:803-819 需要重写断言；SKILL.md:376/README.md:55 对“枚举最小断边集合”的措辞要改成“给定策略下的建议集合”。break_sets 的嵌套形状（edges[] 内含 evidence，cost 只留两键）是对外契约，重写时必须原样保留。"
+    },
+    {
+      "module": "scripts/whyexist/cycles.py:1-31,176-285（find_cycles / cycle_shape / cycle_guidance）",
+      "verdict": "keep",
+      "reason": "SCC 展开、自环单列、形态与 guidance 都是纯函数，10 条测试覆盖，输出被 SKILL.md:376 引用且没有未验证分支。",
+      "risk": "find_cycles 对 SCC 内部边“全列出”是保守但可解释的选择；若改成只列构成具体环的边，测试 test_cycles.py:26-32 的断言（4 条边）会失效。"
+    },
+    {
+      "module": "scripts/whyexist/conflicts.py",
+      "verdict": "keep",
+      "reason": "80 行纯函数，12 条测试，重叠语义（仅尾部 *）与 work/scope 的匹配规则一致；没有未验证分支。",
+      "risk": "匹配规则是第 6 份拷贝；若抽公共匹配函数，必须保证 conflicts 的“精确模式视作非通配”语义不被改掉（tests/test_conflicts.py:29-33）。"
+    }
+  ],
+  "implicit_requirements": [
+    "plan 排除 unmapped 节点后，其边仍参与分析并变成 dangling.unknown_endpoint；噪声从 node_count 转移到 dangling，默认扫描图会显示 edge_count=0。（commands_compiler.py:28-47、_probe_13b）",
+    "plan 的 code 层不按 kind 过滤节点，requirement/use_case 会计入 node_count、layers 与反链；只有 design 层有 kind 白名单。（planner.py:99-107）",
+    "plan --level design 在过滤后无节点时直接 ValueError 退出 2，没有友好提示；同一状态用 auto 却正常。（planner.py:114-118）",
+    "excluded_unmapped 在排除 stale 之前统计，同时属于 unmapped 与 stale 的节点只计入 unmapped。（commands_compiler.py:33-45）",
+    "blind-check 在检查时重新从库里取任务书；执行者手里的那份 brief 不是裁决依据。（commands_compiler.py:122）",
+    "空产出（没有 nodes/edges）算 PASS、locality=1.0；漏交作业与干净交付不可区分。（blind.py:48-94、tests/test_blind.py:128-131）",
+    "brief 的 produces 表是 briefing.PRODUCES 的字面量，新增工单 kind 不会自动获得产出契约；未列出的 kind 静默得到空 produces。（briefing.py:31-40）",
+    "brief/patch 的 --out 是覆盖写、非原子、不建父目录；失败时按通用异常退出 2。（commands_compiler.py:110-114、246-250）",
+    "apply 免 claim_token/角色、不查 target_ids，也不往 work_items.evidence_ids 追加证据；唯一痕迹是补丁文件本身。（commands_compiler.py:259-295）",
+    "apply 透传补丁节点的 origin/stale/unmapped/feature_id：可以伪造 origin=declared、把节点塞进任意 feature，stale 会被 upsert_node 清 0。（graph.py:106-132、_probe_13b）",
+    "apply 只在补丁之间比较节点内容，覆盖库中已有节点是静默的（后写覆盖先写）。（reducer.py:55-102）",
+    "impact --remove-edges 不校验端点：写错 id 得到 lost_reachable=[]、closed=true，看起来像“断这条边没影响”。（commands_compiler.py:315-324）",
+    "impact 同时收到 --changed 与 --remove-edges 时 remove-edges 优先，另一个参数被静默丢弃。（commands_compiler.py:314-348）",
+    "impact 的 closed/uncovered 用全图 requirement 判断，不限于本 feature；跨 feature 的 requirement 也能让节点算“有归属”。（impact.py:193-194）",
+    "conflicts 参与比较的是当前代全部 work_items 的 target_ids，不区分 ready/claimed/passed；历史边界会继续算冲突。（commands_compiler.py:376-379）",
+    "cycles 的 --without 只影响 cycles[] 与 cycle_count；--break-set/--advise 用未移除的图重算，组合结果是自相矛盾的。（commands_compiler.py:189-230）",
+    "minimal_break_sets 每个 size 档最多返回 10 组，超出静默丢弃，truncated 不反映这件事；>20 条非自环边则直接放弃枚举。（cycles.py:50-79）",
+    "cycles 的 truncated 键只在带 --break-set/--advise 时存在，默认输出没有该键。（commands_compiler.py:210、229-230）",
+    "patch 不校验 --work 是否存在，w1/w2 这类标签会原样写进补丁并成为 apply 冲突报告里的 a/b。（commands_compiler.py:246、tests/test_plan_cli.py:480-481）",
+    "Engine.plan 与 wxg plan 不是同一份实现：Engine 版没有 hint，也没有 excluded 之外的命令层错误包装。（engine.py:77-113）"
+  ],
+  "findings": [
+    "8 条命令里只有 apply 是写库入口，而它正是唯一一条完全不校验 token/角色/target_ids 的写命令；同一节点走 upsert-node 要 token+role+边界+证据，走 apply 什么都不需要。apply 的节点透传还能伪造 origin 与 feature 归属（_probe_13b 已验证）。",
+    "planner 有一个稳定的崩溃路径：只要过滤后节点集为空（--level design 且作用域无 component/port/pattern，最典型的是刚 feature-declare 完），build_plan 就在 max(len(layer) ...) 上抛 ValueError，命令退出 2 且没有 JSON 结果。文档承诺 --level design 可用，测试没覆盖。",
+    "cycles 的 --without 与 --break-set/--advise 语义冲突：what-if 移除后 cycle_count=0，但 break_sets 还给出两条断边、advice 还标 preferred。用户按建议断一条边，实际并没有环可断。",
+    "break_sets 的完整性没有信号：每档静默截断到 10 组（12 条边、6 组二点环时实际 924 组最小集合，只返回 10 组且 truncated=false）；>20 条边时直接返回空并 truncated=true，而 20 条边的阈值把非环边也算进去，大设计图几乎必然触发。",
+    "plan 的 unmapped 排除与 dangling 报告互相抵消：默认扫描图上 edge_count=0，被排除的内置调用目标以 2 条 dangling.unknown_endpoint 出现；用户很容易把“0 条边”读成“没有依赖”。",
+    "blind-check FAIL、impact closed=false、conflicts coexist_ok=false 三种“负面结论”退出码都是 0；本切片内只有 apply 用 0/1。把它们接进 CI 必须自己解析 stdout，文档没写这件事。",
+    "apply 与库中已有节点的冲突完全不检测：reducer 只比补丁之间，existing_ids 只用于边端点已知性；覆盖已有节点是静默的。这对“并行执行→合并”模型是实质性缺口。",
+    "plan 命令层与 Engine.plan 是两份复制逻辑，已经漂移（Engine 缺 hint）；wxg.py 之外还有 commands_gates.py:33-44、commands_repo.py:708-719 两份没人用的 re-export。",
+    "impact 在 remove-edges 模式下白算了全图所有 feature 的作用域（commands_compiler.py:311-312），cross_feature 的 all_scopes 对 remove-edges 完全无用；大库上这是 O(F×N) 的纯浪费。",
+    "测试分布失衡：planner 13 条纯函数 + plan_cli 24 条 CLI 用例，而 apply 的写库路径（半写回滚、字段透传、证据缺失）0 条；brief --out、patch 错误分支、--features 子集、@文件参数全部空白。"
+  ],
+  "open_questions": [
+    "apply 的定位到底是什么：单一执行者的批量落库入口（文档口径），还是并行执行者的合并入口（命令名与 SKILL.md:372 的口径）？前者可以继续免 token，后者必须补 target/claim/证据，否则 merge 模型等于没有写边界。",
+    "plan --level design 在空设计层时应该返回空计划还是报错？如果返回空计划，parallelism/bottleneck 的语义要重新定义（当前崩溃点正是这两项）。",
+    "break_sets 想要“完整枚举”还是“一组可执行建议”？完整枚举在 20 条边上不可行；若只给建议，应改成每 SCC 一组最小反馈边，并在输出里写清策略。",
+    "blind-check 应该用执行者拿到的 brief 快照裁决，还是用当前库状态？现在是后者，意味着工单边界变化会追溯影响旧产出。是否需要给 brief 加 hash/brief_version 并在 check 时比对？",
+    "impact 的 closed 是“连到任意 requirement”还是“连到本 feature 的 requirement”？现在是前者，且被 README/SKILL 描述成“意料之外的影响面”，两者口径不一致。",
+    "conflicts 要不要把 passed/withdrawn 工单的 target_ids 排除？不排除会把已交付区域算成永久冲突；排除会让“重新打开同一区域”的并发风险不再被提前发现。",
+    "Engine 是仓库的公开库 API（README.md:48），还是 CLI 的薄包装？现在它复制了 plan 逻辑、缺 cycles/conflicts/apply，且 import 了 commands_compiler 的私有函数 _brief_payload——需要决定它是不是一等公民。",
+    "plan 的 dangling.self_loop/duplicate 两个字段有没有消费者？如果只是 graph_algo 的透传，可以删掉以减少契约面；如果要保留，应补断言。"
+  ]
+}

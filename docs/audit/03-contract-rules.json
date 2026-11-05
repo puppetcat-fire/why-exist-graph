@@ -1,0 +1,683 @@
+{
+  "slice": "03-contract-rules",
+  "modules": [
+    {
+      "path": "scripts/wxg_contract.py",
+      "loc": 1058,
+      "role": "契约真源：版本号、8 条件、工单 kind、节点/边 kind、绑定与判决枚举、门禁/审计/覆盖/调谐/变更/回扫/后端/常驻/一致性规则表、角色、命令表、写入列、属性键、导出形状、21 条不变量，以及 markdown 渲染、JSON 投影与文档块替换"
+    },
+    {
+      "path": "scripts/whyexist/contract.py",
+      "loc": 21,
+      "role": "包内桥接：re-export wxg_contract 为 C，并单独定义 DESIGN_ANCHOR_KINDS（契约概念但不在契约文件里）"
+    }
+  ],
+  "public_surface": [
+    {
+      "entry": "wxg contract",
+      "kind": "cli",
+      "where": "scripts/wxg_contract.py:631; scripts/whyexist/cli.py:29; scripts/whyexist/commands_misc.py:250",
+      "input": "--json；--section main|full（默认 main）；--write <目标文件>（相对路径按技能根解析，不是 cwd）",
+      "output": "stdout：main_contract_markdown()（230 行/15424 字）、full_contract_markdown()（337 行/19470 字）、contract_json()（32 个顶层键）或 {\"written\":..., \"section\":...}",
+      "side_effects": "不连状态库、不建 .why-exist（cli.py:65）；仅 --write 时整文件读改写目标文档（write_text，Windows 下换行被转成 CRLF）；--json 时 --write/--section 被静默忽略",
+      "exit_codes": "0 成功；2 参数错误（argparse invalid choice）或目标文件/契约块标记缺失（ValueError/KeyError 经 cli.py:88 统一打印 JSON 后返回 2）"
+    },
+    {
+      "entry": "wxg verify",
+      "kind": "cli",
+      "where": "scripts/wxg_contract.py:632; scripts/whyexist/commands_misc.py:269; scripts/whyexist/cli.py:94",
+      "input": "无位置参数；环境变量 WXG_SKILL_DIR 可重定向技能根（默认仓库根）",
+      "output": "stdout JSON：{ok: bool, issues: [str] | checks: [contract-blocks, commands, roles, kinds, write-modes, export-sample], version: \"wxg contract v2.92.0 / schema v9\"}",
+      "side_effects": "读 SKILL.md、references/contract.md、references/*；在系统临时目录建 SQLite 状态库并跑真实 cmd_export 生成样例（commands_misc.py:336-338）；不创建 <root>/.why-exist",
+      "exit_codes": "0 = ok；1 = 有 issues；2 = 命令内部异常（含导入失败/环境错误）"
+    },
+    {
+      "entry": "wxg_contract.main_contract_markdown()",
+      "kind": "function",
+      "where": "scripts/wxg_contract.py:801",
+      "input": "无",
+      "output": "230 行 markdown：条件/角色/命令/判决/门禁规则/覆盖/调谐/变更/回扫/一致性/后端/常驻/审计证据/导出文件/21 条不变量",
+      "side_effects": "无（纯字符串拼接；读模块级常量）",
+      "exit_codes": "—"
+    },
+    {
+      "entry": "wxg_contract.full_contract_markdown()",
+      "kind": "function",
+      "where": "scripts/wxg_contract.py:924",
+      "input": "无",
+      "output": "337 行 markdown：main 全量 + 节点 kind + 边 kind + 属性键表 + evidence 表列 + judge_history 表列 + 导出规则 + \"契约版本 2.92.0，库 schema 版本 9\" 结尾行",
+      "side_effects": "无",
+      "exit_codes": "—"
+    },
+    {
+      "entry": "wxg_contract.contract_json()",
+      "kind": "function",
+      "where": "scripts/wxg_contract.py:997",
+      "input": "无",
+      "output": "32 键 dict：version/schema_version/conditions/condition_to_kind/work_kinds/node_kinds/edge_kinds/roles/commands/attr_schema/common_attrs/bite_verdicts/gate_fail_verdicts/drift_verdicts/evidence_required_conditions/gate_rules/coverage_defaults/coverage_rules/reconcile_defaults/reconcile_rules/change_rules/rescan_rules/backend_rules/serve_rules/conformance_rules/judge_history_columns/audit_rules/evidence_rules/command_write_modes/export_files/export_rule/invariants",
+      "side_effects": "无；_jsonable 把 argparse type= 类对象降级成字符串名",
+      "exit_codes": "—"
+    },
+    {
+      "entry": "wxg_contract.replace_block()",
+      "kind": "function",
+      "where": "scripts/wxg_contract.py:1040",
+      "input": "(text, section in {main, full}, body=None)",
+      "output": "替换第一对标记之间的整段文本，保持 \"<begin>\\n<body.rstrip()>\\n<end>\" 的固定形状",
+      "side_effects": "无（纯函数）；section 未知抛 KeyError，标记缺失抛 ValueError",
+      "exit_codes": "—"
+    },
+    {
+      "entry": "wxg_contract.extract_block()",
+      "kind": "function",
+      "where": "scripts/wxg_contract.py:1050",
+      "input": "(text, section)",
+      "output": "第一对标记之间的文本（strip 掉首尾换行）",
+      "side_effects": "无；缺标记抛 ValueError；若 end 出现在 begin 之前，返回空串而不报错（实测）",
+      "exit_codes": "—"
+    },
+    {
+      "entry": "wxg_contract.contract_version_line()",
+      "kind": "function",
+      "where": "scripts/wxg_contract.py:1057",
+      "input": "无",
+      "output": "\"wxg contract v2.92.0 / schema v9\"（唯一调用点是 verify 的成功输出，commands_misc.py:352）",
+      "side_effects": "无",
+      "exit_codes": "—"
+    },
+    {
+      "entry": "SKILL.md 契约块（生成产物）",
+      "kind": "file",
+      "where": "SKILL.md:113-344（main 块）；scripts/whyexist/commands_misc.py:274-285 比较",
+      "input": "由 main_contract_markdown() 渲染后经 contract --write 写入",
+      "output": "人读契约块；verify 用 extract_block 取回后与重新渲染结果比较（strip 首尾换行后相等）",
+      "side_effects": "手改块内文本 → verify 报\"已过期\"；手改块外正文 → 无人检测",
+      "exit_codes": "—"
+    },
+    {
+      "entry": "references/contract.md 契约块（生成产物）",
+      "kind": "file",
+      "where": "references/contract.md:6-344（full 块）",
+      "input": "由 full_contract_markdown() 渲染后经 contract --write --section full 写入",
+      "output": "全量契约视图，含版本行；verify 同样比较",
+      "side_effects": "版本号变更必须先 --write 否则 verify 失败；本文件是唯一携带版本号的生成块",
+      "exit_codes": "—"
+    },
+    {
+      "entry": "references/export-sample/feat-demo/*.md（生成样例）",
+      "kind": "file",
+      "where": "references/export-sample/feat-demo/01-需求.md 等 6 份；比较逻辑 scripts/whyexist/commands_misc.py:332-348",
+      "input": "gen_sample.build() 在临时库上跑真实 cmd_export",
+      "output": "6 份文件；与仓内样例逐字节比较（read_text 比较，非二进制字节）",
+      "side_effects": "每次 verify 都真实执行导出代码路径（含建库/建图/写文件）",
+      "exit_codes": "—"
+    },
+    {
+      "entry": "meta 表 contract_version / schema_version",
+      "kind": "table",
+      "where": "scripts/whyexist/db.py:593-601（写入）；scripts/whyexist/commands_misc.py:537-540（读取/比对）；:590-599（--fix 覆盖）",
+      "input": "init/迁移时写入 C.CONTRACT_VERSION、str(C.SCHEMA_VERSION)",
+      "output": "doctor 以 meta-version 检查项报告不一致",
+      "side_effects": "doctor --fix 无条件把两行改成当前常量值（可掩盖旧 schema）",
+      "exit_codes": "—"
+    }
+  ],
+  "contracts": [
+    {
+      "id": "C1",
+      "statement": "CLI 子命令与参数表完全由 COMMANDS（50 条）生成，命令名、help、required 选项、store_true 标志、choices 都来自契约。",
+      "evidence": [
+        "scripts/whyexist/cli.py:29-44",
+        "scripts/wxg_contract.py:299",
+        "scripts/wxg_contract.py:637",
+        "tests/test_wxg.py:503-515"
+      ],
+      "status": "covered",
+      "note": "端到端测试逐命令使用，但没有任何测试直接断言 build_parser 的产物与 COMMANDS 同构；test_wxg.py:515 只断言每个命令存在可调用处理器。"
+    },
+    {
+      "id": "C2",
+      "statement": "枚举型参数的 choices 绑定契约常量：bite 判决=BITE_VERDICTS、work-claim/role-prompt 的 role=ROLES、work-open 的 kind=WORK_KINDS、find 的 kind=NODE_KINDS、bind 的 --edge-kind=BIND_EDGE_KIND.values()、change-open 的 --from-condition=CONDITION_TO_KIND。",
+      "evidence": [
+        "scripts/wxg_contract.py:412",
+        "scripts/wxg_contract.py:426",
+        "scripts/wxg_contract.py:434",
+        "scripts/wxg_contract.py:462",
+        "scripts/wxg_contract.py:475",
+        "scripts/wxg_contract.py:626",
+        "tests/test_wxg.py:311-312",
+        "tests/test_wxg.py:906-907"
+      ],
+      "status": "covered",
+      "note": "非法 bite 判决与非法 --language 有断言；非法 --from-condition 只被 argparse 拦，没有测试。"
+    },
+    {
+      "id": "C3",
+      "statement": "`contract --json` 输出可 JSON 序列化，且至少包含 version=2.92.0、schema_version=9、commands、evidence_required_conditions=BehaviorPassed、command_write_modes 与 commands 键集相同。",
+      "evidence": [
+        "scripts/wxg_contract.py:997-1031",
+        "tests/test_wxg.py:518-525"
+      ],
+      "status": "partial",
+      "note": "32 个键里只断言了 6 项；rule 文本、attr_schema、export_files 等 26 键无任何断言。"
+    },
+    {
+      "id": "C4",
+      "statement": "SKILL.md 的 main 契约块内容 = main_contract_markdown() 的当前渲染，手工改动块内任意一行会让 verify 失败并提示\"已过期\"。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:274-285",
+        "tests/test_wxg.py:481-501"
+      ],
+      "status": "covered",
+      "note": "测试用 WXG_SKILL_DIR 指向技能副本注入一行后验证退出码非 0。"
+    },
+    {
+      "id": "C5",
+      "statement": "references/contract.md 的 full 契约块同样被 verify 比较，漂移即报错。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:274-285",
+        "scripts/wxg_contract.py:924-983"
+      ],
+      "status": "partial",
+      "note": "代码路径存在且 CI 每次跑 verify（.github/workflows/ci.yml:27-28），但没有任何测试制造 full 块漂移；唯一测试只覆盖 main。"
+    },
+    {
+      "id": "C6",
+      "statement": "verify 是零副作用只读命令：不创建 .why-exist、不留下空 graph.sqlite、不需要 --root。",
+      "evidence": [
+        "scripts/whyexist/cli.py:62-70",
+        "tests/test_wxg.py:873-882"
+      ],
+      "status": "covered",
+      "note": "临时目录副作用存在但会被删除；测试只断言 .why-exist 不存在。"
+    },
+    {
+      "id": "C7",
+      "statement": "verify 做交叉引用检查：每个 COMMANDS 有 cmd_<name> 处理器且出现在 WRITE_MODES；ROLES 引用的命令必须存在；ATTR_SCHEMA / BIND_EDGE_KIND 的 kind 必须属于 NODE_KINDS；EXPORT_FILES 每份必须有列；技能资源文件必须存在；SKILL.md frontmatter 必须 name=why-exist-graph 且有 description。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:287-329",
+        "tests/test_wxg.py:503-515"
+      ],
+      "status": "partial",
+      "note": "只有处理器存在性、ROLES→COMMANDS、ATTR_SCHEMA/BIND 键集被等价断言；WRITE_MODES 键集在 test_wxg.py:525 间接覆盖；frontmatter、EXPORT_FILES 列、资源存在三类检查没有测试触发其失败分支。"
+    },
+    {
+      "id": "C8",
+      "statement": "verify 用真实导出器重新生成 references/export-sample/feat-demo 的 6 份文件并逐份文本比较，样例过期即列出具体文件名。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:330-348",
+        "scripts/gen_sample.py:118",
+        "tests/test_wxg.py:486"
+      ],
+      "status": "partial",
+      "note": "正向路径每次 verify 都跑（CI 与测试都覆盖）；没有反向测试（无人故意改样例看 verify 报错），异常被 `except Exception` 收成一条 issue。"
+    },
+    {
+      "id": "C9",
+      "statement": "verify 成功时返回固定的 checks 名单 ['contract-blocks','commands','roles','kinds','write-modes','export-sample'] 和版本行。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:352"
+      ],
+      "status": "gap",
+      "note": "测试只断言 ok=True，没有任何断言 checks 内容或 version 字符串。"
+    },
+    {
+      "id": "C10",
+      "statement": "`contract --write <file> --section main|full` 用渲染结果替换标记之间内容，重复执行结果不变（幂等），相对路径以技能根为基准。",
+      "evidence": [
+        "scripts/whyexist/commands_misc.py:255-261",
+        "scripts/wxg_contract.py:1040-1047",
+        "README.md:121-122"
+      ],
+      "status": "gap",
+      "note": "无任何测试执行 contract --write；实测相对路径解析为技能根（错误信息里是项目根绝对路径），且 write_text 在 Windows 会把整文件换行改成 CRLF。"
+    },
+    {
+      "id": "C11",
+      "statement": "契约块标记缺失时 verify 报告问题而不是崩溃；extract_block / replace_block 对缺标记抛 ValueError。",
+      "evidence": [
+        "scripts/wxg_contract.py:1040-1054",
+        "scripts/whyexist/commands_misc.py:278-282"
+      ],
+      "status": "gap",
+      "note": "verify 侧有 try/except（278-282）但无测试；contract --write 侧没有捕获，直接经 cli.py:88 变成 exit 2 的原始异常文本。"
+    },
+    {
+      "id": "C12",
+      "statement": "节点属性写入按 ATTR_SCHEMA 强校验：未知键拒绝并提示用 x_ 前缀，x_* 放行，attrs.bite 禁止（只能由 bite 写），str/int/bool 类型不符拒绝。",
+      "evidence": [
+        "scripts/whyexist/graph.py:18-41",
+        "scripts/whyexist/graph.py:92",
+        "tests/test_package_units.py:168-175",
+        "tests/test_wxg.py:848-859",
+        "tests/test_wxg.py:1430-1444"
+      ],
+      "status": "covered",
+      "note": "已被断言：未知键、x_ 前缀、attrs.bite、bool 类型；未断言 str/int 类型不符的拒绝路径。"
+    },
+    {
+      "id": "C13",
+      "statement": "ATTR_SCHEMA 的类型标记语义：'str'/'int'/'bool' 由 graph.check_attrs 解释，'任意' 表示不校验（parameter.example）。",
+      "evidence": [
+        "scripts/wxg_contract.py:695-721",
+        "scripts/whyexist/graph.py:30-38"
+      ],
+      "status": "gap",
+      "note": "'任意' 是魔法字符串，契约文件本身不解释其含义；没有测试覆盖 str/int 不符或 '任意' 放行。"
+    },
+    {
+      "id": "C14",
+      "statement": "边属性不受任何 schema 约束：upsert_edge 直接把 payload.attrs JSON 化落库。",
+      "evidence": [
+        "scripts/whyexist/graph.py:140-187",
+        "scripts/wxg_contract.py:723-726"
+      ],
+      "status": "gap",
+      "note": "契约只说公共键 bite / x_*，实现里 bite 只对节点禁写，边 attrs 完全自由；无测试、无文档语句提及这个不对称。"
+    },
+    {
+      "id": "C15",
+      "statement": "BIND_EDGE_KIND 把 parameter/argument/assertion 映射到 has_input/has_argument/asserts，bind 只接受这三类节点。",
+      "evidence": [
+        "scripts/wxg_contract.py:113-117",
+        "scripts/whyexist/graph.py:190-213",
+        "tests/test_wxg.py:229-231",
+        "tests/test_wxg.py:510"
+      ],
+      "status": "partial",
+      "note": "有测试：合法绑定成功、映射值 ∈ EDGE_KINDS；没有测试断言非 parameter/argument/assertion 被拒，也没有测非法 --edge-kind。"
+    },
+    {
+      "id": "C16",
+      "statement": "CONDITIONS 固定 8 项且顺序即状态机顺序；feature-declare 建 8 行条件、只把 Accepted 置真，Ready 由前七项派生。",
+      "evidence": [
+        "scripts/wxg_contract.py:34-43",
+        "scripts/whyexist/commands_feature.py:122-126",
+        "scripts/whyexist/commands_feature.py:360-374",
+        "scripts/whyexist/commands_misc.py:509-527",
+        "tests/test_wxg.py:189-232"
+      ],
+      "status": "covered",
+      "note": "条件行数与名字集合的一致性由 doctor 的 condition-rows 检查；ready-inconsistent 分支没有单独测试。"
+    },
+    {
+      "id": "C17",
+      "statement": "work-open 只接受 WORK_KINDS 内的 kind（audit 必须由 work-finish 生成）；work_items.role 直接等于 kind。",
+      "evidence": [
+        "scripts/wxg_contract.py:57-66",
+        "scripts/whyexist/commands_feature.py:496-503",
+        "scripts/whyexist/work.py:25-43"
+      ],
+      "status": "partial",
+      "note": "拒绝 audit 的路径有错误分支但无测试；role=kind 这一身份关系没有任何契约语句，属于隐含约定。"
+    },
+    {
+      "id": "C18",
+      "statement": "PRODUCT_CODE_ROLES 内的角色（implement-test）领取工单必须显式 --allow-product-code，否则拒绝。",
+      "evidence": [
+        "scripts/wxg_contract.py:265",
+        "scripts/whyexist/commands_feature.py:512-513",
+        "tests/test_wxg.py:469",
+        "tests/test_wxg.py:244"
+      ],
+      "status": "covered",
+      "note": ""
+    },
+    {
+      "id": "C19",
+      "statement": "TOKEN_COMMANDS 列出需要 claim_token 的命令集合。",
+      "evidence": [
+        "scripts/wxg_contract.py:262"
+      ],
+      "status": "gap",
+      "note": "全仓零消费：不进 markdown、不进 contract_json、无代码读取。且已过时——COMMANDS 里 token=True 的有 9 条，TOKEN_COMMANDS 只有 6 条，漏掉 import-repo / derive / promote。"
+    },
+    {
+      "id": "C20",
+      "statement": "WRITE_MODES 为每个命令声明\"写入\"列，是生成文档命令表写入列的唯一来源；缺声明会被 verify 报错。",
+      "evidence": [
+        "scripts/wxg_contract.py:640-691",
+        "scripts/wxg_contract.py:797-798",
+        "scripts/whyexist/commands_misc.py:306-307",
+        "tests/test_wxg.py:525"
+      ],
+      "status": "partial",
+      "note": "键集全覆盖有断言；13 种自由文本取值没有枚举、没有校验，值写错（例如把 gate 写成\"状态库\"）不会被任何检查发现。"
+    },
+    {
+      "id": "C21",
+      "statement": "EXPORT_FILES 决定导出文件名、标题、列与顺序，export 按列表下标 0..5 逐份生成。",
+      "evidence": [
+        "scripts/wxg_contract.py:730-742",
+        "scripts/whyexist/commands_misc.py:66-194",
+        "tests/test_wxg.py:1004-1026",
+        "tests/test_wxg.py:608-631"
+      ],
+      "status": "partial",
+      "note": "文件名/列由 verify 样例间接覆盖；按下标取用的耦合（EXPORT_FILES[0]..[5]）没有断言，重排列表会让内容错位而不报错。"
+    },
+    {
+      "id": "C22",
+      "statement": "EXPORT_RULE 描述导出作用域（01 取 requirement、02 取 satisfies、04 取 depends/associates/realizes、05 取 contains、07 取 writes→sink 等），是导出行为的文字契约。",
+      "evidence": [
+        "scripts/wxg_contract.py:744-750",
+        "scripts/wxg_contract.py:977-979",
+        "scripts/whyexist/commands_misc.py:22-194"
+      ],
+      "status": "gap",
+      "note": "全仓无代码读取该常量；它只出现在 full 契约块里。实现与文字是否一致没有任何机械校验，样例比较只能证明生成器自洽。"
+    },
+    {
+      "id": "C23",
+      "statement": "JUDGE_HISTORY_COLUMNS 声明 judge_history 的 9 列，应等于 SCHEMA_SQL 里的实际表结构。",
+      "evidence": [
+        "scripts/wxg_contract.py:174-184",
+        "scripts/whyexist/db.py:127-137"
+      ],
+      "status": "gap",
+      "note": "当前恰好一致（id/work_item_id/feature_id/generation/kind/verdict/reason/actor/judged_at），但没有校验；契约只用于渲染 full 块表格。"
+    },
+    {
+      "id": "C24",
+      "statement": "21 条 INVARIANTS（I1-I21）是系统一致性承诺，渲染进 SKILL.md main 块与 contract.md full 块。",
+      "evidence": [
+        "scripts/wxg_contract.py:754-776",
+        "tests/test_wxg.py:189",
+        "tests/test_wxg.py:391",
+        "tests/test_wxg.py:1102",
+        "tests/test_wxg.py:1613"
+      ],
+      "status": "gap",
+      "note": "没有任何代码读取 INVARIANTS，也没有测试引用它；行为层由分散测试间接覆盖，但\"I 编号 ↔ 测试\"的映射不存在，改/删一条不变量不会有任何检查失败。"
+    },
+    {
+      "id": "C25",
+      "statement": "CONTRACT_VERSION=2.92.0 会出现在 contract --json、wxg init 输出、meta.contract_version、doctor meta-version 期望值与 verify 的 version 行中。",
+      "evidence": [
+        "scripts/wxg_contract.py:18",
+        "scripts/whyexist/commands_repo.py:57",
+        "scripts/whyexist/db.py:593",
+        "scripts/whyexist/commands_misc.py:537",
+        "tests/test_wxg.py:520",
+        "tests/test_wxg.py:425"
+      ],
+      "status": "covered",
+      "note": "四处输出都有断言（版本字符串被硬编码在测试里，升版本必须同步改测试）。"
+    },
+    {
+      "id": "C26",
+      "statement": "VERSION 文件内容与 CONTRACT_VERSION 一致，且与 CHANGELOG 最新条目一致。",
+      "evidence": [
+        "tools/check_docs.py:28-45",
+        "tools/preflight.py:70-73",
+        "tools/build_release.py:81-86"
+      ],
+      "status": "gap",
+      "note": "wxg 本体从不读 VERSION；check_docs 只在手动 preflight 或发版时跑，CI（.github/workflows/ci.yml:27-30）只跑 verify + unittest；test_wxg.py:520 只锁 CONTRACT_VERSION，锁不住 VERSION 文件。当前 VERSION=2.92.0 与契约一致，但 docs/HANDOFF.md:14 还写 2.91.0。"
+    },
+    {
+      "id": "C27",
+      "statement": "SCHEMA_VERSION=9 由 init/迁移写入 meta，doctor 比对，--fix 可刷新。",
+      "evidence": [
+        "scripts/wxg_contract.py:17",
+        "scripts/whyexist/db.py:593-601",
+        "scripts/whyexist/commands_misc.py:537-540",
+        "scripts/whyexist/commands_misc.py:590-599",
+        "tests/test_wxg.py:412-425",
+        "tests/test_wxg.py:652"
+      ],
+      "status": "covered",
+      "note": "有断言：doctor 报 meta-version、--fix 后 meta.contract_version 变 2.92.0、init 输出的 schema_version=9。"
+    },
+    {
+      "id": "C28",
+      "statement": "SCHEMA_VERSION 是迁移的判据：版本落后时执行对应迁移。",
+      "evidence": [
+        "scripts/wxg_contract.py:17",
+        "scripts/whyexist/db.py:509-601"
+      ],
+      "status": "gap",
+      "note": "迁移完全按列/表是否存在决定（db.py:518-553），从不读 schema_version；升版本号本身不触发任何迁移，也不拒绝旧库。实测：手工造一个缺 claimed_by / judge_history 的旧库后直接跑 doctor，得到 exit 2 的 OperationalError（\"no such column: claimed_by\"），根本走不到 meta-version 检查。"
+    },
+    {
+      "id": "C29",
+      "statement": "DOCTOR_FIXABLE_CHECKS 决定 doctor 输出里哪些 issue 带 fixable=true，且 I9 的\"--fix 只自动修这些\"必须与之一致。",
+      "evidence": [
+        "scripts/wxg_contract.py:22-30",
+        "scripts/whyexist/commands_misc.py:603",
+        "scripts/wxg_contract.py:763"
+      ],
+      "status": "partial",
+      "note": "消费点只有一处；doctor 测试断言了 fixed 计数，但不断言 fixable 标记。I9 文字把同一份清单又抄了一遍（763 行），改 tuple 不会改文字，也不进 markdown/JSON。"
+    },
+    {
+      "id": "C30",
+      "statement": "块替换/比较对首尾空行不敏感：verify 用 strip(\"\\n\") 后比较，块边界多一个空行不会报漂移。",
+      "evidence": [
+        "scripts/wxg_contract.py:1047",
+        "scripts/wxg_contract.py:1054",
+        "scripts/whyexist/commands_misc.py:279-284"
+      ],
+      "status": "gap",
+      "note": "与文档宣称的\"逐字节比较\"（README.md:27、SKILL.md:20 的\"字节一致性\"）不完全一致；无测试、无文档说明这层容差。"
+    },
+    {
+      "id": "C31",
+      "statement": "同一文件出现多对契约块标记时，只有第一对被比较/替换，其余被忽略。",
+      "evidence": [
+        "scripts/wxg_contract.py:1045-1047",
+        "scripts/wxg_contract.py:1054"
+      ],
+      "status": "gap",
+      "note": "实测：两份 main 块时 extract 返回第一份；第二份可以随便写且 verify 不报。也意味着\"文件已含契约块\"这一状态无法表达。"
+    },
+    {
+      "id": "C32",
+      "statement": "GATE_RULES / AUDIT_RULES / EVIDENCE_RULES / COVERAGE_RULES / RECONCILE_RULES / CHANGE_RULES / RESCAN_RULES / BACKEND_RULES / SERVE_RULES / CONFORMANCE_RULES 是规则的文字契约，应与实现同构。",
+      "evidence": [
+        "scripts/wxg_contract.py:129-242",
+        "scripts/whyexist/gates.py:81-121",
+        "scripts/whyexist/commands_gates.py:159-322",
+        "scripts/whyexist/commands_feature.py:620-696"
+      ],
+      "status": "gap",
+      "note": "10 张表共 58 条规则，全部只用于 markdown/JSON 渲染，没有任何代码读取；verify 也不比较规则文本与实现。抽查（覆盖公式 p=(1+d)/(10+n)、gate 只读、judge failed 重置链、reconcile 三类迁移）与实现一致，但一致性靠人工维护。"
+    }
+  ],
+  "state_io": [
+    {
+      "target": "SKILL.md（契约块，L113-344）",
+      "mode": "both",
+      "where": "写：scripts/whyexist/commands_misc.py:255-261；读：scripts/whyexist/commands_misc.py:274-285"
+    },
+    {
+      "target": "references/contract.md（契约块，L6-344）",
+      "mode": "both",
+      "where": "写：scripts/whyexist/commands_misc.py:255-261（--section full）；读：scripts/whyexist/commands_misc.py:274-285"
+    },
+    {
+      "target": "references/design.md / quality.md / test_wxg.py / CHANGELOG.md（存在性）",
+      "mode": "read",
+      "where": "scripts/whyexist/commands_misc.py:327-329"
+    },
+    {
+      "target": "references/export-sample/feat-demo/*.md（6 份）",
+      "mode": "read",
+      "where": "scripts/whyexist/commands_misc.py:339-346"
+    },
+    {
+      "target": "临时目录 state/graph.sqlite（verify 内跑真实导出）",
+      "mode": "write",
+      "where": "scripts/whyexist/commands_misc.py:336-338；scripts/gen_sample.py:23-52"
+    },
+    {
+      "target": "环境变量 WXG_SKILL_DIR",
+      "mode": "read",
+      "where": "scripts/whyexist/commands_misc.py:271（未在文档中登记，仅测试 tests/test_wxg.py:498 使用）"
+    },
+    {
+      "target": "graph.sqlite:meta（contract_version / schema_version）",
+      "mode": "read",
+      "where": "scripts/whyexist/commands_misc.py:537-540（doctor）"
+    },
+    {
+      "target": "graph.sqlite:meta（contract_version / schema_version）",
+      "mode": "write",
+      "where": "scripts/whyexist/db.py:593-601（init/迁移）；scripts/whyexist/commands_misc.py:590-599（doctor --fix）"
+    },
+    {
+      "target": "模块级全局 ROLES（import 时被追加 evidence-record）",
+      "mode": "write",
+      "where": "scripts/wxg_contract.py:246-259（导入即副作用；所有消费方看到的是追加后的 ROLES）"
+    },
+    {
+      "target": "graph.sqlite:judge_history（列形状）",
+      "mode": "read",
+      "where": "契约只在 scripts/wxg_contract.py:174-184 声明，实际写在 scripts/whyexist/db.py:127-137；无交叉校验"
+    }
+  ],
+  "redundancy": [
+    {
+      "item": "版本号三套来源：CONTRACT_VERSION、VERSION 文件、whyexist.__version__",
+      "signal": "__version__ 是 2.23.0（scripts/whyexist/__init__.py:49）且全仓无读取方；VERSION=2.92.0 只有 tools/ 读；文档侧 docs/HANDOFF.md:14 仍写 2.91.0、docs/PRODUCT-PLAN.md:178 写 2.67.0",
+      "confidence": "high"
+    },
+    {
+      "item": "TOKEN_COMMANDS 与 COMMANDS[*].token 并行维护",
+      "signal": "TOKEN_COMMANDS 零消费且漏掉 import-repo/derive/promote（token=True 共 9 条，它只列 6 条）",
+      "confidence": "high"
+    },
+    {
+      "item": "COMMON_ATTRS 与 full 契约块的硬编码公共键说明",
+      "signal": "COMMON_ATTRS 只进 contract_json（scripts/wxg_contract.py:1009），markdown 在 scripts/wxg_contract.py:942 又手写一遍\"bite / x_*\"；graph.check_attrs 里是第三处字面量（bite、x_ 前缀）",
+      "confidence": "high"
+    },
+    {
+      "item": "DOCTOR_FIXABLE_CHECKS 与 I9 不变量正文里的同一清单",
+      "signal": "tuple 在 scripts/wxg_contract.py:22-30，I9 文字在 :763 把 7 个检查名重抄一遍；改一处不影响另一处",
+      "confidence": "medium"
+    },
+    {
+      "item": "DESIGN_ANCHOR_KINDS 放在桥接模块而不是契约文件",
+      "signal": "定义在 scripts/whyexist/contract.py:19，被 graph.py 的 maps_to 校验与 gates.py 的一致性检查使用，但不进 markdown/JSON——契约概念分裂在两处",
+      "confidence": "high"
+    },
+    {
+      "item": "代码层边集合定义两份",
+      "signal": "EDGE_KINDS（scripts/wxg_contract.py:90-111）与 CODE_EDGE_KINDS=('calls','reads','writes')（scripts/whyexist/gates.py:124）各自维护",
+      "confidence": "medium"
+    },
+    {
+      "item": "gate 输出 checks 名单与规则表脱钩",
+      "signal": "commands_gates.py:237-246 硬编码 9 个检查名（bites/pattern/drift/construction/stale/conformance/conditions/evidence/coverage），GATE_RULES 有 12 条，二者无映射",
+      "confidence": "medium"
+    },
+    {
+      "item": "_cmd_write 的兜底分支不可达",
+      "signal": "scripts/wxg_contract.py:798 的 \"状态库 if token else 只读\" 兜底，在 verify 强制 WRITE_MODES 全覆盖后永远走不到",
+      "confidence": "low"
+    },
+    {
+      "item": "P() 与 positionals 机制是死代码",
+      "signal": "scripts/wxg_contract.py:269 定义 P()，全仓 0 次调用；50 条命令的 positionals 全为空，_cmd_params 的首个循环空转（:787）",
+      "confidence": "high"
+    },
+    {
+      "item": "默认状态库目录 DEFAULT_ROOT 三份",
+      "signal": "scripts/wxg.py:24、scripts/whyexist/cli.py:16、scripts/whyexist/commands_misc.py:20 各定义一次 Path.cwd()/'.why-exist'",
+      "confidence": "medium"
+    },
+    {
+      "item": "serve 的默认间隔 5 秒两处",
+      "signal": "COMMANDS 里 --interval default=5（scripts/wxg_contract.py:514），cmd_serve 又兜底 `else 5`（scripts/whyexist/commands_gates.py:120-121）",
+      "confidence": "low"
+    },
+    {
+      "item": "契约 JSON 形状无版本化",
+      "signal": "contract_json 的 32 个键没有 schema 版本/快照测试；_jsonable 会把任何 type= 类对象降级成名字，形状变化只能被 test_wxg.py:518-525 的 6 条断言偶然拦住",
+      "confidence": "medium"
+    }
+  ],
+  "rewrite_partition": [
+    {
+      "module": "scripts/wxg_contract.py（L17-265：版本号、条件、kind、判决、规则表、ROLES）",
+      "verdict": "refactor_in_place",
+      "reason": "枚举型常量（CONDITIONS/CONDITION_TO_KIND/WORK_KINDS/NODE_KINDS/EDGE_KINDS/BIND_EDGE_KIND/BITE_VERDICTS/GATE_FAIL_VERDICTS/DRIFT_VERDICTS/EVIDENCE_REQUIRED_CONDITIONS/COVERAGE_DEFAULTS/RECONCILE_DEFAULTS/ROLES/PRODUCT_CODE_ROLES）都有真实消费点且被测试间接固定，可直接原地改。但同一文件里混着三类东西：被消费的枚举、零消费的 TOKEN_COMMANDS、纯文字的规则表；需要拆开，删掉死常量。",
+      "risk": "删 TOKEN_COMMANDS 是对外可 import 名字的移除（包级 API），要先确认外部没有 import；规则表文本是已发布文档内容，改动会改变 SKILL.md/contract.md 的字节，必须 --write 后重跑 verify。"
+    },
+    {
+      "module": "scripts/wxg_contract.py（L269-637：COMMANDS 命令表）",
+      "verdict": "keep",
+      "reason": "50 条命令、123 个选项、19 个标志的单一定义，CLI 由它生成，verify 强制每个命令有处理器与 WRITE_MODES 条目，端到端测试实际走这些参数。合同清楚、无重复实现。",
+      "risk": "没有任何检查确认处理器真的读了声明的选项（feature-declare 的 5 个参数走 getattr，verify 看不见）；可选参数不进生成文档的\"关键参数\"列，新增可选参数容易只在 argparse help 里可见。"
+    },
+    {
+      "module": "scripts/wxg_contract.py（L640-691：WRITE_MODES）",
+      "verdict": "keep",
+      "reason": "键集由 verify 与 test 双重锁定，值是给人看的短句，改动的可观察后果只是文档措辞。",
+      "risk": "13 种自由文本取值无枚举，值写错（例如把只读命令写成\"状态库\"）不会有任何检查失败；与行为脱钩的声明只能靠审阅。"
+    },
+    {
+      "module": "scripts/wxg_contract.py（L695-750：ATTR_SCHEMA / COMMON_ATTRS / EXPORT_FILES / EXPORT_RULE）",
+      "verdict": "refactor_in_place",
+      "reason": "ATTR_SCHEMA 是唯一被强执行的属性契约（graph.check_attrs），但它把类型语义藏在 'str'/'int'/'bool'/'任意' 四个魔法字符串里，靠另一个模块解释；COMMON_ATTRS 与 EXPORT_RULE 没有消费者；EXPORT_FILES 被按下标取用。行为清楚，实现该收口。",
+      "risk": "改 ATTR_SCHEMA 会直接影响所有写图命令（upsert-node、import-file、feature-declare 的 requirement 写入）与导入器；收紧类型可能拒绝既有扫描数据。EXPORT_FILES 重排会让 export 内容错位而 verify 仍通过（样例与实现同源）。"
+    },
+    {
+      "module": "scripts/wxg_contract.py（L754-776：INVARIANTS）",
+      "verdict": "freeze",
+      "reason": "21 条不变量是纯文档字符串：无代码读取、无测试引用、无 I 编号到测试的映射。它们却是跨模块一致性主张的唯一汇总（SKILL.md 开头就拿它当卖点），删改等于悄悄改变对外说法；没有任何检查会因此失败。",
+      "risk": "冻结意味着已知的过时表述会留着（例如 I9 的清单与 DOCTOR_FIXABLE_CHECKS 双份）；谁要动它，必须先建立\"不变量 ↔ 测试用例\"的机械映射，否则改动不可验证。"
+    },
+    {
+      "module": "scripts/wxg_contract.py（L780-1058：渲染、contract_json、块替换、version line）",
+      "verdict": "refactor_in_place",
+      "reason": "渲染逻辑本身简单（纯字符串拼接），但块替换是 verify 漂移检测的地基，现有实现有四个未声明的行为：write_text 会做平台换行转换（Windows 下整文件变 CRLF，与 .gitattributes 的 eol=lf 冲突）、只处理第一对标记、比较时 strip 首尾换行、未知 section 抛 KeyError 而非统一错误。",
+      "risk": "这是本切片风险最高的一段：verify 是唯一防文档漂移的机制。收紧比较（真逐字节）会让现有文件立刻失败；修 write_text 换行会改变已提交文档的字节；只处理第一对标记的行为一旦有人依赖，改动会改变 --write 的语义。"
+    },
+    {
+      "module": "scripts/whyexist/contract.py（DESIGN_ANCHOR_KINDS 桥接）",
+      "verdict": "refactor_in_place",
+      "reason": "文件自述是过渡桥接（\"等契约本身搬进包内，这个桥接就消失\"），而 DESIGN_ANCHOR_KINDS 是被 graph.py 校验 maps_to 方向的真正契约常量，却没进契约文件、没进生成文档。这是契约单一来源的直接破口。",
+      "risk": "搬动会影响 graph.upsert_edge 的 maps_to 校验与 conformance 的锚点判定；如果只搬常量不通读计划，容易在契约文件里再定义一份、形成第三次重复。"
+    }
+  ],
+  "implicit_requirements": [
+    "verify 用 WXG_SKILL_DIR 重定向技能根（commands_misc.py:271），这个环境变量没有出现在 SKILL.md/references/任何文档里，只有 tests/test_wxg.py:498 用。重写时不实现它，测试会挂。",
+    "contract --write 的相对路径以技能根（脚本上两级）为基准，不是当前工作目录（commands_misc.py:257-258）。README 里写 `contract --write SKILL.md` 能成，正是靠这个隐含规则。",
+    "contract --json 时 --write 与 --section 被静默忽略（commands_misc.py:251-252 提前 return），不报错也不提示。",
+    "contract --write 在 Windows 上会把整个文件重写成 CRLF（Path.write_text 的 newline=None 转换）：实测 SKILL.md 491 行全是 CRLF、references/contract.md 344 行全是 CRLF，而 .gitattributes 要求 eol=lf，git 已经在警告\"CRLF will be replaced by LF\"。verify 用 read_text（通用换行）比较，看不见这个差异。",
+    "契约块只在第一对 begin/end 标记之间生效：同一文件里第二对标记的内容既不比较也不替换（实测 extract_block 返回 A，replace_block 只改第一段）。",
+    "verify 的块比较先 strip(\"\\n\") 再比，块首尾多空行不会报漂移——与文档宣称的\"逐字节\"不完全一致。",
+    "ATTR_SCHEMA 里值写 \"任意\" 表示跳过类型校验（graph.py:30-38 的 else 分支），这是契约文件里没有解释的魔法值。",
+    "节点属性强校验，边属性完全不校验（graph.py:184 直接 dumps payload.attrs）：同一份 attrs 语义在节点与边上不对称，契约里只有 COMMON_ATTRS 一句泛泛说明。",
+    "bite 命令绕过 check_attrs 直接合并 attrs：写 bite 与 x_bite_reason 两个键（commands_graph.py:128-133）；x_bite_reason 不在 ATTR_SCHEMA、不在文档。",
+    "work_items.role 就是工单 kind 字符串（work.py:36 用 kind 同时填 kind 与 role），契约把 WORK_KINDS 与 ROLES 分成两张表却没写这个身份关系。",
+    "COMMANDS[*].token 只是数据标记：真正拦 token 的是各处理器的 require_token 调用，token=True 的有 9 条而 TOKEN_COMMANDS 只有 6 条——两组数据已经不一致，且没有检查。",
+    "doctor 会无条件查 judge_history 与 changes 两张表（commands_misc.py:453、468），而 meta-version 检查在它们之后（:537）。旧 schema 库不会得到\"版本落后\"的提示，只会得到 exit 2 的 OperationalError。",
+    "doctor --fix 无条件把 meta 的 contract_version / schema_version 覆写成常量值（commands_misc.py:590-599），可以在没做任何迁移的情况下把版本对齐。",
+    "生成的命令表\"关键参数\"列只列 required 选项与 store_true 标志，可选参数一律不出现：--fail-reason、--edge-kind、--section 在生成块里完全不可见（实测 main/full 都不含这三个字符串）。",
+    "verify 会真实执行导出器（gen_sample → cmd_export）并建临时 SQLite 库；导出代码的任何运行时失败都会以\"导出样例自检失败\"的形式变成 verify 的一条 issue，而不是崩溃。",
+    "tests/test_wxg.py:520 硬编码契约版本 2.92.0：升版本必须同时改契约、VERSION、CHANGELOG、references/contract.md（verify 会拦）与测试断言（否则测试挂）。"
+  ],
+  "findings": [
+    "TOKEN_COMMANDS 是彻底的死契约：不进 markdown、不进 contract_json、无任何代码读取，内容也已过时（应 9 条 token 命令，只列 6 条）。同类死数据还有 P()（0 次调用）、COMMON_ATTRS 与 EXPORT_RULE（只被渲染，无消费者）。",
+    "版本同步链是断的：wxg 从不读 VERSION；唯一检查 VERSION↔CONTRACT_VERSION 的 tools/check_docs.py 只在手动 preflight 里跑，CI 只跑 verify+unittest。现在 VERSION 与契约都是 2.92.0，但 docs/HANDOFF.md:14 还是 2.91.0、whyexist.__version__ 还是 2.23.0（无人读），PRODUCT-PLAN 写 2.67.0。",
+    "SCHEMA_VERSION 只是标签不是门：迁移按列/表是否存在决定（db.py:518-553），版本号不参与；旧库直接跑 doctor 得到 exit 2 的 OperationalError（实测 no such column: claimed_by），meta-version 检查根本到不了。",
+    "10 张规则表 + 21 条不变量 + EXPORT_RULE 全是纯文字：无代码读取、verify 不比较文本与实现，删掉一行不会有任何检查失败。抽查内容与实现一致，但一致性靠人工维护；同一清单还在 DOCTOR_FIXABLE_CHECKS 与 I9 正文里各写一份。",
+    "块替换机制比文档宣称的弱：只在第一对标记间生效、比较前 strip 换行、Windows 下 --write 会整文件转 CRLF，而 .gitattributes 要求 LF（工作树里两份文档已经是 CRLF，git 正在警告）。它是 verify 的唯一地基，却没有任何单测直接覆盖 replace_block 或 contract --write。",
+    "契约单一来源有两个破口：DESIGN_ANCHOR_KINDS 住在 whyexist/contract.py 而不进生成文档；CODE_EDGE_KINDS 在 gates.py 里另立一份。ATTR_SCHEMA 的类型语义靠 graph.py 解释，'任意' 是未文档化的魔法值。",
+    "ATTR_SCHEMA 对节点是强校验（未知键拒绝、attrs.bite 禁写、bool 类型检查，均有测试），对边完全不管；str/int 类型与 '任意' 分支无测试。",
+    "verify 的 9 类检查里，frontmatter、EXPORT_FILES 列非空、资源存在、缺标记报错四类没有任何测试触发失败分支；成功的 checks 名单与 version 行也没有断言。",
+    "只有 SKILL.md main 块的漂移被测试直接验证；references/contract.md full 块的漂移检测只由 CI 的正向运行覆盖，没有反向测试。",
+    "工作树是脏的：git 只有 v0.4.1 两个提交，绝大多数文件处于修改/未跟踪状态（含整个 scripts/whyexist/），此状态与\"当前实现\"是否等价无版本记录可查。"
+  ],
+  "open_questions": [
+    "规则表与 INVARIANTS 要保留为\"人读镜像\"，还是拆到 references/ 下改由 verify 只比较生成块？现在它们在契约文件里，改一个字就改变已发布文档，却没有测试能判断改得对不对。",
+    "版本号是否该收敛成单源（CONTRACT_VERSION 读 VERSION，或 verify 直接校验 VERSION/CHANGELOG），并把 tools/check_docs.py 接进 CI？现在靠\"记得跑 preflight\"。",
+    "SCHEMA_VERSION 要不要真正参与迁移判定（旧库拒绝服务 / 按版本选迁移路径）？当前 doctor --fix 可以把版本号刷成当前值而不做任何结构修复。",
+    "TOKEN_COMMANDS 与 DESIGN_ANCHOR_KINDS 属于包级可 import 的公开名，外部可能有 import；删/搬之前需要确认兼容策略，还是按\"不留副本\"原则直接删？",
+    "块替换是否要改成真逐字节 + 拒绝多块 + 统一换行？这会让现有 CRLF 工作树与两份文档立刻失败，需要一并决定重生成流程。",
+    "工作树大量未提交修改与 git 历史只到 v0.4.1：冻结/重写的基线应取工作树当前状态，还是先整理成可追溯提交？没有这个答案，freeze 判定没有可回退点。"
+  ]
+}
