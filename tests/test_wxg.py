@@ -420,6 +420,60 @@ class WxgTestCase(unittest.TestCase):
         self.finish(scan["claim_token"])
         self.judge(scan["work_item_id"])
 
+    def test_retract_does_not_count_missing_nodes(self):
+        """不存在的节点不该计入 nodes_deleted——旧实现对每个 id 无条件 +1。
+
+        用通配 target 构造场景：重扫后代码里的节点已经消失，但工单仍按前缀
+        拿到写入权，这时 retract 一个不存在的 id 不该报删了 1 个节点。
+        """
+        self.init_repo()
+        self.declare("feat-r-missing")
+        self.cli("work-open", "--feature", "feat-r-missing", "--kind", "scan",
+                 "--target-ids", '["operation:missing:*"]')
+        scan = self.claim("scan")
+        result = self.cli(
+            "retract", "--token", scan["claim_token"],
+            "--node-ids", json.dumps(["operation:missing:never-existed"]),
+        )
+        self.assertEqual(0, result["nodes_deleted"])
+        self.assertEqual(0, result["edges_deleted"])
+
+    def test_retract_reports_edges_beyond_scope(self):
+        """删节点会连带删掉它作为端点的边。
+
+        即使边的另一端不在 claim 的 target_ids 内也必须删（否则留悬空边），
+        但这类「越界删除」要单独计数报出来，不能和范围内的删除混在一起。
+        """
+        self.init_repo()
+        self.declare("feat-r-scope")
+        scan, _ = self.import_scan("feat-r-scope")
+        conn = self.db()
+        rows = conn.execute("SELECT id, src, dst FROM edges ORDER BY id").fetchall()
+        conn.close()
+        self.assertTrue(rows, "导入后应该建立了边")
+        _, src, dst = rows[0]
+        result = self.cli(
+            "retract", "--token", scan["claim_token"], "--node-ids", json.dumps([src]),
+        )
+        self.assertEqual(1, result["nodes_deleted"])
+        self.assertGreaterEqual(result["edges_deleted"], 1)
+        # 新字段：被连带删除、但两端不全在本次 target 内的边数
+        self.assertIn("edges_deleted_out_of_scope", result)
+        self.assertGreaterEqual(result["edges_deleted_out_of_scope"], 1)
+
+    def test_bite_reports_when_it_expands_feature_scope(self):
+        """`bite --feature` 会把节点塞进 feature_nodes——那是 plan / coverage 的输入
+        集合，属于作用域变更而不是纯观察，必须在返回值里看得见。"""
+        self.init_repo()
+        self.declare("feat-bite-a")
+        self.declare("feat-bite-b")
+        self.import_scan("feat-bite-a")
+        node = "classifier:demo:shop.py:OrderRepo"
+        first = self.bite(node, "KEEP", feature="feat-bite-b")
+        self.assertTrue(first["added_to_feature_scope"])
+        second = self.bite(node, "KEEP", feature="feat-bite-b")
+        self.assertFalse(second["added_to_feature_scope"])
+
     def test_gate_ignores_dangling_bite_and_doctor_fixes(self):
         self.init_repo()
         self.declare("feat-doc")
@@ -454,7 +508,7 @@ class WxgTestCase(unittest.TestCase):
         token = conn.execute("SELECT claim_token FROM work_items WHERE id='work:feat-doc:g1:model-architecture'").fetchone()
         self.assertIsNone(token[0])
         version = conn.execute("SELECT value FROM meta WHERE key='contract_version'").fetchone()
-        self.assertEqual(version[0], "2.98.0")
+        self.assertEqual(version[0], "2.99.0")
         conn.close()
         gate_after = self.cli("gate", "--feature", "feat-doc", "--json")
         self.assertEqual(gate_after["result"], "PASS")
@@ -549,7 +603,7 @@ class WxgTestCase(unittest.TestCase):
 
     def test_contract_json_is_serializable(self):
         contract = self.cli("contract", "--json")
-        self.assertEqual(contract["version"], "2.98.0")
+        self.assertEqual(contract["version"], "2.99.0")
         self.assertEqual(contract["schema_version"], 9)
         self.assertIn("evidence-record", contract["commands"])
         self.assertEqual(contract["commands"]["work-claim"]["options"][1]["type"], "str")
