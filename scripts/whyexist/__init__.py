@@ -12,6 +12,11 @@
 
 纯函数层（``graph_algo`` / ``planner`` / ``briefing`` / ``blind``）不碰数据库，
 也可以单独使用。
+
+版本号不在包内声明：唯一真源是仓库根的 ``VERSION`` 文件（打包后在包根）。
+历史上这里维护过一份 ``__version__`` 副本，每次都落后于实际版本（最后停在
+2.23.0），且全仓没有任何读取方，已删除。需要版本请读 ``VERSION`` 或跑
+``python tools/check_docs.py``。
 """
 
 from __future__ import annotations
@@ -45,5 +50,3 @@ __all__ = [
     "topological_layers",
     "transitive_reachable",
 ]
-
-__version__ = "2.23.0"

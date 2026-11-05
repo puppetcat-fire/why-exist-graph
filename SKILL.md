@@ -1,13 +1,20 @@
 ---
 name: why-exist-graph
 description: >-
-  DSH 原生的“设计图谱 + 交付门”技能：登记源码仓、按 Python 源文件导入图库、声明功能、
-  按角色领取工单、必要性撕咬（KEEP/UNNECESSARY 等）、设计模式有限应用、咬合覆盖约束、
-  按 feature 导出只读设计视图；状态库默认 SQLite，也可切 MariaDB/MySQL/PostgreSQL 并行后端，支持常驻控制器。
-  条件、工单、角色、命令、属性键、导出形状由 scripts/wxg_contract.py 定义；`wxg verify`
-  校验生成文档块与导出样例是否漂移，`doctor` 校验状态库。用于 why-exist、设计一致性检查、
-  质疑一块代码有没有必要、声明功能、拆分角色并行、交付前门禁（gate，PASS/FAIL 退出码 0/1）。
-whenToUse: 需要把“设计/代码是否成立、功能是否交付”变成可判定状态时；或用户点名 why-exist、撕咬、交付门、声明调和、设计图谱时。
+  DSH 原生的“设计期编译器 + 交付门”技能：把设计图（Design IR）编译成可并行执行的任务，
+  并在交付前用机械判定挡住没有证据的完成。
+  图库侧：登记源码仓、按 Python 源文件导入图库、声明功能、按角色领取工单、必要性咬合
+  （KEEP/UNNECESSARY/HOLLOW 等）、设计模式有限应用、咬合覆盖约束、按 feature 导出只读设计视图。
+  编译器 pass（只读）：`plan` 并行规划（SCC / 拓扑波次 / 最大反链 / 瓶颈）、`brief` 盲化任务书、
+  `blind-check` 盲执行校验、`impact` 影响域闭包、`cycles` 环检测与破环建议、`conformance` 锚点一致性、
+  `derive` 按目录反推组件、`conflicts` 多 feature 写入边界重叠。
+  运行时：8 条件状态机、generation、变更集、工单生命周期、证据、`patch`/`apply` 操作日志、
+  `reconcile`/`serve` 控制器。
+  状态库默认 SQLite，也可切 MariaDB/MySQL/PostgreSQL。条件、工单、角色、命令、属性键、导出形状由
+  `scripts/wxg_contract.py` 定义；`wxg verify` 校验生成文档块与导出样例是否漂移，`doctor` 校验状态库。
+  用于 why-exist、设计一致性检查、并行切分规划、质疑一块代码有没有必要、声明功能、拆分角色并行、
+  交付前门禁（gate，PASS/FAIL 退出码 0/1）。
+whenToUse: 需要把“设计/代码是否成立、功能是否交付”变成可判定状态时；要规划并行切分、判断一次切分能不能交给不知全局的执行者、估算改动影响面时；或用户点名 why-exist、设计期编译器、并行规划、盲执行、撕咬、交付门、声明调和、设计图谱时。
 ---
 
 # why-exist-graph（DSH 原生）
@@ -445,7 +452,7 @@ feature 开启 `--conformance`（默认关闭）时，gate 对 `missing`/`missin
 - `plan` 只能分析图里已有的依赖边：设计图没有 `depends` 时退到代码层，粒度细且受导入器解析率影响；它给出的是结构上限，不评价任务划分是否合理。`--level code` 只分析作用域内**已包含**的代码节点；作用域只有设计元素时会返回 0 边（结果带 `hint`），需先用 `work-open --target-ids '["operation:*"]'` 把代码节点并进来。
 - `brief` 的盲化是信息裁剪，只保证“不含其它工单的计划”，不保证切分本身正确。
 - `blind-check` 只校验结构（边界 / 产出 kind / 依赖引用），不评价产出语义；PASS 只说明这次执行没有越界，不说明切分策略合理。
-- `up` 只搭骨架，不替你跑完 8 个条件；`Engine` 只提供只读方法，写库仍走 CLI 与 claim_token；`wxg.py` 是薄入口（176 行），实现都在 `whyexist` 包里。
+- `up` 只搭骨架，不替你跑完 8 个条件；`Engine` 只提供只读方法，写库仍走 CLI 与 claim_token；`wxg.py` 是薄入口，实现都在 `whyexist` 包里。
 - `impact` 的 `closed` 用无向连通判断，偏宽松（会少报 uncovered）；`conflicts` 只看 `target_ids` 模式重叠，不看依赖时序——A 依赖 B 的产出时，边界不重叠也不该并行。
 - `apply` 有意绕过 `target_ids` 写边界（它假定自己是单一执行者）；冲突只按节点内容判定，不检测语义冲突；补丁文件就是操作日志，没有单独的日志表。
 - `derive` 只按目录结构给候选，不猜组件语义；import 解析支持绝对导入与相对导入（`from .` / `from ..`），但解析不到的跨包别名仍会漏；`derived` 到 `declared` 的唯一入口是 `promote`，它记录裁决者但不重新审计。
@@ -469,7 +476,7 @@ feature 开启 `--conformance`（默认关闭）时，gate 对 `missing`/`missin
 | 路径 | 作用 |
 |------|------|
 | `scripts/wxg_contract.py` | 唯一契约（条件/工单/角色/命令/属性/导出/不变量） |
-| `scripts/wxg.py` | 薄入口（176 行）：准备 `sys.path`、注册 `__main__` 为 `wxg`、re-export 包内符号 |
+| `scripts/wxg.py` | 薄入口：准备 `sys.path`、注册 `__main__` 为 `wxg`、re-export 包内符号 |
 | `scripts/whyexist/` | 实现包：db / graph / work / workflow / gates / importer / 各 `commands_*` / cli，纯函数层与 Engine |
 | `scripts/wxg_mysql.py` | MySQL/MariaDB 状态库后端（纯标准库客户端，无第三方依赖） |
 | `scripts/gen_sample.py` | 生成 `references/export-sample` 的确定性 fixture |

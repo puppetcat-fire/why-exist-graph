@@ -11,9 +11,8 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | `2.91.0` / schema `9` |
-| 测试 | 381 个用例（16 个文件），6 个后端集成按环境跳过 |
-| 代码 | `scripts/wxg.py` 176 行薄入口 + `scripts/whyexist/` 30 个模块 6707 行 |
+| 版本 | 见仓库根 `VERSION`（schema `9`）；本文档不写死版本号 |
+| 代码 | `scripts/wxg.py` 薄入口 + `scripts/whyexist/` 包（模块数与行数会变，不写死） |
 | 发布包 | `dist/v<version>/why-exist-graph-<version>.zip`（63 个文件） |
 
 ## 能力地图
@@ -49,7 +48,8 @@ cd why-exist-graph
 PYTHONUTF8=1 python tools/preflight.py --release
 
 # 流程验证（六条，约 1 分钟；--quick 三条约 10 秒）
-PYTHONUTF8=1 python refactor-lab/run_all.py
+# refactor-lab/ 与本仓同级，不在仓内，所以先退到上一级
+cd .. && PYTHONUTF8=1 python refactor-lab/run_all.py
 ```
 
 `preflight --release` 的八步：回归测试 → 文档一致性（照 SKILL 走到 gate PASS）→ 文档完整
@@ -88,15 +88,15 @@ PYTHONUTF8=1 python refactor-lab/run_all.py
 why-exist-graph/          技能本体（随发布包分发）
   SKILL.md                使用说明（工作流 + 边界 + 文件表）
   README.md               介绍与快速开始
-  CHANGELOG.md            0.1.0 ~ 2.91.0 全记录
+  CHANGELOG.md            全版本变更记录
   docs/PRODUCT-PLAN.md    产品定位、三层模型、路线图与进度
   references/
     contract.md           契约全文（生成）
-    design.md             演进记录（109 节）
+    design.md             设计决策演进记录
     patterns.md           设计模式目录
     quality.md            质量清单
   scripts/                薄入口 + whyexist 包
-  tests/                  381 个用例
+  tests/                  回归用例
   tools/                  发布工具（不随包分发）
   dist/                   发布包
 

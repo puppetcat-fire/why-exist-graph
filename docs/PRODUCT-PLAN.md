@@ -2,6 +2,8 @@
 
 > 状态：草案 v1（2026-11-01）
 > 本文件是产品方向与验收标准的唯一真源；命令形状、契约字段最终以 `scripts/wxg_contract.py` 为准。
+> 版本号、schema 版本、用例数一律以 `VERSION`、`python tools/check_docs.py` 与测试汇总行为准，
+> 本文档不写死这些数字（写死就会漂移，`tools/check_docs.py` 会直接报错）。
 
 ## 1. 一句话定位
 
@@ -28,7 +30,7 @@ Why-Exist 不是交付门，是**设计期编译器**：把"一个任务该怎�
 | 状态机 | 8 条件、generation、supersede、审计独立、同代证据 | 并行执行的骨架已经存在 |
 | 咬合 | `bites` 表 + 覆盖公式 + 抽样 | "必要性"已经是可判定状态 |
 | 一致性自检 | `verify`（文档/样例字节一致）、`doctor`（状态库） | 扩展时不会静默漂移 |
-| 测试 | 381 个回归用例 + 后端集成用例（默认跳过） | 重构的安全网 |
+| 测试 | 全量回归用例 + 后端集成用例（默认跳过） | 重构的安全网 |
 | 发布 | `build_release.py` 确定性 zip + GitHub Actions | 产品分发路径已通 |
 
 ### 缺口（当时的判断，现已全部解决）
@@ -39,7 +41,7 @@ Why-Exist 不是交付门，是**设计期编译器**：把"一个任务该怎�
 | 没有盲执行验证 | `role-prompt` 给了角色边界 | `brief`（盲化任务书）+ `blind-check`（越界/依赖/局部化评分） |
 | 影响域只是节点集合差 | `change-diff` 对比工单写过的节点 | `impact` 闭包 + 需求覆盖 + `direct`/`indirect` 深浅拆分 |
 | 共享可变状态 | 子任务直写图库，靠 token 上锁 | `patch` / `apply` + reducer 冲突检测（`apply` 有意绕过写边界） |
-| 单文件 3.8k 行 | `wxg.py` 一个文件承载全部命令 | 拆进 `whyexist` 包，`wxg.py` 只剩 181 行薄入口 |
+| 单文件 3.8k 行 | `wxg.py` 一个文件承载全部命令 | 拆进 `whyexist` 包，`wxg.py` 只剩薄入口 |
 | 无库 API | 只有 CLI 子进程 | `from whyexist import Engine` |
 | 上手成本高 | 快速开始 15+ 命令 | `up --template minimal\|standard` + 最短路径文档 + `tools/doc_flow.py` |
 
@@ -136,14 +138,14 @@ Runtime          执行：工单状态机 → 操作日志 → reducer
 - 模板：`wxg up --template minimal|standard`（minimal 只建 feature，standard 另建 demo 仓与
   样例文件；`init` 只负责建库与迁移，不带模板）
 - 拆分：`scripts/wxg.py` 已拆成 `scripts/whyexist/` 包（db / graph / work / workflow / gates /
-  importer / 各 `commands_*` / cli），`wxg.py` 只剩 181 行的薄入口（见 2.24.0）
+  importer / 各 `commands_*` / cli），`wxg.py` 只剩薄入口（见 2.24.0）
 
 ## 6. 路线图
 
 | 里程碑 | 内容 | 可验证产出 | 预估 |
 |---|---|---|---|
 | P0 骨架 | `plan` + `brief` + `blind-check` + 一个 demo 仓库 | `python scripts/wxg.py plan --feature demo --json` 给出反链与波次；demo 端到端脚本一键跑通 | 主力 |
-| P1 可用性 | `up` 单命令、库 API、拆包、模板 | 最短路径自动化 5.6 秒 PASS；`from whyexist import Engine` 可用；381 测试全绿 | 主力 |
+| P1 可用性 | `up` 单命令、库 API、拆包、模板 | 最短路径自动化 5.6 秒 PASS；`from whyexist import Engine` 可用；测试全绿 | 主力 |
 | P2 闭环 | `impact` + 需求覆盖 + 声明期冲突检测 | uncovered 用例被捕获；两个 feature target_ids 重叠时 plan 报冲突 | 主力 |
 | P3 并行架构 | `patch` + `apply` + 交换律测试 | 冲突显式报告，无半截写入 | 主力 |
 | P4 发布 | 文档、示例、2.x 版本 | `verify` 通过，release zip 可复现（已到 `2.70.0`） | 收尾 |
@@ -152,7 +154,7 @@ Runtime          执行：工单状态机 → 操作日志 → reducer
 
 ## 7. 质量门（每个里程碑都必须满足）
 
-1. 回归用例全绿（当前 381 个），`wxg verify` 通过（契约块与导出样例不漂移）。
+1. 回归用例全绿，`wxg verify` 通过（契约块与导出样例不漂移）。
 2. 新能力必须有独立用例，且包含一个"故意破坏"的反例（否则不算验收）。
 3. 新命令一律先进 `wxg_contract.py` 的 `COMMANDS`，再实现，再 `contract --write` 刷新文档。
 4. 任何"只报告不拦截"的检查必须写明为什么不拦（沿用现有边界文档的纪律）。
@@ -172,10 +174,10 @@ Runtime          执行：工单状态机 → 操作日志 → reducer
 |---|---|---|
 | P0 骨架（`plan` / `brief` / `blind-check`） | 已完成（2026-11-01） | `whyexist` 包 + 3 条只读命令 |
 | P1 可用性（`up` / 库 API） | 已完成（2026-11-02） | `up` 幂等、`Engine` 只读方法 |
-| P1 拆包（主实现迁进包） | 已完成（2026-11-02） | `wxg.py` 4500 → 181 行；`whyexist` 二十多个模块 |
+| P1 拆包（主实现迁进包） | 已完成（2026-11-02） | `wxg.py` 4500 行 → 薄入口；`whyexist` 二十多个模块 |
 | P2 闭环（影响域 / 需求覆盖 / 冲突检测） | 已完成（2026-11-01） | `impact` / `conflicts` / `Engine.impact` |
 | P3 并行架构（operation log + reducer） | 已完成（2026-11-01） | `patch` / `apply` / `whyexist/reducer.py` |
-| P4 发布（文档 / 示例 / 2.x） | 进行中（2026-11-02） | 契约 `2.67.0` / schema 9 / 381 用例 / `dist/v2.67.0` |
+| P4 发布（文档 / 示例 / 2.x） | 已完成（2026-11-05） | 版本与用例数以 `VERSION` 和测试汇总行为准（本表不写死）；`dist/` 下保留 11 个历史版本 |
 | P5 分析深化（环形态 / 瓶颈 / 深浅影响 / 孤立拆分） | 已完成（2026-11-02） | `cycles --break-set/--advise`、`plan.bottleneck`、`impact.direct`、`conformance` 孤立拆分 |
 | P6 工具链 | 已完成（2026-11-02） | `tools/` 五个脚本 + `refactor-lab/` 三个验证脚本 |
 

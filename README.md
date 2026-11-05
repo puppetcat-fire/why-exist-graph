@@ -55,7 +55,7 @@
 - **环成因（`cycles`）**：把设计层的强连通分量展开成具体依赖边，每条边带文件证据；自环单独列；`--without src->dst` 可模拟移除依赖，`--break-set` 枚举最小断边集合并给出整体代价（`lost_pairs` / `affected_count`），`--advise` 按「是否参与断边集合 + 断了丢多少可达」排序给建议。
 - **状态库自检**：`doctor` 检查悬空 bite/边/引用、陈旧 token、条件完整性与审计配对、legacy 身份、证据产物、裁决历史与 pattern 必填字段；`--fix` 只清理悬空引用与陈旧 token，不替人裁决。
 - **DSH Agent Teams 友好**：`role-prompt` 生成可交给 teammate 的角色提示（真实状态库/CLI 路径、允许命令与边界）；`target_ids` 就是并行写入边界，audit 必须由独立成员执行。
-- **纯标准库**：Python ≥ 3.10 + SQLite（可选 MariaDB/MySQL 内置客户端、PostgreSQL 需 psycopg），默认路径无第三方依赖；提供确定性导出样例与 381 个回归用例。
+- **纯标准库**：Python ≥ 3.10 + SQLite（可选 MariaDB/MySQL 内置客户端、PostgreSQL 需 psycopg），默认路径无第三方依赖；提供确定性导出样例与全量回归用例。
 
 ## 安装
 
@@ -113,8 +113,8 @@ python $wxg --root .why-exist export --feature feat-x
 ## 自检与开发
 
 ```bash
-PYTHONUTF8=1 python scripts/wxg.py verify          # ok:true, contract v1.1.0 / schema v8
-PYTHONUTF8=1 python -m unittest discover -s tests -v   # Ran 381 tests ... OK（MySQL/PG 后端集成用例默认跳过）
+PYTHONUTF8=1 python scripts/wxg.py verify          # 输出 ok:true 即通过
+PYTHONUTF8=1 python -m unittest discover -s tests -v   # 汇总行 OK 即通过（数量以汇总行为准；MySQL/PG 后端集成用例默认跳过）
 python scripts/gen_sample.py                        # 重建导出样例（--write 刷新 references/export-sample）
 ```
 
@@ -136,7 +136,7 @@ python scripts/gen_sample.py                        # 重建导出样例（--wri
 | `scripts/wxg.py` | CLI：图库、工单状态机、导入、bite、coverage、gate、export、doctor、verify、reconcile、serve |
 | `scripts/wxg_mysql.py` | MySQL/MariaDB 状态库客户端（纯标准库） |
 | `scripts/gen_sample.py` | 生成确定性导出样例 |
-| `tests/test_wxg.py` | 79 个端到端与一致性测试 |
+| `tests/test_wxg.py` | 端到端与一致性测试 |
 | `tests/test_wxg_mysql.py` | MySQL 客户端集成测试（连不上 MariaDB 时整类跳过） |
 | `tests/test_mysql_backend.py` | MySQL 后端集成测试（需 `WXG_TEST_MYSQL_URL`） |
 | `tests/test_pg_backend.py` | PostgreSQL 后端集成测试（需 `WXG_TEST_PG_URL` 与 psycopg） |
@@ -176,8 +176,9 @@ python scripts/gen_sample.py                        # 重建导出样例（--wri
 
 ## 版本
 
-当前 `2.67.0`（契约 2.67.0 / schema 9）：主实现已拆进 `whyexist` 包（`wxg.py` 只剩 181 行薄入口）、分析命令齐全（plan / cycles / impact / derive / conformance）、工具链完整（preflight / doc_flow / verify_reports）。完整变更记录见 [`CHANGELOG.md`](CHANGELOG.md)。
-版本号见 [`VERSION`](VERSION)。GitHub Releases 会附带可安装 zip 与 SHA-256。
+schema 9：主实现已拆进 `whyexist` 包（`wxg.py` 只剩薄入口）、分析命令齐全（plan / cycles / impact / derive / conformance）、工具链完整（preflight / doc_flow / verify_reports）。完整变更记录见 [`CHANGELOG.md`](CHANGELOG.md)。
+
+当前版本号以 [`VERSION`](VERSION) 为唯一真源，本文档不写死——写死就会漂移（历史上出现过 2.23.0 / 2.42.0 / 2.67.0 三处不一致）。GitHub Releases 会附带可安装 zip 与 SHA-256。
 
 ## License
 

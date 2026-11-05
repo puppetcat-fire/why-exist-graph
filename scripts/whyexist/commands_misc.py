@@ -36,7 +36,8 @@ def cmd_export(conn, args):
         )
 
     def write(name, body):
-        (export_dir / name).write_text(body, encoding="utf-8")
+        # 固定 LF：导出视图是跨平台确定性产物，不能让 Windows 的 newline 转换把它变成 CRLF。
+        (export_dir / name).write_text(body, encoding="utf-8", newline="\n")
 
     def table(columns, rows):
         lines = ["| " + " | ".join(columns) + " |", "|" + "|".join("---" for _ in columns) + "|"]
@@ -257,7 +258,9 @@ def cmd_contract(conn, args):
         if not target.is_absolute():
             target = SKILL_DIR / target
         text = target.read_text(encoding="utf-8")
-        target.write_text(C.replace_block(text, section, body), encoding="utf-8")
+        # 固定 LF：契约块是逐字节比对的对象，Windows 下 write_text 默认会把整文件
+        # 转成 CRLF，与 .gitattributes 的 eol=lf 冲突，也让 verify 的字节比较失效。
+        target.write_text(C.replace_block(text, section, body), encoding="utf-8", newline="\n")
         return {"written": str(target), "section": section}
     return body
 

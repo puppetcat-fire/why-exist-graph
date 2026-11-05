@@ -1,4 +1,11 @@
-"""文档完整性检查：版本号一致、CHANGELOG 版本连续、design.md 节号连续。
+"""文档完整性检查。
+
+四项：
+1. 版本号一致：VERSION / CONTRACT_VERSION / CHANGELOG 最新条目三者相同。
+2. CHANGELOG 连续：无重复、无跳跃、最新在前。
+3. design.md 节号连续：无重复、无缺号。
+4. 文档不写死易漂移的事实：版本号与用例数只能有一个真源，文档里出现
+   「当前版本 X.Y.Z」「Ran N tests」这类写死副本即报错。
 
 跑法：python tools/check_docs.py
 退出码 0 = 全部通过；1 = 有问题。
@@ -19,6 +26,25 @@ CONTRACT = SKILL / "scripts" / "wxg_contract.py"
 
 CHANGELOG_PATTERN = re.compile(r"^##\s+(\d+)\.(\d+)\.(\d+)", re.MULTILINE)
 DESIGN_PATTERN = re.compile(r"^##\s+(\d+)\.\s", re.MULTILINE)
+
+#: 会写用户可见文案、但历史上反复写死版本/用例数的文档。
+PINNED_DOCS = {
+    "README.md": SKILL / "README.md",
+    "CONTRIBUTING.md": SKILL / "CONTRIBUTING.md",
+    "docs/HANDOFF.md": SKILL / "docs" / "HANDOFF.md",
+    "docs/PRODUCT-PLAN.md": SKILL / "docs" / "PRODUCT-PLAN.md",
+    "references/quality.md": SKILL / "references" / "quality.md",
+}
+
+#: 每种写死副本的识别规则。命中即报，因为它们的真源分别在 VERSION 和测试汇总行。
+PINNED_PATTERNS = (
+    (re.compile(r"当前[^\n]{0,24}\bv?\d+\.\d+\.\d+\b"), "写死了「当前版本」"),
+    (re.compile(r"Ran\s+\d+\s+tests"), "写死了测试用例数"),
+    (re.compile(r"\|\s*测试\s*\|[^\n]*\d+\s*个"), "写死了测试用例数"),
+    (re.compile(r"\|\s*版本\s*\|[^\n]*\d+\.\d+\.\d+"), "写死了版本号"),
+    (re.compile(r"\d+\s*个[\u4e00-\u9fa5]{0,4}(回归)?用例"), "写死了测试用例数"),
+    (re.compile(r"\d+\s*个端到端"), "写死了测试用例数"),
+)
 
 
 def as_key(parts: tuple[str, str, str] | tuple[int, int, int]) -> tuple[int, int, int]:
@@ -82,6 +108,22 @@ def check_design() -> tuple[list[str], str]:
     return issues, f"{len(numbers)} 节，1 ~ {max(numbers)}"
 
 
+def check_pinned_facts() -> tuple[list[str], str]:
+    """文档里不许写死版本号与用例数——这两样只能有一个真源。"""
+    issues: list[str] = []
+    scanned = 0
+    for label, path in PINNED_DOCS.items():
+        if not path.is_file():
+            issues.append(f"{label} 不存在")
+            continue
+        scanned += 1
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            for pattern, why in PINNED_PATTERNS:
+                if pattern.search(line):
+                    issues.append(f"{label}:{lineno} {why}：{line.strip()[:70]}")
+    return issues, f"{scanned} 份文档"
+
+
 def main() -> int:
     all_issues: list[str] = []
     all_issues += check_versions()
@@ -93,6 +135,10 @@ def main() -> int:
     design_issues, design_summary = check_design()
     all_issues += design_issues
     print(f"design.md：{design_summary or '—'}")
+
+    pinned_issues, pinned_summary = check_pinned_facts()
+    all_issues += pinned_issues
+    print(f"写死副本：{pinned_summary}，{len(pinned_issues)} 处")
 
     if all_issues:
         print(f"\n文档完整性：{len(all_issues)} 个问题")

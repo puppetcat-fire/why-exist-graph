@@ -13,7 +13,7 @@ PYTHONUTF8=1 python scripts/wxg.py verify
 PYTHONUTF8=1 python -m unittest discover -s tests -v
 ```
 
-两条都必须是绿的（当前期望：`ok:true`，`Ran 104 tests ... OK`；MySQL/PostgreSQL 后端集成用例在未设对应环境变量时跳过）。
+两条都必须是绿的：`verify` 输出 `ok:true`，测试汇总行显示 `OK`（MySQL/PostgreSQL 后端集成用例在未设对应环境变量时跳过）。**用例数不写死在这里**——写死的数字必然过期（历史上从 104 漂到 381 没人改），需要数字就看实际运行的汇总行。
 
 ## 修改契约（重要）
 

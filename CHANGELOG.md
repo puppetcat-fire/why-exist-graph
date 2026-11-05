@@ -1,5 +1,28 @@
 # Changelog — why-exist-graph
 
+## 2.93.0（2026-11-06）
+
+**契约审计与真源收口**。16 路并行审计（`docs/audit/`：592 条行为契约、152 个模块分区判定）
+之后做的第一批修正：把「一个事实多份副本」的地方收成单一真源。
+
+- **审计产物**：新增 `docs/audit/`——16 份契约卡（JSON + 人读版）、592 条契约
+  （covered 206 / partial 189 / gap 197）、152 个 keep / 原地改 / 重写 / 冻结判定、
+  26 个实测探针。总报告 `docs/audit/REPORT.md`，模块明细 `docs/audit/DECISIONS.md`。
+- **版本真源收口**：删掉 `whyexist.__version__`（停在 `2.23.0`、落后 69 个发布、
+  全仓零读取）；README / HANDOFF / PRODUCT-PLAN / quality / CONTRIBUTING / SKILL 里的
+  版本号、用例数、代码行数全部去掉，改为指向 `VERSION` 与运行结果。
+- **`tools/check_docs.py`**：新增第四项检查——5 份文档里出现「当前版本 `X.Y.Z`」、
+  「`Ran N tests`」、「`N 个用例`」、「`| 版本 | X.Y.Z |`」即报错，防止写死副本长回来。
+- **CI**：`.github/workflows/ci.yml` 增加 `python tools/check_docs.py` 一步。此前
+  `check_docs` 只在手动 `preflight` 里跑，所以版本漂移没人拦。
+- **仓库落盘**：2.x 的实现、测试、工具、文档此前全部未提交（git 只跟踪到 v0.4.1 的
+  25 个文件，CI 实际跑的是 42 条旧用例），本次整体提交为基线快照。
+- **技能描述**：`SKILL.md` frontmatter 补上 `plan` / `brief` / `blind-check` / `impact` /
+  `cycles` / `conformance` / `derive` / `conflicts` / `patch` / `apply`——此前模型侧
+  只能看到 38 条命令，12 条核心能力不可发现。
+- **测试**：381 不变。
+- **版本**：契约 `2.92.0` → `2.93.0`；schema 仍为 `9`。
+
 ## 2.92.0（2026-11-02）
 
 **交接说明**。96 轮迭代后加一份 `docs/HANDOFF.md`：当前状态、能力地图、两层验证怎么跑、

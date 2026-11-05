@@ -5,7 +5,7 @@
 
 ## 1. 可复现
 
-- [ ] `python -m unittest discover -s tests -v` 全绿，记录用例数（当前 357 个；MySQL/PostgreSQL 后端集成用例需要对应 URL 环境变量，默认跳过）。
+- [ ] `python -m unittest discover -s tests -v` 全绿，记录用例数（以汇总行为准，不写死；MySQL/PostgreSQL 后端集成用例需要对应 URL 环境变量，默认跳过）。
 - [ ] `python tools/preflight.py` 全绿：回归测试 + 文档一致性 + `verify` + `doctor` 一条命令跑完
       （发布时加 `--release` 一并打包）。
 - [ ] `python scripts/wxg.py verify` 返回 `ok: true`，记录 `version`；verify 不创建状态库。
@@ -69,8 +69,11 @@
 
 ## 当前版本状态
 
-- 契约 `2.42.0` / schema `9`；版本历史与每次变更的行为差异见 `CHANGELOG.md`。
-- 覆盖：357 个回归用例（6 个后端集成用例按环境变量跳过），包括纯函数层单测
-  （`tests/test_package_units.py`）、CLI 端到端、以及 `verify` 对文档块与导出样例的逐字节校验。
-- 已知边界：**只在 `SKILL.md`「已知边界」维护一处**，本节不再复述——两处清单必然漂移，
-  2.36.0 就是因为这里的重复副本过时才发现。
+- 版本号、契约版本、schema 版本一律以运行结果为准：`python tools/check_docs.py` 校验
+  `VERSION` / `CONTRACT_VERSION` / `CHANGELOG` 三者一致，`python scripts/wxg.py verify`
+  校验契约块与导出样例。本节不写死这些数字——写死就会漂移，2.36.0 与 2.67.0 两次都是
+  这里的重复副本过期才发现的。
+- 覆盖：纯函数层单测（`tests/test_package_units.py` 等）、CLI 端到端、以及 `verify` 对文档块
+  与导出样例的逐字节校验。用例数量跑 `python -m unittest discover -s tests` 看汇总行，
+  后端集成用例按环境变量跳过。
+- 已知边界：**只在 `SKILL.md`「已知边界」维护一处**，本节不再复述。
