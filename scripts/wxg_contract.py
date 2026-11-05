@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 
 SCHEMA_VERSION = 9
-CONTRACT_VERSION = "3.4.0"
+CONTRACT_VERSION = "3.4.1"
 
 #: ``doctor --fix`` 能自动修的检查项。其余问题（legacy 身份、条件行缺失、审计配对等）
 #: 只能报给人看——要么需要裁决，要么需要改设计，自动修等于替人做决定。

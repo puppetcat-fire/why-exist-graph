@@ -1,5 +1,22 @@
 # Changelog — why-exist-graph
 
+## 3.4.1（2026-11-06）
+
+**「文件」节对齐现实**。3.1.0 精简入口、2.97 加后端集成、3.1 加 `check_undefined`、
+本会话新增 `install_skill` 与 `test_backend`——「文件」表一直没跟上：还写着
+`wxg.py` 会「re-export 包内符号」、`preflight` 是六项检查、`tests/` 只列了 4 个文件。
+
+- **表格拆成两张**：随发布包分发的（`scripts/` / `references/` / `tests/` / CHANGELOG）
+  与只在源码仓的（`tools/` / `docs/`）。以前混在一张表里，读者分不清装完哪些就有。
+- **补齐漏掉的 4 项**：`tools/install_skill.py`、`tools/test_backend.py`、
+  `tools/check_undefined.py`、`docs/`（HANDOFF / CAMPAIGN / audit / 各版本 RELEASE）。
+- **更新 3 处过期描述**：`wxg.py` 改成「暴露 `cmd_*` 与少量 fixture helper」
+  （3.1.0 已删 76 个零消费导出）；`preflight` 从六项改成十一项；`tests/` 改成
+  「16 个测试文件 + 哪些需要环境变量」。
+- **验证**：表里 22 个路径逐个 `Test-Path` 全部存在；`verify` / `check_docs` PASS。
+- **测试**：416 不变（只改文档）。
+- **版本**：契约 `3.4.0` → `3.4.1`；schema 仍为 `9`。
+
 ## 3.4.0（2026-11-06）
 
 **契约块分层：SKILL.md 瘦 25%**。依据是 dreaming 的第 17 次调用数据（n 16→17，

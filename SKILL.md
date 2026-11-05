@@ -379,26 +379,34 @@ feature 开启 `--conformance`（默认关闭）时，gate 对 `missing`/`missin
 
 ## 文件
 
+随发布包分发：
+
 | 路径 | 作用 |
 |------|------|
-| `scripts/wxg_contract.py` | 唯一契约（条件/工单/角色/命令/属性/导出/不变量） |
-| `scripts/wxg.py` | 薄入口：准备 `sys.path`、注册 `__main__` 为 `wxg`、re-export 包内符号 |
-| `scripts/whyexist/` | 实现包：db / graph / work / workflow / gates / importer / 各 `commands_*` / cli，纯函数层与 Engine |
+| `scripts/wxg_contract.py` | 唯一契约（条件/工单/角色/命令/属性/导出/规则表/不变量） |
+| `scripts/wxg.py` | 薄入口（约 86 行）：准备 `sys.path`、注册 `__main__` 为 `wxg`、暴露 CLI 分派所需的 `cmd_*` 与少量 fixture helper |
+| `scripts/whyexist/` | 实现包：db / graph / work / workflow / gates / importer / derive / planner / 各 `commands_*` / cli，纯函数层与 Engine |
 | `scripts/wxg_mysql.py` | MySQL/MariaDB 状态库后端（纯标准库客户端，无第三方依赖） |
 | `scripts/gen_sample.py` | 生成 `references/export-sample` 的确定性 fixture |
-| `tools/preflight.py` | 发布前检查：测试 + 文档一致性 + 文档完整性 + `verify` + `doctor` + 报告自洽（`--release` 再加打包与包能跑）（仅源码仓） |
-| `tools/doc_flow.py` | 文档一致性检查：照 `SKILL.md` 最短路径跑一遍到 `gate PASS`（仅源码仓，不随发布包分发） |
-| `tools/check_docs.py` | 文档完整性：VERSION / CONTRACT_VERSION / CHANGELOG 最新条目三者一致、CHANGELOG 版本连续、design.md 节号连续 |
-| `tools/verify_reports.py` | 报告自洽性：`--repo <源码仓>` 一键扫描 + derive + 6 条交叉断言，或 `--root` 检查已有库（仅源码仓） |
-| `tools/verify_release.py` | 发布包独立运行验证：解压 → `up` → 最短路径 → gate PASS（仅源码仓） |
-| `tools/build_release.py` | 打包发布，版本必须与契约版本一致（仅源码仓） |
-| `references/contract.md` | 完整契约视图（生成块） |
+| `references/contract.md` | 完整契约视图（生成块，含 10 张规则表与 21 条不变量） |
 | `references/patterns.md` | 设计模式目录与有限应用原则（gate 强制字段的建模示例） |
+| `references/design.md` | 设计决策演进记录 |
+| `references/quality.md` | 提交质量门：可复现 / 可追溯 / 契约一致 |
 | `references/export-sample/` | 导出样例（`verify` 逐字节比较） |
-| `tests/test_wxg.py` | 端到端与一致性测试 |
-| `tests/test_wxg_mysql.py` | MySQL 客户端集成测试（需要本地 MariaDB，127.0.0.1:3307） |
-| `tests/test_mysql_backend.py` | MySQL 状态库后端集成测试（WXG_TEST_MYSQL_URL） |
-| `tests/test_pg_backend.py` | PostgreSQL 后端集成测试（WXG_TEST_PG_URL，需要 psycopg） |
-| `references/design.md` | 设计说明：它如何修掉 Cursor 版的设计不一致 |
-| `references/quality.md` | 提交质量门：可复现 / 可追溯 / 契约一致 / 通用安全 |
+| `tests/` | 16 个测试文件：`test_wxg.py`（端到端与一致性）、`test_package_units.py`（纯函数层）、`test_plan_cli.py`，以及后端集成（`WXG_TEST_MYSQL_URL` / `WXG_TEST_PG_URL` 才跑） |
 | `CHANGELOG.md` | 契约版本与行为变更记录 |
+
+只在源码仓，不随发布包分发：
+
+| 路径 | 作用 |
+|------|------|
+| `tools/preflight.py` | 发布前十一项检查：回归测试 / doc_flow / check_docs / 工作树行尾 / 未定义全局名 / verify / doctor / 报告自洽 / 后端集成 / 打包 / 包能跑 |
+| `tools/install_skill.py` | 把 `dist/` 最新包装进 `~/.dsh/skills/why-exist-graph`，备份旧目录并跑包内 `verify` 自检 |
+| `tools/build_release.py` | 确定性打包：manifest 带 `source.commit`/`dirty`、拒绝脏工作树、包内文本统一 LF |
+| `tools/check_docs.py` | VERSION / CONTRACT_VERSION / CHANGELOG 三者一致，且文档不写死当前版本与用例数 |
+| `tools/check_undefined.py` | 用 `symtable` 找「按全局解析、但模块里没定义」的名字（运行期 NameError 的前置检查） |
+| `tools/doc_flow.py` | 照 `SKILL.md` 最短路径跑一遍到 `gate PASS` |
+| `tools/verify_reports.py` | 报告自洽性：6 条交叉断言，抓命令之间自相矛盾 |
+| `tools/verify_release.py` | 发布包独立运行验证：解压 → `up` → 最短路径 → gate PASS |
+| `tools/test_backend.py` | 本地一条命令跑 MySQL / PostgreSQL 后端集成测试 |
+| `docs/` | `HANDOFF.md`（交接）、`CAMPAIGN-2026-11.md`（改造战报）、`audit/`（16 片契约审计）、各版本 `RELEASE-*.md` |
