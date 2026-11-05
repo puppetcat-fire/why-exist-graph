@@ -67,11 +67,16 @@ def main(argv: list[str] | None = None) -> int:
         # 状态库不存在时不再“先建空库再报错”，避免 gate/doctor 等命令留下 0 字节库。
         print(dumps({"error": "状态库未初始化：先运行 `wxg init`"}), file=sys.stderr)
         return 2
-    conn = connect(root) if needs_db else None
     # 命令处理器分散在 commands_* 模块，统一从入口模块 wxg 取（wxg 负责 re-export）。
     import wxg
 
+    # 连接必须落在兜底之内：MySQL/PostgreSQL 的错密码、端口不通、没装 psycopg
+    # 都会在 connect() 里抛异常。以前这行在 try 之外，四种失败全是裸 traceback +
+    # 退出 1，直接违反「错误给可读 JSON、退出 2」的契约。
+    conn = None
     try:
+        if needs_db:
+            conn = connect(root)
         if args.cmd == "init":
             result = wxg.cmd_init(conn, args)
             conn.commit()

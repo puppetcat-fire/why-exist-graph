@@ -42,6 +42,38 @@ def create_order(repo, data):
 '''
 
 
+class BackendFailureCase(unittest.TestCase):
+    """错误流契约：后端连不上时必须给可读 JSON + 退出 2，不能是裸 traceback。
+
+    这条曾被整类漏掉——``cli.py`` 的 ``connect()`` 写在 try 之外，MySQL/PostgreSQL
+    的错密码、端口不通、没装 psycopg 四种失败全部变成 traceback + 退出 1，
+    与契约里「错误给可读 JSON、退出 2」正面冲突。
+    """
+
+    def run_wxg(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(WXG), *args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=ENV,
+        )
+
+    def test_mysql_connect_failure_is_readable_json(self):
+        # 端口 1 上没有 MySQL，连接会被立刻拒绝（不依赖网络、不依赖装了什么驱动）
+        proc = self.run_wxg("--db-url", "mysql://u:p@127.0.0.1:1/db", "repo-list")
+        self.assertEqual(proc.returncode, 2, msg=f"stderr={proc.stderr}")
+        self.assertNotIn("Traceback", proc.stderr)
+        payload = json.loads(proc.stderr.strip())
+        self.assertIn("error", payload)
+
+    def test_unknown_backend_scheme_is_rejected_before_connect(self):
+        proc = self.run_wxg("--db-url", "oracle://u:p@127.0.0.1:1/db", "repo-list")
+        self.assertEqual(proc.returncode, 2, msg=f"stderr={proc.stderr}")
+        self.assertNotIn("Traceback", proc.stderr)
+        self.assertIn("error", json.loads(proc.stderr.strip()))
+
+
 class WxgTestCase(unittest.TestCase):
     def setUp(self):
         self._tmpdir = wxg.make_temp_dir("wxg-test-")

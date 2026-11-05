@@ -76,6 +76,20 @@
 
 ## 4. 按"能不能动"重排的行动清单
 
+**进度（2026-11-06）**
+
+| 项 | 状态 | 证据 |
+|---|---|---|
+| P0.1 工作树入 git | 完成 | `29e8680`（130 文件，此前只跟踪 25 个） |
+| P0.2 版本号收单一真源 | 完成 | 删 `whyexist.__version__`；文档去写死；`check_docs` 加第四项检查 |
+| P0.3 文档数字清理 | 完成 | README / HANDOFF / PRODUCT-PLAN / quality / CONTRIBUTING / SKILL |
+| P0.4 技能目录同步 + 描述补全 | 完成 | `~/.dsh/skills/why-exist-graph` 1.4.0 → 2.93.0，50 命令可见 |
+| P0.5 tag / push / Release | 待授权 | 对外操作，等确认 |
+| P1.6 `connect()` 进错误兜底 | 完成 | 改前 traceback+1，改后 JSON+2；新增 2 条错误流测试 |
+| P0.额外 契约块 CRLF 污染 | 完成 | `contract --write` / `export` 固定 LF，文档恢复 LF |
+
+发布版本：`2.92.0` → `2.93.0`（schema 仍为 9），提交 `b3faf03`。
+
 ### P0：先让事实存在（全部可并行，纯机械）
 
 1. `git add -A && git commit`：把 `scripts/whyexist/`、`tests/`、`docs/`、`references/` 全部纳入版本控制。没有这一步，后面任何改动都不可回滚。
