@@ -72,6 +72,24 @@ def main(argv: list[str] | None = None) -> int:
     ok("PASS")
     summary.append("docs PASS")
 
+    step("工作树行尾（应为 LF）")
+    eol = subprocess.run(
+        ["git", "ls-files", "--eol"], cwd=str(SKILL),
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    if eol.returncode == 0:
+        crlf = [line for line in eol.stdout.splitlines() if "w/crlf" in line]
+        if crlf:
+            print(f"\n!! {len(crlf)} 个已跟踪文件的工作树是 CRLF（.gitattributes 要求 LF）")
+            print("   Windows 上通常是 core.autocrlf=true 造成的：")
+            print("     git config core.autocrlf false")
+            print("     git rm --cached -r . ; git reset --hard")
+            print(f"   第一个：{crlf[0].split(chr(9))[-1]}")
+            raise SystemExit(1)
+        ok("LF")
+    else:
+        ok("跳过（不是 git 工作树）")
+
     step("契约校验")
     proc = sh([sys.executable, str(WXG), "verify"])
     result = json.loads(proc.stdout)

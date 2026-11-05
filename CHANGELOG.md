@@ -1,5 +1,25 @@
 # Changelog — why-exist-graph
 
+## 2.98.0（2026-11-06）
+
+**打包可复现性：行尾**。审计说「重复构建得到相同 SHA」，但那只在同一台机器的同一份
+工作树上成立；换台机器就不成立。
+
+- **根因**：`.gitattributes` 声明 `* text=auto eol=lf`，但 Windows 侧的
+  `core.autocrlf=true` 会让 checkout 出来的工作树变成 CRLF、索引仍是 LF。
+  `build_release` 直接读工作树字节，于是本地包比 CI 包大 353 字节、SHA 不同。
+  实测对照：本地 v2.96.0 `c96607e3…`（334992 字节），CI 的 Release 附件
+  `889e2af3…`（334639 字节）；用干净 tag checkout 重新构建得到 `889e2af3…`，
+  与 CI 附件**逐字节一致**——确定性机制本身没问题，是工作树被弄脏了。
+- **`build_release` 自行规范化**：写入 zip 前把文本文件的 CRLF 统一成 LF，
+  打包结果不再依赖打包机器的 git 配置。实测：故意把 `db.py` 改成 CRLF 再
+  `--allow-dirty` 构建，SHA 与 LF 基线完全相同。
+- **`preflight` 新增「工作树行尾」一步**：`git ls-files --eol` 里出现 `w/crlf`
+  就失败，并给出 `core.autocrlf false` + 重建索引的修复命令。
+- **CONTRIBUTING 补一条环境要求**：Windows 上必须 `git config core.autocrlf false`。
+- **测试**：404 不变（本版只修打包通路）。
+- **版本**：契约 `2.97.0` → `2.98.0`；schema 仍为 `9`。
+
 ## 2.97.0（2026-11-06）
 
 **后端集成测试接进 CI 与本地流程**。2.94–2.96 修的 MySQL/PG 问题，此前只能靠审计时

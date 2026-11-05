@@ -7,6 +7,10 @@
 
 - Python ≥ 3.10（只用标准库，无需安装依赖）
 - 推荐 PowerShell / bash 均可；Windows 下含 JSON 的参数请用 `@文件路径`
+- **Windows 上必须 `git config core.autocrlf false`**：`.gitattributes` 要求工作树是 LF，
+  autocrlf=true 会让已跟踪文件变成 CRLF，打出来的发布包比 CI 的大几百字节、SHA 对不上
+  （`preflight` 的「工作树行尾」一步会拦住）。万一已经脏了：
+  `git rm --cached -r .` 然后 `git reset --hard` 重新检出。
 
 ```bash
 PYTHONUTF8=1 python scripts/wxg.py verify

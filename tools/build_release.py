@@ -42,6 +42,18 @@ EXCLUDE_SUFFIXES = {".pyc", ".pyo", ".log", ".bak"}
 FIXED_ZIP_TIME = (2026, 10, 29, 0, 0, 0)
 ZIP_ROOT = "why-exist-graph"
 
+#: 包内的文本文件一律按 LF 写入。工作树可能因为 core.autocrlf 或编辑器变成
+#: CRLF，直接读字节会让同一个 commit 在 Windows 与 Linux 打出不同的包——
+#: 实测本地包比 CI 包大 353 字节，SHA 也对不上。这里做一次规范化，
+#: 保证「确定性打包」不依赖打包机器的 git 配置。
+TEXT_SUFFIXES = {".md", ".py", ".txt", ".json", ".toml", ".cfg", ".yml", ".yaml", ".in", ""}
+
+
+def normalize_text(data: bytes, rel: str) -> bytes:
+    if Path(rel).suffix.lower() in TEXT_SUFFIXES:
+        return data.replace(b"\r\n", b"\n")
+    return data
+
 
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -122,7 +134,7 @@ def build(skill: Path, out: Path, version: str, *, allow_dirty: bool = False) ->
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for path in files:
             rel = path.relative_to(skill).as_posix()
-            data = path.read_bytes()
+            data = normalize_text(path.read_bytes(), rel)
             info = zipfile.ZipInfo(f"{ZIP_ROOT}/{rel}", date_time=FIXED_ZIP_TIME)
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = (0o644 & 0xFFFF) << 16
