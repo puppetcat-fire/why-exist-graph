@@ -84,11 +84,13 @@
 | P0.2 版本号收单一真源 | 完成 | 删 `whyexist.__version__`；文档去写死；`check_docs` 加第四项检查 |
 | P0.3 文档数字清理 | 完成 | README / HANDOFF / PRODUCT-PLAN / quality / CONTRIBUTING / SKILL |
 | P0.4 技能目录同步 + 描述补全 | 完成 | `~/.dsh/skills/why-exist-graph` 1.4.0 → 2.93.0，50 命令可见 |
-| P0.5 tag / push / Release | 待授权 | 对外操作，等确认 |
+| P0.5 tag / push | 完成 | `v2.93.0`（annotated，指向 `9c9be79`）与 `main` 已推 origin |
 | P1.6 `connect()` 进错误兜底 | 完成 | 改前 traceback+1，改后 JSON+2；新增 2 条错误流测试 |
 | P0.额外 契约块 CRLF 污染 | 完成 | `contract --write` / `export` 固定 LF，文档恢复 LF |
+| 发布闭环 | 完成 | `preflight --release` 八步全过；`dist/v2.93.0`（63 文件，SHA `4c8d6a17…`，manifest 带 commit 与 dirty 标记）；`tools/install_skill.py` 装到 `~/.dsh/skills/why-exist-graph` 并通过 verify |
+| Release asset 上传 | 待办 | 本机没有 `GITHUB_TOKEN`，zip 与 sha256 需手动上传；说明见 [`RELEASE-2.93.0.md`](RELEASE-2.93.0.md) |
 
-发布版本：`2.92.0` → `2.93.0`（schema 仍为 9），提交 `b3faf03`。
+发布版本：`2.92.0` → `2.93.0`（schema 仍为 9），提交 `9c9be79`。
 
 ### P0：先让事实存在（全部可并行，纯机械）
 
