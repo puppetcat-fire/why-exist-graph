@@ -1,5 +1,26 @@
 # Changelog — why-exist-graph
 
+## 2.96.0（2026-11-06）
+
+**MariaDB 静默丢历史 + 错误流契约上锁**。一条数据正确性修复，加一组从零到有的断言。
+
+- **`judge_history` 回填在 MariaDB 上丢历史**：迁移用 `'jh:' || w.id` 生成 id，而
+  MariaDB 的 `||` 是逻辑或（除非开 `PIPES_AS_CONCAT`），求值为 `0`——所有回填行撞
+  同一个 id `'0'`，`INSERT OR IGNORE` 下静默只剩第一条。改按方言选拼接：
+  MySQL/MariaDB 用 `CONCAT('jh:', w.id)`，PG/SQLite 保持 `||`；抽成 `_concat_prefix`
+  便于单测。
+- **错误流契约测试（新增 `ErrorStreamContractTest`）**：6 条场景——未初始化库、
+  未知 feature、未知 work、import 文件缺失、不支持的 db 协议、以及 gate FAIL
+  （属于「判定」不属于「错误」）。每条都断言：退出码 2、stdout 必须为空、
+  stderr 是 JSON 且不含 Traceback。此前这类断言为零：测试夹具先解析 stdout、
+  失败才退回 stderr，所以把错误 JSON 从 stderr 挪到 stdout 不会有任何用例变红。
+  变异验证：把 `file=sys.stderr` 改成 `file=sys.stdout` 之后，6 条里 5 条变红
+  （第 6 条走 gate 判定路径，本来就从 stdout 出），修复前是 0 条。
+- **迁移 id 格式**：`jh:<work_item_id>` 的回填格式被端到端测试钉住（契约里已写明
+  运行期是 `jh:<uuid>`，两种格式并存是有意的）。
+- **测试**：新增 7 条（1 条拼接单元 + 6 条错误流），全量 397 → 404 条。
+- **版本**：契约 `2.95.0` → `2.96.0`；schema 仍为 `9`。
+
 ## 2.95.0（2026-11-06）
 
 **旧库升级与状态库体检**。审计 04 片的两条：0.4.x 的库永远升不上来、`ensure_db` 名不副实。

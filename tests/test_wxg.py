@@ -454,7 +454,7 @@ class WxgTestCase(unittest.TestCase):
         token = conn.execute("SELECT claim_token FROM work_items WHERE id='work:feat-doc:g1:model-architecture'").fetchone()
         self.assertIsNone(token[0])
         version = conn.execute("SELECT value FROM meta WHERE key='contract_version'").fetchone()
-        self.assertEqual(version[0], "2.95.0")
+        self.assertEqual(version[0], "2.96.0")
         conn.close()
         gate_after = self.cli("gate", "--feature", "feat-doc", "--json")
         self.assertEqual(gate_after["result"], "PASS")
@@ -549,7 +549,7 @@ class WxgTestCase(unittest.TestCase):
 
     def test_contract_json_is_serializable(self):
         contract = self.cli("contract", "--json")
-        self.assertEqual(contract["version"], "2.95.0")
+        self.assertEqual(contract["version"], "2.96.0")
         self.assertEqual(contract["schema_version"], 9)
         self.assertIn("evidence-record", contract["commands"])
         self.assertEqual(contract["commands"]["work-claim"]["options"][1]["type"], "str")
@@ -690,7 +690,7 @@ class WxgTestCase(unittest.TestCase):
         bite_columns = {row[1] for row in conn.execute("PRAGMA table_info(bites)")}
         node_columns = {row[1] for row in conn.execute("PRAGMA table_info(nodes)")}
         history = conn.execute(
-            "SELECT work_item_id, verdict, actor FROM judge_history WHERE work_item_id='work:old:g1:scan'"
+            "SELECT id, work_item_id, verdict, actor FROM judge_history WHERE work_item_id='work:old:g1:scan'"
         ).fetchall()
         row = conn.execute(
             "SELECT claimed_by, judged_by FROM work_items WHERE id='work:old:g1:scan'"
@@ -702,7 +702,10 @@ class WxgTestCase(unittest.TestCase):
         self.assertIn("drift_limit", feature_columns)
         self.assertTrue({"generation", "phase"}.issubset(bite_columns))
         self.assertIn("stale", node_columns)
-        self.assertEqual(history, [("work:old:g1:scan", "passed", "legacy")])
+        # id 必须是 jh:<work_id>；MariaDB 上用 || 拼会全变成 '0'，多条历史互相覆盖
+        self.assertEqual(
+            history, [("jh:work:old:g1:scan", "work:old:g1:scan", "passed", "legacy")]
+        )
         self.assertEqual(row, ("legacy", "legacy"))
         doctor = self.cli("doctor", expect=1)
         self.assertIn("legacy-identity", doctor["by_check"])
@@ -1956,6 +1959,69 @@ class WxgTestCase(unittest.TestCase):
             self.assertNotIn("operation:demo:o.py:run", report["anchors"]["code_orphans"])
         finally:
             conn.close()
+
+
+class ErrorStreamContractTest(unittest.TestCase):
+    """错误流契约：可读 JSON 一律走 stderr + 退出 2；错误时 stdout 必须为空。
+
+    这条以前零断言——``WxgTestCase.cli()`` 先解析 stdout、失败才退回 stderr，
+    所以把错误 JSON 从 stderr 挪到 stdout 不会有任何用例变红。审计的变异测试里
+    唯一漏检的就是这个变异体。
+    """
+
+    def setUp(self):
+        self._tmpdir = wxg.make_temp_dir("wxg-err-")
+        self.root = Path(self._tmpdir).resolve() / "state"
+
+    def tearDown(self):
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(WXG), "--root", str(self.root), *args],
+            capture_output=True, text=True, encoding="utf-8", env=ENV,
+        )
+
+    def assert_error(self, proc: subprocess.CompletedProcess[str], needle: str) -> None:
+        self.assertEqual(2, proc.returncode, f"stderr={proc.stderr}")
+        self.assertEqual("", proc.stdout.strip(), "错误时 stdout 必须为空")
+        self.assertNotIn("Traceback", proc.stderr)
+        payload = json.loads(proc.stderr.strip())
+        self.assertIn("error", payload)
+        self.assertIn(needle, payload["error"])
+
+    def test_uninitialized_state_db(self):
+        self.assert_error(self.run_cli("repo-list"), "未初始化")
+
+    def test_unknown_feature(self):
+        self.run_cli("init")
+        self.assert_error(self.run_cli("feature-status", "--id", "nope"), "nope")
+
+    def test_unknown_work(self):
+        self.run_cli("init")
+        self.assert_error(self.run_cli("brief", "--work", "nope"), "nope")
+
+    def test_missing_file_for_import(self):
+        self.run_cli("init")
+        self.assert_error(self.run_cli("import-file", "--file", "no-such-file.py"), "不存在")
+
+    def test_unsupported_backend_scheme(self):
+        proc = subprocess.run(
+            [sys.executable, str(WXG), "--db-url", "oracle://h/db", "repo-list"],
+            capture_output=True, text=True, encoding="utf-8", env=ENV,
+        )
+        self.assert_error(proc, "不支持的")
+
+    def test_gate_failure_is_judgement_not_error(self):
+        """gate FAIL 是判定结果（退出 1 + JSON 走 stdout），不能混进错误流。"""
+        self.run_cli("init")
+        self.run_cli("feature-declare", "--id", "f1", "--name", "f1",
+                     "--statement", "s", "--acceptance", '["可验收"]',
+                     "--constraints", '["无约束"]', "--no-coverage")
+        proc = self.run_cli("gate", "--feature", "f1")
+        self.assertEqual(1, proc.returncode, f"stderr={proc.stderr}")
+        self.assertEqual("", proc.stderr.strip(), "gate FAIL 不应写 stderr")
+        self.assertEqual("FAIL", json.loads(proc.stdout.strip())["result"])
 
 
 if __name__ == "__main__":

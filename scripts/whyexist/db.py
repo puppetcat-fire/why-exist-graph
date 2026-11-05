@@ -620,6 +620,18 @@ def _is_integrity_error(exc: BaseException) -> bool:
 
 
 
+def _concat_prefix(dialect: str, prefix: str, column: str) -> str:
+    """跨后端的「前缀 + 列」拼接 SQL 片段。
+
+    MariaDB 的 ``||`` 是逻辑或（除非开了 PIPES_AS_CONCAT），``'jh:' || w.id``
+    会求值成 0；回填出来的历史全部撞到同一个 id，``OR IGNORE`` 下静默只剩第一条。
+    PostgreSQL 与 SQLite 里 ``||`` 才是字符串拼接。
+    """
+    if dialect == "mysql":
+        return f"CONCAT('{prefix}', {column})"
+    return f"'{prefix}' || {column}"
+
+
 def migrate_schema(conn: sqlite3.Connection) -> dict:
     """把旧状态库非破坏地补到当前 schema；只迁移一次，重复 init 不再改已有行。
 
@@ -696,9 +708,12 @@ def migrate_schema(conn: sqlite3.Connection) -> dict:
         # 旧库没有领取时间；claimed 行按 created_at 回填（只是下界，无法还原真实领取时刻）。
         conn.execute("UPDATE work_items SET claimed_at=created_at WHERE status='claimed' AND claimed_at IS NULL")
     # 0.5.0：裁决历史独立成表。旧库按现状回填一次（幂等：确定性 id + OR IGNORE）。
+    # id 前缀必须按方言拼：MariaDB 里 || 是逻辑或，'jh:' || w.id 求值为 0，
+    # 回填的历史会全部撞到 id='0'，OR IGNORE 下静默只剩一条。
+    dialect = getattr(conn, "dialect", "sqlite")
     conn.execute(
         "INSERT OR IGNORE INTO judge_history(id, work_item_id, feature_id, generation, kind, verdict, reason, actor, judged_at) "
-        "SELECT 'jh:' || w.id, w.id, w.feature_id, w.generation, w.kind, "
+        f"SELECT {_concat_prefix(dialect, 'jh:', 'w.id')}, w.id, w.feature_id, w.generation, w.kind, "
         "       CASE w.status WHEN 'passed' THEN 'passed' ELSE 'failed' END, "
         "       w.fail_reason, COALESCE(w.judged_by, 'legacy'), COALESCE(w.judged_at, w.created_at) "
         "FROM work_items w WHERE w.judged_by IS NOT NULL AND w.kind<>'audit' "

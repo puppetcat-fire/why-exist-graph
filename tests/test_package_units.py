@@ -243,6 +243,12 @@ class SqlDialectTest(unittest.TestCase):
         self.assertIn('"a?b"', out)
         self.assertIn("a=%s", out)
 
+    def test_concat_prefix_uses_concat_on_mysql(self):
+        # MariaDB 的 || 是逻辑或：'jh:' || w.id 求值为 0，回填历史会全部撞到 id='0'
+        self.assertEqual("CONCAT('jh:', w.id)", db._concat_prefix("mysql", "jh:", "w.id"))
+        self.assertEqual("'jh:' || w.id", db._concat_prefix("sqlite", "jh:", "w.id"))
+        self.assertEqual("'jh:' || w.id", db._concat_prefix("postgres", "jh:", "w.id"))
+
 
 class ConnectionWrapperTest(unittest.TestCase):
     """MySQL / PG 连接包装要对齐 sqlite3 的子集。
