@@ -40,6 +40,31 @@ python <skill>/scripts/wxg.py --root <root> gate --feature <id>    # PASS/FAIL �
   给结论，只有需要把结论固化成 gate 时才建库。
 - 长任务要有收敛点：预算内先输出 PASS/FAIL，再按需扩展审计。
 
+### 想要契约清单：`contract --json` 一条命令
+
+被问「这个工具支持什么 / 有哪些命令和角色 / 规则是什么」时，**不要建库，也不要 grep 源码**：
+
+```powershell
+python <skill>/scripts/wxg.py contract --json    # 零副作用，不需要 .why-exist
+```
+
+它一次给全 32 个契约面：`commands`（50 条，含参数与写模式）、`roles`（8）、`conditions`（8）、
+`node_kinds` / `edge_kinds` / `attr_schema`、`gate_rules` / `coverage_rules` / `reconcile_rules` /
+`audit_rules` 等全部规则文本、`invariants`（21 条）、`export_files` 与 `export_rule`。
+
+`contract` / `verify` / `role-prompt` 在 `cli.py` 的 `needs_db` 白名单外，跑它们不会创建
+`.why-exist` 目录。要给人看的表格就别加 `--json`（默认输出 markdown）。
+
+### 什么时候不该加载本技能
+
+| 你想要 | 用什么 | 为什么不用本技能 |
+|---|---|---|
+| 契约清单 / 命令表 | `wxg contract --json` | 零副作用，比建图快两个数量级 |
+| 代码现状综述 | 普通 grep / 读码 | 技能不自动从代码推导整体描述 |
+| 单次「这块该不该存在」 | `bite --node <id>`（需已有图） | 不用走 declare → claim → gate |
+| 一次性交付判定 | `verify` + `doctor` + `gate` | 这是它的正职 |
+| 多文件行为契约盘点 | 普通读码 | 这类任务会把门禁拖成仓库审计，通常超时且没有结论 |
+
 ## 快速开始（在 DSH 里调用）
 
 设 `<skill>` 为本技能目录（`.dsh/skills/why-exist-graph`），`<root>` 为状态库目录（建议工作区下 `.why-exist`）：
