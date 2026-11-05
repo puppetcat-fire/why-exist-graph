@@ -92,6 +92,8 @@
 | 2.94.0 发布闭环 | 完成 | `dist/v2.94.0`（63 文件，SHA `c667cc8d…`，commit `2f08eb6`）+ 技能已装 2.94.0 + tag |
 | P1.8 旧库升级 + ensure_db | 完成 | 2.95.0：建表→补列→建索引（旧顺序实测 `no such column: generation`）；ensure_db 校验 12 表 + 5 张表的迁移列，区分「未初始化」与「schema 落后」 |
 | 2.95.0 发布闭环 | 完成 | `dist/v2.95.0`（63 文件，SHA `7f66aaf7…`，commit `3a06989`）+ 技能已装 2.95.0 + tag |
+| P1.9 MariaDB 拼接 + 错误流测试 | 完成 | 2.96.0：`_concat_prefix` 按方言选 `CONCAT`/`\|\|`（旧写法在 MariaDB 上历史全撞 id `0`）；新增 `ErrorStreamContractTest` 6 条，变异验证 5/6 抓到（修复前 0 条） |
+| 2.96.0 发布闭环 | 完成 | `dist/v2.96.0`（63 文件，SHA `c96607e3…`，commit `119700d`）+ 技能已装 2.96.0 + tag |
 | Release asset 上传 | 待办 | 本机没有 `GITHUB_TOKEN`，zip 与 sha256 需手动上传；说明见 [`RELEASE-2.93.0.md`](RELEASE-2.93.0.md) |
 
 发布版本：`2.92.0` → `2.93.0`（schema 仍为 9），提交 `9c9be79`。
