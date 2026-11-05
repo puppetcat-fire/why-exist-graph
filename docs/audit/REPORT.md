@@ -102,6 +102,8 @@
 | 2.99.0 发布闭环 | 完成 | `dist/v2.99.0`（63 文件，SHA `b0b14d82…`，commit `73c5be7`）+ 技能已装 2.99.0 + tag |
 | P2.4 覆盖公式与契约对齐 | 完成（breaking） | 3.0.0：`_required_coverage` 分母补 `a₀`，与契约 `p_m=(1+d)/(10+m)` 一致；S=1/ε=0.1 从「p=0.1 却 met=false」变为 met=true；变异验证通过（`0 != 1`） |
 | 3.0.0 发布闭环 | 完成 | `dist/v3.0.0`（63 文件，SHA `8cf65126…`，commit `3d769d5`）+ 技能已装 3.0.0 + tag |
+| P3.1 入口与命令模块清理 | 完成 | 3.1.0：`wxg.py` 181→86 行（删 76 个零消费 re-export）、`commands_repo.py` 738→660 行（删 5 个整片 re-export 块）；新增 `tools/check_undefined.py`（symtable）并接进 preflight |
+| 3.1.0 发布闭环 | 完成 | `dist/v3.1.0`（63 文件，SHA `699808a8…`，commit `a91f659`）+ 技能已装 3.1.0 + tag |
 | Release asset 上传 | 自动（此前判断有误） | `release.yml` 在 tag push 时构建并上传 zip；实测 v2.96.0 附件 SHA `889e2af3…` 与干净 checkout 构建逐字节一致 |
 
 发布版本：`2.92.0` → `2.93.0`（schema 仍为 9），提交 `9c9be79`。
