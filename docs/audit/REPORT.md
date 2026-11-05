@@ -106,6 +106,8 @@
 | 3.1.0 发布闭环 | 完成 | `dist/v3.1.0`（63 文件，SHA `699808a8…`，commit `a91f659`）+ 技能已装 3.1.0 + tag |
 | P2.5 scope_ids 顺序确定性 | 完成 | 3.2.0：通配展开后 `sorted()`；跨进程测试（`PYTHONHASHSEED` 0/1/2/3，双 feature 才测得出），变异后报「4 种顺序」 |
 | 3.2.0 发布闭环 | 完成 | `dist/v3.2.0`（63 文件，SHA `8ad77214…`，commit `d5879b3`）+ 技能已装 3.2.0 + tag |
+| P2.6 doctor --fix 七类覆盖 | 完成 | 3.2.1：一条端到端用例覆盖全部可修检查（dangling-bite / orphan-edge / feature-node-missing / work-target-missing / work-evidence-missing / token-on-inactive / meta-version）；三组变异验证 |
+| 3.2.1 发布闭环 | 完成 | `dist/v3.2.1`（63 文件，SHA `d6a82927…`，commit `61f2286`）+ 技能已装 3.2.1 + tag |
 | Release asset 上传 | 自动（此前判断有误） | `release.yml` 在 tag push 时构建并上传 zip；实测 v2.96.0 附件 SHA `889e2af3…` 与干净 checkout 构建逐字节一致 |
 
 发布版本：`2.92.0` → `2.93.0`（schema 仍为 9），提交 `9c9be79`。
