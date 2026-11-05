@@ -1,5 +1,32 @@
 # Changelog — why-exist-graph
 
+## 2.94.0（2026-11-06）
+
+**MySQL / PostgreSQL 后端修到能用**。审计 04、05 两片实测出来的三条断链——「init 必崩、
+写路径必崩、连接失败裸 traceback」——本版补齐前两条，第三条 2.93.0 已修。
+
+- **`cmd_init` 不再 NameError**：`commands_repo.py` 缺 `db_url` 与 `re` 两个名字，
+  非 SQLite 后端走「掩码连接串」那条分支 100% 抛 NameError；而 `init_db` 已经提交过，
+  结果是 12 张表全建好、退出码却是 2。补 import，并加两条单测（掩码不泄漏凭据、
+  sqlite 分支报库文件路径）。
+- **补齐 `executemany`**：`_MySQLConnection` / `_PgConnection` 只实现了
+  `execute` / `executescript` / `commit` / `rollback` / `close`，而 `import-file` /
+  `import-repo` 批量写 `feature_nodes` 时调 `conn.executemany`——MySQL 与 PG 上
+  100% `AttributeError`。两个包装各补一份逐条 `execute` 的实现（要的是能用，不是吞吐；
+  翻译、PRAGMA 处理、命名参数都复用 execute 的统一路径，避免第二份实现分叉）。
+- **PG 占位符转换改成引号感知**：原来是 `sql.replace("?", "%s")`，两个后果都实测过——
+  字符串字面量里的 `?` 也被换掉（`'status?'` → `'status%s'`），`'100%'` 被 psycopg
+  当成占位符报数量不符。新实现扫描引号状态：`?` 只在引号外替换；`%` 在有参数时统一
+  转义成 `%%`（含引号内——psycopg 的占位符解析不看 SQL 引号）；无参数时传 `None`，
+  不做插值。
+- **`repo-add` 的冲突路径**：`_is_integrity_error` 只被 `graph.py` 导入，
+  `commands_repo.py` 用它时是 NameError——path 冲突会变成未定义名异常而不是
+  「仓登记冲突」的可读错误。补 import。
+- **测试**：新增 9 条——引号内 `?` 保留、引号内 `%` 转义、无参数不转义、
+  双引号标识符不误伤、两个 `executemany`、空序列、`cmd_init` 两个分支。
+  `tests/test_package_units.py` 87 → 96 条。
+- **版本**：契约 `2.93.0` → `2.94.0`；schema 仍为 `9`。
+
 ## 2.93.0（2026-11-06）
 
 **契约审计与真源收口**。16 路并行审计（`docs/audit/`：592 条行为契约、152 个模块分区判定）

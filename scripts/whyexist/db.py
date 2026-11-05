@@ -344,6 +344,18 @@ class _MySQLConnection:
             sql, params = _named_params(sql, params)
         return self._conn.execute(_mysql_translate(sql), params)
 
+    def executemany(self, sql: str, seq_of_params):
+        """批量写：底层客户端没有 executemany，逐条走 execute。
+
+        这里要的是「能用」不是吞吐；翻译、PRAGMA 处理、命名参数都复用 execute
+        的统一路径，避免第二份实现分叉。此前这个方法根本不存在，import-file /
+        import-repo 在 MySQL 上 100% AttributeError。
+        """
+        cursor: object = _NoopCursor()
+        for params in seq_of_params:
+            cursor = self.execute(sql, params)
+        return cursor
+
     def executescript(self, script: str) -> None:
         for statement in script.split(";"):
             statement = statement.strip()
@@ -379,7 +391,16 @@ class _PgConnection:
             return _NoopCursor()
         if isinstance(params, dict):
             sql, params = _named_params(sql, params)
-        return self._conn.execute(_pg_translate(sql), params)
+        has_params = bool(params)
+        # 无参数时传 None：psycopg 就不做 % 插值，字面量里的 % 才不用转义
+        return self._conn.execute(_pg_translate(sql, has_params), params if has_params else None)
+
+    def executemany(self, sql: str, seq_of_params):
+        """批量写：逐条走 execute，理由同 _MySQLConnection.executemany。"""
+        cursor: object = _NoopCursor()
+        for params in seq_of_params:
+            cursor = self.execute(sql, params)
+        return cursor
 
     def executescript(self, script: str) -> None:
         for statement in script.split(";"):
@@ -397,15 +418,55 @@ class _PgConnection:
         self._conn.close()
 
 
-def _pg_translate(sql: str) -> str:
+def _pg_placeholders(sql: str, has_params: bool) -> str:
+    """引号外的 `?` 换成 `%s`；有参数时把字面量 `%` 转义成 `%%`。
+
+    旧实现是一行 ``sql.replace("?", "%s")``，两个后果都实测过：
+    字符串字面量里的 ``?`` 也被换掉（``'status?'`` 变成 ``'status%s'``），
+    而 ``'100%'`` 会被 psycopg 当成占位符，报 placeholder 数量不符。
+    """
+    out: list[str] = []
+    quote: str | None = None
+    i = 0
+    length = len(sql)
+    while i < length:
+        ch = sql[i]
+        if quote is not None:
+            # psycopg 的 %s 替换不看 SQL 引号，所以引号内的 % 同样要转义；
+            # 但引号内的 ? 是普通字符，不能换。
+            if ch == quote:
+                out.append(ch)
+                if i + 1 < length and sql[i + 1] == quote:  # '' / "" 转义
+                    out.append(sql[i + 1])
+                    i += 2
+                    continue
+                quote = None
+            elif ch == "%" and has_params:
+                out.append("%%")
+            else:
+                out.append(ch)
+            i += 1
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            out.append(ch)
+        elif ch == "?":
+            out.append("%s")
+        elif ch == "%":
+            out.append("%%" if has_params else "%")
+        else:
+            out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _pg_translate(sql: str, has_params: bool = True) -> str:
     text = sql
-    replaced = "INSERT OR IGNORE INTO" in text
-    if replaced:
+    if "INSERT OR IGNORE INTO" in text:
         text = text.replace("INSERT OR IGNORE INTO", "INSERT INTO")
-    if replaced:
         text = text.rstrip().rstrip(";") + " ON CONFLICT DO NOTHING"
     # psycopg 用 %s 占位符
-    return text.replace("?", "%s")
+    return _pg_placeholders(text, has_params)
 
 
 def _named_params(sql: str, params: dict) -> tuple[str, tuple]:

@@ -7,13 +7,14 @@ import ast
 import json
 import os
 import random
+import re
 import sys
 from pathlib import Path
 
 from . import derive
 from .commands_gates import cmd_gate
 from .contract import C
-from .db import connect, ensure_db, init_db, migrate_schema
+from .db import _is_integrity_error, connect, db_url, ensure_db, init_db, migrate_schema
 from .errors import Reject
 from .graph import (
     check_attrs,

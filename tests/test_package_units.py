@@ -221,6 +221,116 @@ class SqlDialectTest(unittest.TestCase):
         self.assertIn("VALUES(%s) ON CONFLICT DO NOTHING", out)
         self.assertNotIn("; ON CONFLICT", out)
 
+    def test_pg_question_mark_inside_string_literal_is_kept(self):
+        # 旧实现是朴素 replace("?","%s")，字面量里的 ? 也会被换掉
+        out = db._pg_translate("SELECT 'status?' FROM t WHERE a=?", has_params=True)
+        self.assertIn("'status?'", out)
+        self.assertIn("a=%s", out)
+
+    def test_pg_percent_in_literal_is_escaped_when_params_present(self):
+        # '100%' 会被 psycopg 当成占位符，报 placeholder 数量不符
+        out = db._pg_translate("SELECT '100%' FROM t WHERE a=?", has_params=True)
+        self.assertIn("'100%%'", out)
+        self.assertIn("a=%s", out)
+
+    def test_pg_percent_is_untouched_without_params(self):
+        out = db._pg_translate("SELECT '100%' FROM t", has_params=False)
+        self.assertIn("'100%'", out)
+        self.assertNotIn("%%", out)
+
+    def test_pg_double_quoted_identifier_is_not_touched(self):
+        out = db._pg_translate('SELECT "a?b" FROM t WHERE a=?', has_params=True)
+        self.assertIn('"a?b"', out)
+        self.assertIn("a=%s", out)
+
+
+class ConnectionWrapperTest(unittest.TestCase):
+    """MySQL / PG 连接包装要对齐 sqlite3 的子集。
+
+    在补上 executemany 之前，import-file / import-repo 在非 SQLite 后端
+    100% AttributeError（这两个命令都会批量写 feature_nodes）。
+    """
+
+    class _Fake:
+        def __init__(self):
+            self.calls: list[tuple[str, tuple]] = []
+
+        def execute(self, sql: str, params=()):
+            self.calls.append((sql, params))
+            return db._NoopCursor()
+
+        def commit(self) -> None:
+            return None
+
+        def rollback(self) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+    def test_mysql_executemany_runs_once_per_row(self):
+        fake = self._Fake()
+        wrapper = db._MySQLConnection(fake)
+        fake.calls.clear()  # 构造时发过 SET SESSION TRANSACTION ISOLATION LEVEL
+        wrapper.executemany("INSERT OR IGNORE INTO t(a,b) VALUES(?,?)", [("x", 1), ("y", 2)])
+        self.assertEqual(2, len(fake.calls))
+        self.assertIn("INSERT IGNORE INTO", fake.calls[0][0])
+        self.assertEqual(("x", 1), fake.calls[0][1])
+        self.assertEqual(("y", 2), fake.calls[1][1])
+
+    def test_pg_executemany_runs_once_per_row(self):
+        fake = self._Fake()
+        wrapper = db._PgConnection(fake)
+        wrapper.executemany("INSERT OR IGNORE INTO t(a,b) VALUES(?,?)", [("x", 1), ("y", 2)])
+        self.assertEqual(2, len(fake.calls))
+        self.assertIn("%s", fake.calls[0][0])
+        self.assertTrue(fake.calls[0][0].endswith("ON CONFLICT DO NOTHING"))
+        self.assertEqual(("x", 1), fake.calls[0][1])
+
+    def test_executemany_with_empty_sequence_is_a_noop(self):
+        fake = self._Fake()
+        wrapper = db._PgConnection(fake)
+        fake.calls.clear()
+        wrapper.executemany("INSERT INTO t(a) VALUES(?)", [])
+        self.assertEqual(0, len(fake.calls))
+
+
+class InitCommandTest(unittest.TestCase):
+    """cmd_init 在非 SQLite 后端要能返回掩码后的连接串。
+
+    此前 commands_repo 没有 import db_url / re，MySQL 与 PostgreSQL 上这条分支
+    100% NameError——而 init_db 已经提交过，表建好了、退出码却是 2。
+    """
+
+    def test_non_sqlite_backend_masks_credentials(self):
+        from types import SimpleNamespace
+        from unittest import mock
+
+        class FakeConn:
+            dialect = "mysql"
+
+        args = SimpleNamespace(root_path=Path("state"))
+        with mock.patch.object(commands_repo, "init_db", lambda conn: {"from": 0, "to": 9}), \
+                mock.patch.object(commands_repo, "db_url", lambda: "mysql://user:s3cret@db.local:3306/x"):
+            out = commands_repo.cmd_init(FakeConn(), args)
+        self.assertEqual("mysql", out["backend"])
+        self.assertNotIn("s3cret", out["db"])
+        self.assertIn("***", out["db"])
+        self.assertEqual(9, out["schema_version"])
+
+    def test_sqlite_backend_reports_database_file(self):
+        from types import SimpleNamespace
+        from unittest import mock
+
+        class FakeConn:
+            dialect = "sqlite"
+
+        args = SimpleNamespace(root_path=Path("state"))
+        with mock.patch.object(commands_repo, "init_db", lambda conn: {"from": 0, "to": 9}):
+            out = commands_repo.cmd_init(FakeConn(), args)
+        self.assertEqual("sqlite", out["backend"])
+        self.assertIn("graph.sqlite", out["db"])
+
 
 class NamedParamsEdgeTest(unittest.TestCase):
     def test_repeated_placeholder_collects_each_occurrence(self):
