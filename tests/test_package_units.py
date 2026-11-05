@@ -603,20 +603,30 @@ class WorkflowStateTest(unittest.TestCase):
 
 
 class CoverageMathTest(unittest.TestCase):
+    """第三个参数是 Beta 先验总强度 a₀+b₀；prior=0.1 时 a₀=1、b₀=9、denom=10。"""
+
     def test_zero_scope_returns_covered(self):
-        self.assertEqual(0, gates._required_coverage(0, 1.0, 1.0, 0, 0.1))
+        self.assertEqual(0, gates._required_coverage(0, 1.0, 10.0, 0, 0.1))
 
     def test_nonpositive_epsilon_returns_covered(self):
-        self.assertEqual(3, gates._required_coverage(10, 1.0, 1.0, 3, 0.0))
+        self.assertEqual(3, gates._required_coverage(10, 1.0, 10.0, 3, 0.0))
 
     def test_already_met_returns_covered(self):
-        self.assertEqual(9, gates._required_coverage(10, 1.0, 1.0, 9, 0.1))
+        self.assertEqual(9, gates._required_coverage(10, 1.0, 10.0, 9, 0.1))
 
     def test_finds_minimal_satisfying_m(self):
-        self.assertEqual(9, gates._required_coverage(10, 1.0, 1.0, 0, 0.1))
+        self.assertEqual(9, gates._required_coverage(10, 1.0, 10.0, 0, 0.1))
 
     def test_caps_at_scope_size(self):
         self.assertEqual(10, gates._required_coverage(10, 10.0, 10.0, 0, 0.01))
+
+    def test_denominator_matches_contract_pm_formula(self):
+        """契约 p_m=(1+d)/(10+m)。旧实现用 (1+d)/(9+m)，分母少算了 a₀。
+
+        S=1、ε=0.1、d=0 时 residual(0)=1/10=0.1 ≤ ε，不需要任何咬合；
+        旧数学会算出需要 1 个，于是 coverage 同时报 p=0.1 与 met=false。
+        """
+        self.assertEqual(0, gates._required_coverage(1, 1.0, 10.0, 0, 0.1))
 
     def test_truncate_limits(self):
         self.assertEqual([1, 2], gates._truncate([1, 2, 3], 2))
@@ -667,6 +677,20 @@ class CoverageReportTest(unittest.TestCase):
             self.assertGreaterEqual(phase["n_required"], 1)
             self.assertFalse(phase["met"])
         self.assertEqual(report["unmet"][0], report["next"])
+
+    def test_single_node_scope_needs_no_bite_at_exact_epsilon(self):
+        """S=1、ε=0.1、d=0：p=1/(10+0)=0.1，residual(0)=1/10=0.1 ≤ ε，n_required=0。
+
+        旧实现分母用 ``b₀+m``（9+m），residual(0)=1/9>0.1，会算出需要 1 个咬合——
+        于是同一份报告里 p=0.1 却 met=false，自相矛盾。这条测的是
+        ``coverage_report`` 的接线，不只是 ``_required_coverage`` 本身。
+        """
+        feature = wf.ensure_feature(self.conn, "f")
+        report = gates.coverage_report(self.conn, feature, epsilon=0.1)
+        phase = report["phases"][0]
+        self.assertAlmostEqual(0.1, phase["p"], places=6)
+        self.assertEqual(0, phase["n_required"])
+        self.assertTrue(phase["met"])
 
     def test_drift_report_empty(self):
         feature = wf.ensure_feature(self.conn, "f")

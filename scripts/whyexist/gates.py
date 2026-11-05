@@ -33,13 +33,21 @@ def _feature_bites(conn, feature: dict) -> list[dict]:
     return rows
 
 
-def _required_coverage(scope_size: int, a: float, b0: float, covered: int, epsilon: float) -> int:
-    """解 p_m·(S-m) ≤ ε，返回需要的去重覆盖节点数下限（m 不超过作用域大小）。"""
+def _required_coverage(scope_size: int, a: float, denom: float, covered: int, epsilon: float) -> int:
+    """解 p_m·(S-m) ≤ ε，返回需要的去重覆盖节点数下限（m 不超过作用域大小）。
+
+    ``p_m = a / (denom + m)``，其中 ``denom = a₀ + b₀`` 是 Beta 先验的总强度，
+    ``a = a₀ + d``。分母必须与 ``coverage_report`` 里后验 ``p`` 的算法一致
+    （契约 COVERAGE_RULES：``p_m=(1+d)/(10+m)``）。
+
+    旧实现只用 ``b₀ + m`` 作分母，漏掉了 ``a₀``，于是 ``n_required`` 比契约小一档：
+    S=1、ε=0.1、d=0 时会同时输出 ``p=0.1`` 与 ``met=false``。
+    """
     if scope_size <= 0 or epsilon <= 0:
         return covered
 
     def residual(m: int) -> float:
-        return (a / (b0 + m)) * max(scope_size - m, 0)
+        return (a / (denom + m)) * max(scope_size - m, 0)
 
     if residual(covered) <= epsilon:
         return covered
@@ -94,7 +102,7 @@ def coverage_report(conn, feature: dict, epsilon=None, prior_p=None) -> dict:
         n = len(covered)
         hits = len({bite["node_id"] for bite in rows if bite["verdict"] not in ("KEEP", "UNKNOWN")})
         p = (a0 + hits) / (a0 + b0 + n)
-        required = _required_coverage(len(scope), a0 + hits, b0, n, eps)
+        required = _required_coverage(len(scope), a0 + hits, a0 + b0, n, eps)
         alpha = defaults["alpha"]
         phases.append({
             "phase": name,
