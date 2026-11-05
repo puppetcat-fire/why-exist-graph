@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 from . import derive
+from .commands_feature import cmd_feature_declare
 from .commands_gates import cmd_gate
 from .contract import C
 from .db import _is_integrity_error, connect, db_url, ensure_db, init_db, migrate_schema
@@ -658,81 +659,3 @@ def cmd_sample(conn, args):
     rng = random.Random(args.seed) if args.seed is not None else random.Random()
     row = rng.choice([dict(item) for item in rows])
     return {"sample": row, "seed": args.seed, "source": source, "candidates": len(rows)}
-
-
-# feature/工单命令已搬进 whyexist.commands_feature；这里 re-export。
-from whyexist.commands_feature import (  # noqa: E402
-    _require_write,
-    _resolve_subject,
-    cmd_change_diff,
-    cmd_change_open,
-    cmd_feature_declare,
-    cmd_feature_list,
-    cmd_feature_register,
-    cmd_feature_status,
-    cmd_work_claim,
-    cmd_work_finish,
-    cmd_work_judge,
-    cmd_work_list,
-    cmd_work_open,
-    cmd_work_seed,
-    record_judge_history,
-    work_seed,
-)
-
-
-# 图写入与证据命令已搬进 whyexist.commands_graph；这里 re-export。
-from whyexist.commands_graph import (  # noqa: E402
-    cmd_bind,
-    cmd_bite,
-    cmd_evidence_list,
-    cmd_evidence_record,
-    cmd_retract,
-    cmd_upsert_edge,
-    cmd_upsert_node,
-    prune_work_refs,
-)
-
-
-# 覆盖/一致性/调谐命令已搬进 whyexist.commands_gates；这里 re-export。
-from whyexist.commands_gates import (  # noqa: E402
-    _pending_counts,
-    apply_safe_actions,
-    cmd_conformance,
-    cmd_coverage,
-    cmd_reconcile,
-    cmd_serve,
-    reconcile_feature,
-)
-
-
-# 编译器命令已搬进 whyexist.commands_compiler；这里 re-export。
-from whyexist.commands_compiler import (  # noqa: E402
-    _brief_payload,
-    cmd_apply,
-    cmd_blind_check,
-    cmd_brief,
-    cmd_conflicts,
-    cmd_cycles,
-    cmd_impact,
-    cmd_patch,
-    cmd_plan,
-)
-
-
-
-
-# cmd_gate 也已搬进 whyexist.commands_gates。
-from whyexist.commands_gates import cmd_gate  # noqa: E402
-
-# 导出/校验/doctor 命令已搬进 whyexist.commands_misc；这里 re-export。
-from whyexist.commands_misc import (  # noqa: E402
-    cmd_contract,
-    cmd_doctor,
-    cmd_export,
-    cmd_role_prompt,
-    cmd_verify,
-    doctor_report,
-)
-
-

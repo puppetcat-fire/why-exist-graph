@@ -1,5 +1,27 @@
 # Changelog — why-exist-graph
 
+## 3.1.0（2026-11-06）
+
+**拆包兼容残留清理 + 未定义名前置检查**。审计 01/08 两片共同的结论：拆包时留下
+大量没人用的 re-export，而「漏 import」这类 bug 只在特定分支才炸。
+
+- **`scripts/wxg.py` 181 → 86 行**：原来 re-export 134 个名字。AST 统计（排除本文件）
+  显示 `cmd_*` 之外 84 个里只有 8 个真被用——`wxg.C`（gen_sample）、`make_temp_dir` /
+  `temp_dir` / `connect` / `init_db` / `Reject` / `bind_node` / `upsert_node` /
+  `upsert_edge`（fixture 与测试）。其余 76 个整片删除。保留 `cmd_*` 是因为 CLI 分派
+  与 `verify` 都用 `getattr(wxg, "cmd_" + name)` 动态取，它们必须在这里可见。
+- **`commands_repo.py` 738 → 660 行**：末尾 78 行是五个整片 re-export 块
+  （feature / graph / gates / compiler / misc），仓内零消费者；`wxg.py` 早已直接
+  从各 `commands_*` 导入。删完立刻发现 `cmd_up` 里还在用 `cmd_feature_declare`——
+  import 期不报错、跑到 `up` 才 NameError，正好是新工具的检测范围。
+- **新增 `tools/check_undefined.py`**：用标准库 `symtable` 找出「按全局解析、但模块里
+  没有定义」的名字，接进 `preflight` 成为独立一步。这类 bug `py_compile` 查不出来
+  （名字查找发生在运行期），2.94 修的 `cmd_init` 缺 `db_url`/`re`、`repo-add` 缺
+  `_is_integrity_error` 都是这个形态。实测：删掉 `db_url` 导入后工具报
+  `cmd_init.db_url` 并以 1 退出；对当前 34 个源文件跑是干净的。
+- **测试**：409 不变（清理无行为变化，`up` 的回归由既有端到端用例覆盖）。
+- **版本**：契约 `3.0.0` → `3.1.0`；schema 仍为 `9`。
+
 ## 3.0.0（2026-11-06）
 
 **覆盖公式与契约对齐（行为变更 / breaking）**。审计 10 片查出的「分母不一致」：契约

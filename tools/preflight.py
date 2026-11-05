@@ -90,6 +90,10 @@ def main(argv: list[str] | None = None) -> int:
     else:
         ok("跳过（不是 git 工作树）")
 
+    step("未定义全局名（运行期 NameError 的前置检查）")
+    sh([sys.executable, str(HERE / "check_undefined.py")])
+    ok("PASS")
+
     step("契约校验")
     proc = sh([sys.executable, str(WXG), "verify"])
     result = json.loads(proc.stdout)
