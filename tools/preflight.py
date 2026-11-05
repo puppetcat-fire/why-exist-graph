@@ -114,6 +114,7 @@ def main(argv: list[str] | None = None) -> int:
     proc = sh([sys.executable, str(HERE / "test_backend.py")])
     backend_lines = [line for line in proc.stdout.splitlines() if line.startswith("后端集成测试")]
     ok(backend_lines[-1] if backend_lines else "跳过")
+    summary.append(backend_lines[-1] if backend_lines else "backend skipped")
 
     if args.release:
         step("打包发布")
