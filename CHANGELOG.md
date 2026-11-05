@@ -1,5 +1,19 @@
 # Changelog — why-exist-graph
 
+## 3.2.1（2026-11-06）
+
+**`doctor --fix` 的删数据路径补齐测试**。审计 12 片：`--fix` 是全仓唯一会删数据
+的地方，7 类可修问题里只有 dangling-bite 有测试，其余 6 类没有。
+
+- **一条端到端用例覆盖全部 7 类**：dangling-bite / orphan-edge /
+  feature-node-missing / work-target-missing / work-evidence-missing /
+  token-on-inactive / meta-version。构造坏库 → `doctor --fix` → 断言每类修复计数
+  为 1、正常节点一个不少、被删的行确实没了、工单引用被裁空、token 被清。
+- **变异验证**：审计点名的三组（orphan-edge / feature-node-missing / work-refs）
+  各回退一次，用例都变红。
+- **测试数**：410 → 411（无行为变化）。
+- **版本**：契约 `3.2.0` → `3.2.1`；schema 仍为 `9`。
+
 ## 3.2.0（2026-11-06）
 
 **`scope_ids` 的顺序确定性**。审计 14 片：全项目都承诺「同样输入两次运行字节一致」，

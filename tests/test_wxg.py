@@ -507,6 +507,67 @@ class WxgTestCase(unittest.TestCase):
             outputs.add(proc.stdout.strip())
         self.assertEqual(1, len(outputs), f"不同 PYTHONHASHSEED 下顺序不同：{outputs}")
 
+    def test_doctor_fix_repairs_every_fixable_check(self):
+        """`doctor --fix` 是全仓唯一会删数据的路径，7 类可修问题必须逐一验证。
+
+        旧测试只覆盖 dangling-bite；orphan-edge / feature-node-missing /
+        work-target-missing / work-evidence-missing / token-on-inactive / meta-version
+        都没有断言，等于在删数据的路径上盲飞。
+        """
+        self.init_repo()
+        self.declare("feat-fix")
+        scan, _ = self.import_scan("feat-fix")
+        conn = self.db()
+        conn.execute(
+            "INSERT INTO bites(node_id, feature_id, verdict, actor, created_at) VALUES(?,?,?,?,?)",
+            ("operation:gone:bite", "feat-fix", "KEEP", "t", "2026-01-01T00:00:00Z"),
+        )
+        conn.execute(
+            "INSERT INTO edges(id, src, dst, kind) "
+            "VALUES('edge:gone','operation:gone:a','operation:gone:b','calls')"
+        )
+        conn.execute(
+            "INSERT INTO feature_nodes(feature_id, node_id) VALUES('feat-fix','operation:gone:member')"
+        )
+        conn.execute(
+            "UPDATE work_items SET target_ids=?, evidence_ids=? WHERE id=?",
+            (json.dumps(["operation:gone:target"]), json.dumps(["operation:gone:evidence"]),
+             scan["work_item_id"]),
+        )
+        conn.execute(
+            "UPDATE work_items SET claim_token='stale-token', status='ready' WHERE id=?",
+            (scan["work_item_id"],),
+        )
+        conn.execute("UPDATE meta SET value='0.1.0' WHERE key='contract_version'")
+        before_nodes = {row[0] for row in conn.execute("SELECT id FROM nodes")}
+        conn.commit()
+        conn.close()
+
+        result = self.cli("doctor", "--fix")
+        self.assertTrue(result["ok"], result["issues"][:5])
+        fixed = result["fixed"]
+        self.assertEqual(1, fixed["dangling_bites"])
+        self.assertEqual(1, fixed["orphan_edges"])
+        self.assertEqual(1, fixed["feature_nodes"])
+        self.assertEqual(1, fixed["work_refs"])
+        self.assertEqual(1, fixed["tokens"])
+        self.assertEqual(1, fixed["meta"])
+
+        conn = self.db()
+        after_nodes = {row[0] for row in conn.execute("SELECT id FROM nodes")}
+        self.assertEqual(before_nodes, after_nodes, "修复不能动正常节点")
+        self.assertIsNone(conn.execute("SELECT 1 FROM bites WHERE node_id='operation:gone:bite'").fetchone())
+        self.assertIsNone(conn.execute("SELECT 1 FROM edges WHERE id='edge:gone'").fetchone())
+        self.assertIsNone(conn.execute("SELECT 1 FROM feature_nodes WHERE node_id='operation:gone:member'").fetchone())
+        row = conn.execute(
+            "SELECT target_ids, evidence_ids, claim_token FROM work_items WHERE id=?",
+            (scan["work_item_id"],),
+        ).fetchone()
+        conn.close()
+        self.assertEqual([], json.loads(row[0]))
+        self.assertEqual([], json.loads(row[1]))
+        self.assertIsNone(row[2])
+
     def test_gate_ignores_dangling_bite_and_doctor_fixes(self):
         self.init_repo()
         self.declare("feat-doc")
@@ -541,7 +602,7 @@ class WxgTestCase(unittest.TestCase):
         token = conn.execute("SELECT claim_token FROM work_items WHERE id='work:feat-doc:g1:model-architecture'").fetchone()
         self.assertIsNone(token[0])
         version = conn.execute("SELECT value FROM meta WHERE key='contract_version'").fetchone()
-        self.assertEqual(version[0], "3.2.0")
+        self.assertEqual(version[0], "3.2.1")
         conn.close()
         gate_after = self.cli("gate", "--feature", "feat-doc", "--json")
         self.assertEqual(gate_after["result"], "PASS")
@@ -636,7 +697,7 @@ class WxgTestCase(unittest.TestCase):
 
     def test_contract_json_is_serializable(self):
         contract = self.cli("contract", "--json")
-        self.assertEqual(contract["version"], "3.2.0")
+        self.assertEqual(contract["version"], "3.2.1")
         self.assertEqual(contract["schema_version"], 9)
         self.assertIn("evidence-record", contract["commands"])
         self.assertEqual(contract["commands"]["work-claim"]["options"][1]["type"], "str")
