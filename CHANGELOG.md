@@ -1,5 +1,22 @@
 # Changelog — why-exist-graph
 
+## 3.2.2（2026-11-06）
+
+**`doctor` 不可修检查补测**。审计 12 片：32 类检查里 24 类无测试。3.2.1 覆盖了
+可修的 7 类，本版补 5 类核心的不可修检查。
+
+- **`applies-invalid`**：`applies` 边的语义是「谁应用了哪个设计模式」，dst 不是
+  pattern 时必须报。
+- **`pattern-unjustified`**：pattern 节点缺 `applicability` 或 `not_applicable`
+  时必须报——否则等于没做选型。
+- **`evidence-artifact-changed`**：证据登记的产物被改过，登记就失效，必须报。
+- **`evidence-work-missing`**：evidence 关联的工单不存在时必须报。
+- **`legacy-identity`**：迁移留下的 legacy 身份只能报给人看，且必须出现在
+  `unfixable_checks` 里——自动改成某个 actor 等于伪造审计身份。
+- **变异验证**：前三条各回退检查逻辑一次，用例都变红。
+- **测试数**：411 → 416（无行为变化）。
+- **版本**：契约 `3.2.1` → `3.2.2`；schema 仍为 `9`。
+
 ## 3.2.1（2026-11-06）
 
 **`doctor --fix` 的删数据路径补齐测试**。审计 12 片：`--fix` 是全仓唯一会删数据

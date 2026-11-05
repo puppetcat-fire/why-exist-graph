@@ -568,6 +568,73 @@ class WxgTestCase(unittest.TestCase):
         self.assertEqual([], json.loads(row[1]))
         self.assertIsNone(row[2])
 
+    def test_doctor_flags_applies_edge_to_non_pattern(self):
+        """`applies` 边的语义是「谁应用了哪个设计模式」，dst 必须是 pattern。"""
+        self.init_repo()
+        conn = self.db()
+        conn.execute("INSERT INTO nodes(id, kind, name) VALUES('component:t:src','component','S')")
+        conn.execute("INSERT INTO nodes(id, kind, name) VALUES('classifier:t:dst','classifier','D')")
+        conn.execute(
+            "INSERT INTO edges(id, src, dst, kind) "
+            "VALUES('e:applies','component:t:src','classifier:t:dst','applies')"
+        )
+        conn.commit()
+        conn.close()
+        result = self.cli("doctor", expect=1)
+        self.assertIn("applies-invalid", result["by_check"])
+        self.assertIn("applies-invalid", result["unfixable_checks"])
+
+    def test_doctor_flags_pattern_without_justification(self):
+        """pattern 节点必须写清 applicability 与 not_applicable，否则等于没做选型。"""
+        self.init_repo()
+        conn = self.db()
+        conn.execute(
+            "INSERT INTO nodes(id, kind, name, attrs_json) VALUES('pattern:t:p','pattern','P','{}')"
+        )
+        conn.commit()
+        conn.close()
+        result = self.cli("doctor", expect=1)
+        self.assertIn("pattern-unjustified", result["by_check"])
+
+    def test_doctor_flags_evidence_artifact_changed(self):
+        """证据登记的产物被改过，登记就失效了——这条以前没有用例。"""
+        self.init_repo()
+        self.declare("feat-ev")
+        artifact = self.base / "artifact.txt"
+        artifact.write_text("v1", encoding="utf-8")
+        self.cli("evidence-record", "--feature", "feat-ev", "--name", "e", "--command", "true",
+                 "--artifact", str(artifact), "--actor", "t")
+        artifact.write_text("v2", encoding="utf-8")
+        result = self.cli("doctor", expect=1)
+        self.assertIn("evidence-artifact-changed", result["by_check"])
+
+    def test_doctor_flags_evidence_with_missing_work_item(self):
+        self.init_repo()
+        self.declare("feat-ev2")
+        conn = self.db()
+        conn.execute(
+            "INSERT INTO evidence(id, feature_id, generation, work_item_id, name, command, "
+            "exit_code, actor, created_at) "
+            "VALUES('ev:gone','feat-ev2',1,'work:gone','e','true',0,'t','2026-01-01T00:00:00Z')"
+        )
+        conn.commit()
+        conn.close()
+        result = self.cli("doctor", expect=1)
+        self.assertIn("evidence-work-missing", result["by_check"])
+
+    def test_doctor_flags_legacy_identity_as_unfixable(self):
+        """legacy 身份只能报给人看：自动改成某个 actor 就等于伪造审计身份。"""
+        self.init_repo()
+        self.declare("feat-legacy")
+        scan, _ = self.import_scan("feat-legacy")
+        conn = self.db()
+        conn.execute("UPDATE work_items SET claimed_by='legacy' WHERE id=?", (scan["work_item_id"],))
+        conn.commit()
+        conn.close()
+        result = self.cli("doctor", expect=1)
+        self.assertIn("legacy-identity", result["by_check"])
+        self.assertIn("legacy-identity", result["unfixable_checks"])
+
     def test_gate_ignores_dangling_bite_and_doctor_fixes(self):
         self.init_repo()
         self.declare("feat-doc")
@@ -602,7 +669,7 @@ class WxgTestCase(unittest.TestCase):
         token = conn.execute("SELECT claim_token FROM work_items WHERE id='work:feat-doc:g1:model-architecture'").fetchone()
         self.assertIsNone(token[0])
         version = conn.execute("SELECT value FROM meta WHERE key='contract_version'").fetchone()
-        self.assertEqual(version[0], "3.2.1")
+        self.assertEqual(version[0], "3.2.2")
         conn.close()
         gate_after = self.cli("gate", "--feature", "feat-doc", "--json")
         self.assertEqual(gate_after["result"], "PASS")
@@ -697,7 +764,7 @@ class WxgTestCase(unittest.TestCase):
 
     def test_contract_json_is_serializable(self):
         contract = self.cli("contract", "--json")
-        self.assertEqual(contract["version"], "3.2.1")
+        self.assertEqual(contract["version"], "3.2.2")
         self.assertEqual(contract["schema_version"], 9)
         self.assertIn("evidence-record", contract["commands"])
         self.assertEqual(contract["commands"]["work-claim"]["options"][1]["type"], "str")
