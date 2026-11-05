@@ -97,7 +97,9 @@
 | P2.1 后端测试接进 CI | 完成 | 2.97.0：CI `backend` job（MariaDB 11 + PG 16 service 容器）、`tools/test_backend.py`、preflight 加「后端集成（可选）」；本机真库 3+3 全过 |
 | 2.97.0 发布闭环 | 完成（有修正） | 本地产物 `c1fe9d69…` 是 CRLF 脏版本，**Release 附件 `a1ccec26…` 才是正确产物**；commit `97f95f8` + tag |
 | P2.2 打包可复现性（行尾） | 完成 | 2.98.0：`core.autocrlf=false` + 26 文件恢复 LF；`build_release` 打包前统一 LF；`preflight` 加「工作树行尾」检查；本地与 CI 产物 SHA 一致 |
-| 2.98.0 发布闭环 | 完成 | `dist/v2.98.0`（63 文件，SHA `1fb79a27…`，commit `0603a9f`）+ 技能已装 2.98.0 + tag |
+| 2.98.0 发布闭环 | 完成 | `dist/v2.98.0`（63 文件，SHA `1fb79a27…`，commit `0603a9f`）+ 技能已装 2.98.0 + tag；Release 附件与本地逐字节一致 |
+| P2.3 retract 计数与越界可见化 | 完成 | 2.99.0：`nodes_deleted` 只计真删；新增 `edges_deleted_out_of_scope`、`work_refs_pruned_other_features`、`bite.added_to_feature_scope`；测试 +3，变异验证 3/3 |
+| 2.99.0 发布闭环 | 完成 | `dist/v2.99.0`（63 文件，SHA `b0b14d82…`，commit `73c5be7`）+ 技能已装 2.99.0 + tag |
 | Release asset 上传 | 自动（此前判断有误） | `release.yml` 在 tag push 时构建并上传 zip；实测 v2.96.0 附件 SHA `889e2af3…` 与干净 checkout 构建逐字节一致 |
 
 发布版本：`2.92.0` → `2.93.0`（schema 仍为 9），提交 `9c9be79`。
