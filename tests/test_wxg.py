@@ -454,7 +454,7 @@ class WxgTestCase(unittest.TestCase):
         token = conn.execute("SELECT claim_token FROM work_items WHERE id='work:feat-doc:g1:model-architecture'").fetchone()
         self.assertIsNone(token[0])
         version = conn.execute("SELECT value FROM meta WHERE key='contract_version'").fetchone()
-        self.assertEqual(version[0], "2.94.0")
+        self.assertEqual(version[0], "2.95.0")
         conn.close()
         gate_after = self.cli("gate", "--feature", "feat-doc", "--json")
         self.assertEqual(gate_after["result"], "PASS")
@@ -549,7 +549,7 @@ class WxgTestCase(unittest.TestCase):
 
     def test_contract_json_is_serializable(self):
         contract = self.cli("contract", "--json")
-        self.assertEqual(contract["version"], "2.94.0")
+        self.assertEqual(contract["version"], "2.95.0")
         self.assertEqual(contract["schema_version"], 9)
         self.assertIn("evidence-record", contract["commands"])
         self.assertEqual(contract["commands"]["work-claim"]["options"][1]["type"], "str")
@@ -709,6 +709,41 @@ class WxgTestCase(unittest.TestCase):
         # legacy 身份只能报给人看，不能自动修（修了就等于伪造审计身份）
         self.assertIn("legacy-identity", doctor["unfixable_checks"])
         self.assertEqual(0, doctor["fixable_count"])
+
+    def test_init_upgrades_legacy_bites_table_without_generation(self):
+        """0.4.x 的库：bites 表没有 generation 列，而 idx_bites_feature 建在它上面。
+
+        旧实现先跑完整 DDL（含索引）再补列，所以升级必然
+        `no such column: generation`，重试也一样——库永久卡死。
+        顺序改成 建表 → 补列 → 建索引 之后才能升上来。
+        """
+        self.root.mkdir(parents=True)
+        db = self.root / "graph.sqlite"
+        conn = sqlite3.connect(db)
+        conn.execute(
+            """CREATE TABLE bites (
+                 node_id TEXT NOT NULL, feature_id TEXT NOT NULL, verdict TEXT NOT NULL,
+                 reason TEXT, actor TEXT, created_at TEXT NOT NULL,
+                 PRIMARY KEY (node_id, feature_id))"""
+        )
+        conn.execute(
+            "INSERT INTO bites(node_id, feature_id, verdict, created_at) "
+            "VALUES('operation:demo:x','demo','KEEP','2026-01-01T00:00:00Z')"
+        )
+        conn.commit()
+        conn.close()
+
+        migrated = self.cli("init")
+        self.assertEqual(migrated["schema_version"], 9)
+        conn = sqlite3.connect(db)
+        bite_columns = {row[1] for row in conn.execute("PRAGMA table_info(bites)")}
+        indexes = {row[1] for row in conn.execute("PRAGMA index_list(bites)")}
+        rows = conn.execute("SELECT node_id, generation FROM bites").fetchall()
+        conn.close()
+        self.assertIn("generation", bite_columns)
+        self.assertIn("idx_bites_feature", indexes)
+        # features 表是新建的空表，回填只能得到 NULL——这里只要求升级不丢行
+        self.assertEqual([("operation:demo:x", None)], rows)
 
     # ---------------- 0.4.0 回归：门禁/注册/幂等/可用性
 

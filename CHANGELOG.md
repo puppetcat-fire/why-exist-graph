@@ -1,5 +1,25 @@
 # Changelog — why-exist-graph
 
+## 2.95.0（2026-11-06）
+
+**旧库升级与状态库体检**。审计 04 片的两条：0.4.x 的库永远升不上来、`ensure_db` 名不副实。
+
+- **旧库升级顺序修正**：`init_db` 原来是「完整 DDL（表 + 索引）→ 补列」，而
+  `idx_bites_feature` 建在 `bites.generation` 上、`idx_work_feature` 建在
+  `work_items.generation` 上——这两列都是迁移才补的。所以 0.4.x 的库一 `init` 就报
+  `no such column: generation`，重试同样失败，永久卡死。改成「建表 → 补列 → 建索引」，
+  三份 schema 各自拆成 TABLES / INDEXES 两段。
+  反例实测：同一个旧库，旧顺序 `OperationalError: no such column: generation`，
+  新顺序升级成功、列补上、索引建好、原有行一条不少。
+- **`ensure_db` 收紧**：以前只查 `meta` 表在不在，缺表或缺列的库会等到后面某条 SQL
+  才炸成 `OperationalError`——用户看到的是 `no such column: claimed_by`，看不出该跑
+  init 还是该修库。现在检查 12 张必需表与 5 张表的迁移列，并把两种错误分开：
+  缺表 → 「未初始化，跑 `wxg init`」；缺列 → 「schema 落后，跑 `wxg init` 就地迁移，
+  不要重建库」。
+- **测试**：新增 5 条——旧 bites 表升级（端到端，含索引与数据保留）、`ensure_db` 四类
+  场景（空库 / 完整库 / 缺列 / 缺表）。全量 392 → 397 条。
+- **版本**：契约 `2.94.0` → `2.95.0`；schema 仍为 `9`。
+
 ## 2.94.0（2026-11-06）
 
 **MySQL / PostgreSQL 后端修到能用**。审计 04、05 两片实测出来的三条断链——「init 必崩、

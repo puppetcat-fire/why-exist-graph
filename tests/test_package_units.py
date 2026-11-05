@@ -332,6 +332,53 @@ class InitCommandTest(unittest.TestCase):
         self.assertIn("graph.sqlite", out["db"])
 
 
+class EnsureDbTest(unittest.TestCase):
+    """ensure_db 要能区分「没初始化」和「schema 落后」——两者的修复动作不同。"""
+
+    def _conn(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def test_empty_database_reports_uninitialized(self):
+        conn = self._conn()
+        with self.assertRaises(Reject) as ctx:
+            db.ensure_db(conn)
+        self.assertIn("未初始化", str(ctx.exception))
+        self.assertIn("meta", str(ctx.exception))
+        conn.close()
+
+    def test_complete_schema_passes(self):
+        conn = self._conn()
+        db.init_db(conn)
+        db.ensure_db(conn)  # 不抛即通过
+        conn.close()
+
+    def test_lagging_column_reports_schema_behind(self):
+        conn = self._conn()
+        db.init_db(conn)
+        # 模拟迁移前的旧库：少一列。sqlite 3.35+ 支持 DROP COLUMN
+        conn.execute("ALTER TABLE bites DROP COLUMN phase")
+        conn.commit()
+        with self.assertRaises(Reject) as ctx:
+            db.ensure_db(conn)
+        message = str(ctx.exception)
+        self.assertIn("schema 落后", message)
+        self.assertIn("bites.phase", message)
+        self.assertIn("不要重建库", message)
+        conn.close()
+
+    def test_missing_single_table_is_named(self):
+        conn = self._conn()
+        db.init_db(conn)
+        conn.execute("DROP TABLE changes")
+        conn.commit()
+        with self.assertRaises(Reject) as ctx:
+            db.ensure_db(conn)
+        self.assertIn("changes", str(ctx.exception))
+        conn.close()
+
+
 class NamedParamsEdgeTest(unittest.TestCase):
     def test_repeated_placeholder_collects_each_occurrence(self):
         sql, params = db._named_params("SELECT * FROM t WHERE a=:x OR b=:x", {"x": 7})

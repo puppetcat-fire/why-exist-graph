@@ -288,6 +288,24 @@ CREATE INDEX IF NOT EXISTS idx_changes_feature ON changes(feature_id, to_generat
 # PostgreSQL：AUTOINCREMENT 换 BIGSERIAL；TEXT 主键、部分唯一索引、ON CONFLICT 都与 SQLite 兼容。
 PG_SCHEMA_SQL = SCHEMA_SQL.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "BIGSERIAL PRIMARY KEY")
 
+#: 索引和建表必须分两步跑。旧库的表可能缺「迁移才补的列」（bites.generation、
+#: work_items.generation 等），而 idx_bites_feature 就建在 generation 上——
+#: 先跑完整 DDL 会在建索引这一步直接 `no such column: generation`，
+#: migrate_schema 还没轮到执行，0.4.x 的库永久卡死。顺序改成：
+#: 建表（IF NOT EXISTS 对已有表是 no-op）→ 补列 → 建索引。
+_INDEX_STATEMENT = re.compile(r"^[ \t]*CREATE INDEX IF NOT EXISTS [^;]*;[ \t]*$", re.MULTILINE)
+
+
+def _split_schema(sql: str) -> tuple[str, str]:
+    indexes = "\n".join(match.group(0).strip() for match in _INDEX_STATEMENT.finditer(sql))
+    tables = _INDEX_STATEMENT.sub("", sql)
+    return tables, indexes
+
+
+SCHEMA_TABLES_SQL, SCHEMA_INDEXES_SQL = _split_schema(SCHEMA_SQL)
+MYSQL_TABLES_SQL, MYSQL_INDEXES_SQL = _split_schema(MYSQL_SCHEMA_SQL)
+PG_TABLES_SQL, PG_INDEXES_SQL = _split_schema(PG_SCHEMA_SQL)
+
 
 class _NoopCursor:
     rowcount = 0
@@ -526,22 +544,57 @@ def connect(root: Path):
     return conn
 
 
-def ensure_db(conn) -> None:
+#: 状态库必须齐全的表；缺任何一张都说明没 init 过，或建库中途失败。
+REQUIRED_TABLES = (
+    "meta", "repos", "nodes", "edges", "features", "conditions",
+    "work_items", "feature_nodes", "evidence", "bites", "judge_history", "changes",
+)
+
+#: 迁移才补的列。旧库缺这些列是「schema 落后」而不是「没初始化」——
+#: 两者要给出不同的修复动作：init 会就地补列，重建库会丢数据。
+REQUIRED_COLUMNS = {
+    "work_items": ("claimed_by", "judged_by", "judged_at", "claimed_at"),
+    "evidence": ("generation",),
+    "features": ("coverage_epsilon", "drift_limit", "conformance"),
+    "nodes": ("stale",),
+    "bites": ("generation", "phase"),
+}
+
+
+def _existing_tables(conn) -> set[str]:
     dialect = getattr(conn, "dialect", "sqlite")
     if dialect == "mysql":
-        row = conn.execute(
-            "SELECT table_name AS name FROM information_schema.tables "
-            "WHERE table_schema=DATABASE() AND table_name='meta'"
-        ).fetchone()
+        rows = conn.execute(
+            "SELECT table_name AS name FROM information_schema.tables WHERE table_schema=DATABASE()"
+        ).fetchall()
     elif dialect == "postgres":
-        row = conn.execute(
-            "SELECT table_name AS name FROM information_schema.tables "
-            "WHERE table_schema=current_schema() AND table_name='meta'"
-        ).fetchone()
+        rows = conn.execute(
+            "SELECT table_name AS name FROM information_schema.tables WHERE table_schema=current_schema()"
+        ).fetchall()
     else:
-        row = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='meta'").fetchone()
-    if row is None:
-        raise Reject("状态库未初始化：先运行 `wxg init`")
+        rows = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    return {row["name"] for row in rows}
+
+
+def ensure_db(conn) -> None:
+    """确认状态库存在，且 schema 不是明显落后的旧版。
+
+    以前只查 meta 表：缺表或缺列的库会等到后面某条 SQL 才炸成 OperationalError，
+    用户看到的是「no such column: claimed_by」而不是「该跑 init 还是该修库」。
+    """
+    present = _existing_tables(conn)
+    missing = [name for name in REQUIRED_TABLES if name not in present]
+    if missing:
+        raise Reject(f"状态库未初始化：缺表 {', '.join(missing)}；先运行 `wxg init`")
+    lagging: list[str] = []
+    for table, columns in REQUIRED_COLUMNS.items():
+        actual = _table_columns(conn, table)
+        lagging.extend(f"{table}.{column}" for column in columns if column not in actual)
+    if lagging:
+        raise Reject(
+            f"状态库 schema 落后（缺列 {', '.join(lagging)}）；运行 `wxg init` 就地迁移，"
+            "不要重建库，否则会丢已有节点与工单"
+        )
 
 
 def _table_columns(conn, table: str) -> set[str]:
@@ -666,13 +719,15 @@ def migrate_schema(conn: sqlite3.Connection) -> dict:
 def init_db(conn) -> dict:
     dialect = getattr(conn, "dialect", "sqlite")
     if dialect == "mysql":
-        script = MYSQL_SCHEMA_SQL
+        tables, indexes = MYSQL_TABLES_SQL, MYSQL_INDEXES_SQL
     elif dialect == "postgres":
-        script = PG_SCHEMA_SQL
+        tables, indexes = PG_TABLES_SQL, PG_INDEXES_SQL
     else:
-        script = SCHEMA_SQL
-    conn.executescript(script)
+        tables, indexes = SCHEMA_TABLES_SQL, SCHEMA_INDEXES_SQL
+    conn.executescript(tables)
     migrated = migrate_schema(conn)
+    # 索引最后建：它可能引用迁移才补的列（idx_bites_feature 建在 bites.generation 上）
+    conn.executescript(indexes)
     conn.commit()
     return migrated
 
