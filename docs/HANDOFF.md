@@ -13,7 +13,8 @@
 |---|---|
 | 版本 | 见仓库根 `VERSION`（schema `9`）；本文档不写死版本号 |
 | 代码 | `scripts/wxg.py` 薄入口 + `scripts/whyexist/` 包（模块数与行数会变，不写死） |
-| 发布包 | `dist/v<version>/why-exist-graph-<version>.zip`（63 个文件） |
+| 发布包 | `dist/v<version>/why-exist-graph-<version>.zip`（63 个文件，含 `manifest.json` 与 `archive.sha256`） |
+| 安装 | `python tools/install_skill.py`：从 dist/ 挑最新包 → 备份旧目录 → 装到 `~/.dsh/skills/why-exist-graph` → 跑 `verify` 自检 |
 
 ## 能力地图
 
