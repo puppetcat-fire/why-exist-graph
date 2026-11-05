@@ -90,6 +90,8 @@
 | 发布闭环 | 完成 | `preflight --release` 八步全过；`dist/v2.93.0`（63 文件，SHA `4c8d6a17…`，manifest 带 commit 与 dirty 标记）；`tools/install_skill.py` 装到 `~/.dsh/skills/why-exist-graph` 并通过 verify |
 | P1.7 MySQL/PG 三条断链 | 完成 | 2.94.0：`cmd_init` 补 `db_url`/`re`、两个连接包装补 `executemany`、PG 占位符改引号感知、`repo-add` 补 `_is_integrity_error`；单测 87→96，全量 392 |
 | 2.94.0 发布闭环 | 完成 | `dist/v2.94.0`（63 文件，SHA `c667cc8d…`，commit `2f08eb6`）+ 技能已装 2.94.0 + tag |
+| P1.8 旧库升级 + ensure_db | 完成 | 2.95.0：建表→补列→建索引（旧顺序实测 `no such column: generation`）；ensure_db 校验 12 表 + 5 张表的迁移列，区分「未初始化」与「schema 落后」 |
+| 2.95.0 发布闭环 | 完成 | `dist/v2.95.0`（63 文件，SHA `7f66aaf7…`，commit `3a06989`）+ 技能已装 2.95.0 + tag |
 | Release asset 上传 | 待办 | 本机没有 `GITHUB_TOKEN`，zip 与 sha256 需手动上传；说明见 [`RELEASE-2.93.0.md`](RELEASE-2.93.0.md) |
 
 发布版本：`2.92.0` → `2.93.0`（schema 仍为 9），提交 `9c9be79`。
