@@ -121,6 +121,9 @@ def scope_ids(conn, feature_id: str) -> list[str]:
                             add(node)
                 else:
                     add(pattern)
-    return ids
+    # 排序是契约，不是美观：这里的输出会被 work-seed 原样写进 target_ids、也会被
+    # feature-status 取前几条展示。旧实现直接返回收集顺序，而通配展开遍历的是 set，
+    # 顺序随 PYTHONHASHSEED 变——全项目都在承诺确定性，这是唯一的例外。
+    return sorted(ids)
 
 

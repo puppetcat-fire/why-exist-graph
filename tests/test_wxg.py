@@ -474,6 +474,39 @@ class WxgTestCase(unittest.TestCase):
         second = self.bite(node, "KEEP", feature="feat-bite-b")
         self.assertFalse(second["added_to_feature_scope"])
 
+    def test_scope_ids_order_is_hash_seed_independent(self):
+        """scope_ids 的输出会被 work-seed 写进 target_ids、被 feature-status 取前几条。
+
+        旧实现遍历 set 展开通配，顺序随 PYTHONHASHSEED 变（审计探针实测 4 个种子
+        4 种顺序）。这里用两个 feature：节点由 feat-a 导入，feat-b 的通配 target
+        会把它们「新」拉进作用域——只有新加入的节点才会带上 set 的遍历顺序，
+        单个 feature 内部会被 feature_nodes 的 DB 顺序盖住。
+        """
+        self.init_repo()
+        self.declare("feat-scope-a")
+        self.declare("feat-scope-b")
+        self.import_scan("feat-scope-a")
+        self.cli("work-open", "--feature", "feat-scope-b", "--kind", "scan",
+                 "--target-ids", '["*"]')
+        script = (
+            "import sys\n"
+            f"sys.path.insert(0, {str(SKILL / 'scripts')!r})\n"
+            "from pathlib import Path\n"
+            "from whyexist import db, workflow as wf\n"
+            f"conn = db.connect(Path({str(self.root)!r}))\n"
+            "print('|'.join(wf.scope_ids(conn, 'feat-scope-b')))\n"
+        )
+        outputs = set()
+        for seed in ("0", "1", "2", "3"):
+            env = dict(os.environ, PYTHONHASHSEED=seed, PYTHONUTF8="1")
+            proc = subprocess.run(
+                [sys.executable, "-c", script],
+                capture_output=True, text=True, encoding="utf-8", env=env,
+            )
+            self.assertEqual(0, proc.returncode, proc.stderr)
+            outputs.add(proc.stdout.strip())
+        self.assertEqual(1, len(outputs), f"不同 PYTHONHASHSEED 下顺序不同：{outputs}")
+
     def test_gate_ignores_dangling_bite_and_doctor_fixes(self):
         self.init_repo()
         self.declare("feat-doc")
@@ -508,7 +541,7 @@ class WxgTestCase(unittest.TestCase):
         token = conn.execute("SELECT claim_token FROM work_items WHERE id='work:feat-doc:g1:model-architecture'").fetchone()
         self.assertIsNone(token[0])
         version = conn.execute("SELECT value FROM meta WHERE key='contract_version'").fetchone()
-        self.assertEqual(version[0], "3.1.0")
+        self.assertEqual(version[0], "3.2.0")
         conn.close()
         gate_after = self.cli("gate", "--feature", "feat-doc", "--json")
         self.assertEqual(gate_after["result"], "PASS")
@@ -603,7 +636,7 @@ class WxgTestCase(unittest.TestCase):
 
     def test_contract_json_is_serializable(self):
         contract = self.cli("contract", "--json")
-        self.assertEqual(contract["version"], "3.1.0")
+        self.assertEqual(contract["version"], "3.2.0")
         self.assertEqual(contract["schema_version"], 9)
         self.assertIn("evidence-record", contract["commands"])
         self.assertEqual(contract["commands"]["work-claim"]["options"][1]["type"], "str")
