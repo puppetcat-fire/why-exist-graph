@@ -25,7 +25,7 @@
 | `model-architecture` | `derive`、`promote`、`upsert-node`、`upsert-edge`、`bind`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
 | `model-structure` | `derive`、`promote`、`upsert-node`、`upsert-edge`、`bind`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
 | `interact` | `upsert-node`、`upsert-edge`、`bind`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
-| `specify-test` | `upsert-node`、`upsert-edge`、`bind`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
+| `specify-test` | `upsert-node`、`upsert-edge`、`bind`、`acceptance-add`、`acceptance-import`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
 | `implement-test` | `upsert-node`、`bind`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
 | `observe` | `import-file`、`import-repo`、`derive`、`upsert-node`、`retract`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
 | `audit` | `get`、`find`、`slice`、`work-judge`、`role-prompt`、`evidence-record` |
@@ -59,6 +59,9 @@
 | `upsert-edge` | 写边；两端必须已存在 | --token <值> --data <值> | 需要 claim_token / 角色命令 |
 | `bind` | 绑定 parameter/argument/assertion 到已存在节点 | --token <值> --node-id <值> --bind-to <值> | 需要 claim_token / 角色命令 |
 | `retract` | 撤回 target_ids 内的节点与边；级联删除 bite 并剔除工单引用 | --token <值> | 需要 claim_token / 角色命令 |
+| `acceptance-add` | 给一条需求登记一条验收条目（生成 acceptance 节点 + has_acceptance 边）；同一条文重复登记拒绝 | --requirement <值> --text <值> --token <值> | 状态库（需 claim_token / 角色命令） |
+| `acceptance-import` | 从 requirement.attrs.x_acceptance 批量生成验收条目（按序号+条文对齐，幂等）；把旧项目一次性接进追溯门 | --feature <值> --dry-run | 状态库（需 claim_token / 角色命令；--dry-run 只读） |
+| `trace` | 需求→验收→测试追溯矩阵：每条需求的验收条目与覆盖它的测试；有缺口退出码 1 | --feature <值> --json | 只读 |
 | `bite` | 记录一次必要性判定；判决集固定，写 bites 与节点 attrs.bite（唯一写入口） | --node <值> --verdict <值> | 状态库 |
 | `evidence-record` | 记录一条可追溯证据：命令、退出码、执行者、产物 hash（BehaviorPassed 的门槛） | --feature <值> --name <值> --command <值> | 状态库 |
 | `evidence-list` | 列出某 feature 的证据记录 | --feature <值> | 只读 |
@@ -91,8 +94,8 @@
 
 结构性漂移判决：`UNMAPPED`、`DOC-ONLY`（由 `--drift-limit` 控制是否拦门）。
 
-gate / coverage / reconcile / 变更集 / 回扫 / conformance / 后端 / serve / 审计与证据 /
-导出文件共 10 张规则表，以及 21 条一致性不变量，**只在 full 契约块里**——本块刻意不收，
+gate / coverage / trace / reconcile / 变更集 / 回扫 / conformance / 后端 / serve / 审计与证据 /
+导出文件共 11 张规则表，以及 23 条一致性不变量，**只在 full 契约块里**——本块刻意不收，
 避免每次加载技能都带上十几 KB 的规则正文。要看它们：`wxg contract --section full`，
 或读 `references/contract.md`；机器可读用 `wxg contract --json`（`gate_rules` /
 `coverage_rules` / … / `invariants` 都是独立键）。
@@ -112,7 +115,8 @@ gate / coverage / reconcile / 变更集 / 回扫 / conformance / 后端 / serve 
 | 施工中标记：`construction=true` 的节点（施工中代码段）在 gate 前必须清除，否则 FAIL；咬合逻辑不受标记影响。 |
 | 回扫生还：作用域内 `stale=1` 的节点（重扫时代码里已不存在的旧锚点）在 gate 前必须清除，否则 FAIL。 |
 | 设计-代码一致性：feature 开启 `--conformance` 时，gate 要求 use_case/component/port 有 `maps_to` 代码锚点、component/port 的 `depends` 有代码调用支撑、代码调用不出现未声明耦合、每个 use_case 至少被一个 testcase `verifies`；否则 FAIL。只报告检查结果，不生成新的设计描述。 |
-| gate 只读：不写条件、不写工单、不改节点，重复执行结果不变；PASS 退出码 0、FAIL 退出码 1。 |
+| 需求追溯：作用域内每个 `requirement` 必须通过 `has_acceptance` 挂至少一条 `acceptance`；每条 `acceptance` 必须被至少一条 `testcase` `verifies`。登记了需求却一条验收条目都没有 → `UNKNOWN`（输入缺失，不可判 PASS）；有验收但存在未被测试指到的条目 → `FAIL`。作用域内没有 requirement 时该检查不适用（按 N/A 报告，不影响判定）。 |
+| gate 只读：不写条件、不写工单、不改节点，重复执行结果不变；PASS 退出码 0、FAIL 退出码 1、UNKNOWN 退出码 1（UNKNOWN 不是通过，只是拒绝了“无法判定”被当成绿色）。 |
 | 除 Accepted 由 `feature-declare` / `feature-register` 新建时置真外，只有 work-judge(passed) 写条件；judge(failed) 把该条件及其后的条件置假，没有对应条件的工单（scan）不改条件。 |
 | `BehaviorPassed` 置真前必须有一条**同 generation**、exit_code=0 且产物有效的 evidence（有产物时校验存在与 hash），gate 执行同样的检查。 |
 | feature 开启 coverage 策略（默认对新 feature 开启；`--no-coverage` 关闭）时，gate 与 `work-judge(passed)` 都要求该阶段咬合覆盖达标；关闭则只报告不拦截。 |
@@ -129,6 +133,16 @@ gate / coverage / reconcile / 变更集 / 回扫 / conformance / 后端 / serve 
 | 阶段推进前要求 p_m·(S-m) ≤ ε，其中 p_m=(1+d)/(10+m)（假设后续咬合不再新增命中）；n_required 取满足条件的最小 m，m 不超过 S（m=S 时残留期望为 0）。 |
 | 调度索引 I_i = α^(i-1)·p_i，α 默认 2，i 为条件在固定顺序中的位置；预算有限时优先把下一次咬合投给 I 最大的阶段；`coverage.next` 取**条件顺序里第一个未达标阶段**（阶段不能跳着推进）。 |
 | `coverage` 只读输出各阶段的 bites、covered、hits、p、n_required、met 与调度建议；策略开启时 `work-judge(passed)` 与 `gate` 执行同一检查。 |
+
+### 追溯（trace）
+
+| 规则 |
+|------|
+| 需求的可交付性由**验收条目**承载：一条 requirement 拆成 N 条 acceptance（`has_acceptance`），每条 acceptance 是可单独判定的条文，不是一段自由文本。 |
+| `acceptance-add` 与 `acceptance-import` 是 acceptance 的唯一写入口：id 由 `acceptance:{feature}:{requirement 后缀}:{序号}` 生成，`ordinal` 在需求内唯一且从 1 连续；同一条文重复登记拒绝，跨需求挂载拒绝。 |
+| `acceptance-import` 从 `requirement.attrs.x_acceptance` 幂等迁移旧项目：已有条目按 `ordinal` + `text` 对齐，只补缺的；`--dry-run` 只报告不写库。 |
+| `trace` 只读输出需求→验收→测试矩阵：每条需求的验收条目数、被测试指向的条目数、缺口清单；有缺口退出码 1，无缺口 0。 |
+| gate 的追溯检查与 `trace` 同一口径：有需求无验收 → `UNKNOWN`，有验收无测试 → `FAIL`，全绿才不影响 PASS；作用域内无 requirement 时该检查不适用。 |
 
 ### 调谐（reconcile）
 
@@ -246,12 +260,15 @@ gate / coverage / reconcile / 变更集 / 回扫 / conformance / 后端 / serve 
 | I19 回扫可断言 | sync 只读对比 DB 图与当前 AST；import-file 把本次未再出现的旧节点标 stale=1，gate 对作用域内 stale 节点 FAIL；stale 只能由重扫或设计重写清除。 |
 | I20 控制器可常驻 | serve 周期跑 reconcile；--apply 只做补单/解阻塞/回收陈旧 claim；--once 单趟；控制器可接 SQLite 或 MySQL，裁决/咬合永不自动。 |
 | I21 一致性只报差异 | conformance 只做差异检查：设计节点的 maps_to 锚点、depends 的代码支撑、未声明耦合、use_case 的测试覆盖；不生成节点、不补写设计，开关由 feature 的 --conformance 决定。 |
+| I22 验收是完成定义 | 需求的可交付性由 acceptance 节点承载：每条 requirement 至少一条 acceptance（has_acceptance），每条 acceptance 至少被一个 testcase verifies；acceptance 是唯一能表达“跳到第 3 条验收”的粒度。 |
+| I23 空输入不判通过 | gate 对“有需求、无验收”判 UNKNOWN 而不是 PASS：输入缺失时门只能拒绝表态，不能把缺失当绿。UNKNOWN 退出码 1，与 FAIL 一样不可当作交付。 |
 
 ### 节点 kind
 
 | kind | 说明 | 创建者 |
 |------|------|--------|
 | `requirement` | 功能声明；id 前缀 requirement:{feature}: | 声明入口 |
+| `acceptance` | 需求的验收条目（一条需求拆成 N 条可判定条文）；has_acceptance 由 requirement 指向它，verifies 由 testcase 指向它 | acceptance-add / acceptance-import |
 | `actor` | 角色 | model-architecture |
 | `use_case` | 用例；satisfies 指向 requirement | model-architecture |
 | `component` | 构件；depends 指向 component | model-architecture / scan 锚点 |
@@ -275,7 +292,8 @@ gate / coverage / reconcile / 变更集 / 回扫 / conformance / 后端 / serve 
 |------|------|
 | `contains` | 容器 -> 被包含节点 |
 | `satisfies` | use_case -> requirement |
-| `verifies` | testcase -> use_case / operation |
+| `has_acceptance` | requirement -> acceptance（该需求拆出的验收条目） |
+| `verifies` | testcase -> acceptance / use_case / operation |
 | `include` | use_case -> use_case |
 | `extend` | use_case -> use_case |
 | `generalizes` | classifier -> classifier |
@@ -301,6 +319,7 @@ gate / coverage / reconcile / 变更集 / 回扫 / conformance / 后端 / serve 
 | kind | 允许键 |
 |------|--------|
 | `requirement` | `statement`:str |
+| `acceptance` | `text`:str、`ordinal`:int |
 | `actor` | — |
 | `use_case` | `goal`:str、`actor`:str |
 | `component` | `duty`:str、`construction`:bool |
@@ -352,5 +371,5 @@ gate / coverage / reconcile / 变更集 / 回扫 / conformance / 后端 / serve 
 
 导出只包含图里连到该 feature 的记录：01 取 requirement；02 取 satisfies 这些 requirement 的 use_case；04 取用例经 depends/associates/realizes 到达的 component 与 port，以及 feature 作用域内的 pattern；05 取用例 contains 的 operation 及其 has_input、以及 contains 指向这些 operation 的 classifier；07 每条 writes->sink 算一步，另附请求参数表（同一参数只列一次，顺序按首次出现）；测试规格取 verifies 到这些 operation/use_case 的 testcase 与 asserts 到 operation 的 assertion。缺的格子留空，禁止从任何旧文档补句。参数、测试与断言按 id 去重。
 
-契约版本 `3.5.1`，库 schema 版本 `9`。
+契约版本 `3.6.0`，库 schema 版本 `9`。
 <!-- wxg:contract:full:end -->

@@ -82,12 +82,29 @@ def main() -> int:
             ("implement-test", True),
         ]
         for kind, allow_code in stages:
+            targets = ["requirement:demo:main"]
+            if kind == "specify-test":
+                # 3.6.0：specify-test 要把验收条目的测试接上，否则 gate 判 FAIL
+                targets += ["testcase:demo:*", "acceptance:demo:*"]
             run(root, "work-open", "--feature", "demo", "--kind", kind,
-                "--target-ids", "requirement:demo:main")
+                "--target-ids", json.dumps(targets))
             claim_args = ["work-claim", "--role", kind, "--actor", f"agent-{kind}"]
             if allow_code:
                 claim_args.append("--allow-product-code")
             claim = run(root, *claim_args)
+            if kind == "specify-test":
+                run(root, "acceptance-import", "--feature", "demo", "--token", claim["claim_token"])
+                run(root, "upsert-node", "--token", claim["claim_token"], "--data", json.dumps({
+                    "id": "testcase:demo:trace",
+                    "kind": "testcase",
+                    "name": "验收条目冒烟",
+                    "attrs": {"path": "tests/test_demo.py", "layer": "unit"},
+                }, ensure_ascii=False))
+                run(root, "upsert-edge", "--token", claim["claim_token"], "--data", json.dumps({
+                    "src": "testcase:demo:trace",
+                    "dst": "acceptance:demo:main:01",
+                    "kind": "verifies",
+                }, ensure_ascii=False))
             run(root, "work-finish", "--token", claim["claim_token"])
             run(root, "work-judge", "--id", claim["work_item_id"], "--verdict", "passed",
                 "--role", "audit", "--actor", "auditor-1")

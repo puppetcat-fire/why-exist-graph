@@ -102,6 +102,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "gate":
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0 if result.get("result") == "PASS" else 1
+    if args.cmd == "trace":
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if result.get("ok") else 1
     if args.cmd == "apply":
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0 if result.get("ok") else 1

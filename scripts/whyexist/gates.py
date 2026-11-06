@@ -386,6 +386,17 @@ def reconcile_actions(conn, feature: dict, claim_ttl: int) -> list[dict]:
     coverage = coverage_report(conn, feature)
     if coverage["enforced"] and coverage["unmet"]:
         actions.append({"action": "coverage-gap", "phases": coverage["unmet"], "auto": False})
+    from .trace import trace_report
+
+    trace = trace_report(conn, feature, limit=0)
+    if trace["applicable"] and not trace["ok"]:
+        actions.append({
+            "action": "traceability-gap",
+            "unknown": trace["summary"]["unknown"],
+            "acceptance_missing": trace["summary"]["acceptance_missing"],
+            "requirements_without_acceptance": trace["summary"]["requirements_without_acceptance"],
+            "auto": False,
+        })
     drift = drift_report(conn, feature)
     if drift["enforced"] and drift["count"] > drift["limit"]:
         actions.append({"action": "drift-over-limit", "count": drift["count"], "limit": drift["limit"], "auto": False})

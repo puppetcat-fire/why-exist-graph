@@ -17,6 +17,7 @@ from .gates import (
 )
 from .graph import get_node
 from .jsonio import dumps, loads, utc_now
+from .trace import trace_report
 from .workflow import (
     condition_flags,
     ensure_feature,
@@ -219,6 +220,7 @@ def cmd_gate(conn, args):
     evidence_ok = evidence_qualifies(conn, feature["id"], feature["generation"])
     coverage = coverage_report(conn, feature)
     drift = drift_report(conn, feature)
+    traceability = trace_report(conn, feature)
     base = {
         "conditions": flags,
         "bites": verdicts,
@@ -226,6 +228,7 @@ def cmd_gate(conn, args):
         "evidence_ok": evidence_ok,
         "coverage": coverage,
         "drift": drift,
+        "traceability": traceability,
         "constructions": constructions,
         "stale": stale_nodes,
     }
@@ -243,6 +246,7 @@ def cmd_gate(conn, args):
         {"name": "conformance", "ok": conformance is None or not conformance["violations"]},
         {"name": "conditions", "ok": not missing},
         {"name": "evidence", "ok": not (evidence_missing and not evidence_ok)},
+        {"name": "traceability", "ok": traceability["ok"], "unknown": traceability["summary"]["unknown"]},
         {"name": "coverage", "ok": not (coverage["enforced"] and coverage["unmet"])},
     ]
     if dangling:
@@ -308,6 +312,27 @@ def cmd_gate(conn, args):
             "result": "FAIL",
             "reason": "缺少有效的同 generation evidence（exit_code=0 且产物存在/hash 一致）：" + ", ".join(evidence_missing),
             "missing_evidence_for": evidence_missing,
+            **base,
+        }
+    if traceability["summary"]["unknown"]:
+        return {
+            "result": "UNKNOWN",
+            "reason": (
+                f"追溯门无法判定：作用域内 {traceability['requirements']} 条需求，但一条验收条目都没登记；"
+                "先 `acceptance-import`（从 x_acceptance 迁移）或 `acceptance-add` 登记验收，再谈交付"
+            ),
+            **base,
+        }
+    if traceability["applicable"] and not traceability["ok"]:
+        summary = traceability["summary"]
+        return {
+            "result": "FAIL",
+            "reason": (
+                f"需求追溯未通过：{summary['acceptance_missing']} 条验收条目没有测试指向、"
+                f"{summary['requirements_without_acceptance']} 条需求没有验收条目"
+            ),
+            "missing_acceptance": traceability["missing"],
+            "without_acceptance": traceability["without_acceptance"],
             **base,
         }
     if coverage["enforced"] and coverage["unmet"]:

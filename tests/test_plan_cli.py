@@ -759,6 +759,7 @@ class PlanCase(unittest.TestCase):
                 "conformance",
                 "conditions",
                 "evidence",
+                "traceability",
                 "coverage",
             ],
             [item["name"] for item in result["checks"]],

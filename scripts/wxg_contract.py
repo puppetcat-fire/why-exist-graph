@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 
 SCHEMA_VERSION = 9
-CONTRACT_VERSION = "3.5.1"
+CONTRACT_VERSION = "3.6.0"
 
 #: ``doctor --fix`` 能自动修的检查项。其余问题（legacy 身份、条件行缺失、审计配对等）
 #: 只能报给人看——要么需要裁决，要么需要改设计，自动修等于替人做决定。
@@ -69,6 +69,7 @@ WORK_KINDS = [
 
 NODE_KINDS = [
     {"kind": "requirement", "desc": "功能声明；id 前缀 requirement:{feature}:", "creator": "声明入口"},
+    {"kind": "acceptance", "desc": "需求的验收条目（一条需求拆成 N 条可判定条文）；has_acceptance 由 requirement 指向它，verifies 由 testcase 指向它", "creator": "acceptance-add / acceptance-import"},
     {"kind": "actor", "desc": "角色", "creator": "model-architecture"},
     {"kind": "use_case", "desc": "用例；satisfies 指向 requirement", "creator": "model-architecture"},
     {"kind": "component", "desc": "构件；depends 指向 component", "creator": "model-architecture / scan 锚点"},
@@ -90,7 +91,8 @@ NODE_KINDS = [
 EDGE_KINDS = [
     {"kind": "contains", "desc": "容器 -> 被包含节点"},
     {"kind": "satisfies", "desc": "use_case -> requirement"},
-    {"kind": "verifies", "desc": "testcase -> use_case / operation"},
+    {"kind": "has_acceptance", "desc": "requirement -> acceptance（该需求拆出的验收条目）"},
+    {"kind": "verifies", "desc": "testcase -> acceptance / use_case / operation"},
     {"kind": "include", "desc": "use_case -> use_case"},
     {"kind": "extend", "desc": "use_case -> use_case"},
     {"kind": "generalizes", "desc": "classifier -> classifier"},
@@ -134,7 +136,8 @@ GATE_RULES = [
     "施工中标记：`construction=true` 的节点（施工中代码段）在 gate 前必须清除，否则 FAIL；咬合逻辑不受标记影响。",
     "回扫生还：作用域内 `stale=1` 的节点（重扫时代码里已不存在的旧锚点）在 gate 前必须清除，否则 FAIL。",
     "设计-代码一致性：feature 开启 `--conformance` 时，gate 要求 use_case/component/port 有 `maps_to` 代码锚点、component/port 的 `depends` 有代码调用支撑、代码调用不出现未声明耦合、每个 use_case 至少被一个 testcase `verifies`；否则 FAIL。只报告检查结果，不生成新的设计描述。",
-    "gate 只读：不写条件、不写工单、不改节点，重复执行结果不变；PASS 退出码 0、FAIL 退出码 1。",
+    "需求追溯：作用域内每个 `requirement` 必须通过 `has_acceptance` 挂至少一条 `acceptance`；每条 `acceptance` 必须被至少一条 `testcase` `verifies`。登记了需求却一条验收条目都没有 → `UNKNOWN`（输入缺失，不可判 PASS）；有验收但存在未被测试指到的条目 → `FAIL`。作用域内没有 requirement 时该检查不适用（按 N/A 报告，不影响判定）。",
+    "gate 只读：不写条件、不写工单、不改节点，重复执行结果不变；PASS 退出码 0、FAIL 退出码 1、UNKNOWN 退出码 1（UNKNOWN 不是通过，只是拒绝了“无法判定”被当成绿色）。",
     "除 Accepted 由 `feature-declare` / `feature-register` 新建时置真外，只有 work-judge(passed) 写条件；judge(failed) 把该条件及其后的条件置假，没有对应条件的工单（scan）不改条件。",
     "`BehaviorPassed` 置真前必须有一条**同 generation**、exit_code=0 且产物有效的 evidence（有产物时校验存在与 hash），gate 执行同样的检查。",
     "feature 开启 coverage 策略（默认对新 feature 开启；`--no-coverage` 关闭）时，gate 与 `work-judge(passed)` 都要求该阶段咬合覆盖达标；关闭则只报告不拦截。",
@@ -169,6 +172,16 @@ COVERAGE_RULES = [
     "阶段推进前要求 p_m·(S-m) ≤ ε，其中 p_m=(1+d)/(10+m)（假设后续咬合不再新增命中）；n_required 取满足条件的最小 m，m 不超过 S（m=S 时残留期望为 0）。",
     "调度索引 I_i = α^(i-1)·p_i，α 默认 2，i 为条件在固定顺序中的位置；预算有限时优先把下一次咬合投给 I 最大的阶段；`coverage.next` 取**条件顺序里第一个未达标阶段**（阶段不能跳着推进）。",
     "`coverage` 只读输出各阶段的 bites、covered、hits、p、n_required、met 与调度建议；策略开启时 `work-judge(passed)` 与 `gate` 执行同一检查。",
+]
+
+# ---------------------------------------------------------------- 追溯（trace）
+
+TRACE_RULES = [
+    "需求的可交付性由**验收条目**承载：一条 requirement 拆成 N 条 acceptance（`has_acceptance`），每条 acceptance 是可单独判定的条文，不是一段自由文本。",
+    "`acceptance-add` 与 `acceptance-import` 是 acceptance 的唯一写入口：id 由 `acceptance:{feature}:{requirement 后缀}:{序号}` 生成，`ordinal` 在需求内唯一且从 1 连续；同一条文重复登记拒绝，跨需求挂载拒绝。",
+    "`acceptance-import` 从 `requirement.attrs.x_acceptance` 幂等迁移旧项目：已有条目按 `ordinal` + `text` 对齐，只补缺的；`--dry-run` 只报告不写库。",
+    "`trace` 只读输出需求→验收→测试矩阵：每条需求的验收条目数、被测试指向的条目数、缺口清单；有缺口退出码 1，无缺口 0。",
+    "gate 的追溯检查与 `trace` 同一口径：有需求无验收 → `UNKNOWN`，有验收无测试 → `FAIL`，全绿才不影响 PASS；作用域内无 requirement 时该检查不适用。",
 ]
 
 JUDGE_HISTORY_COLUMNS = [
@@ -248,7 +261,7 @@ ROLES = {
     "model-architecture": ["derive", "promote", "upsert-node", "upsert-edge", "bind", "get", "find", "slice", "work-finish", "role-prompt"],
     "model-structure": ["derive", "promote", "upsert-node", "upsert-edge", "bind", "get", "find", "slice", "work-finish", "role-prompt"],
     "interact": ["upsert-node", "upsert-edge", "bind", "get", "find", "slice", "work-finish", "role-prompt"],
-    "specify-test": ["upsert-node", "upsert-edge", "bind", "get", "find", "slice", "work-finish", "role-prompt"],
+    "specify-test": ["upsert-node", "upsert-edge", "bind", "acceptance-add", "acceptance-import", "get", "find", "slice", "work-finish", "role-prompt"],
     "implement-test": ["upsert-node", "bind", "get", "find", "slice", "work-finish", "role-prompt"],
     "observe": ["import-file", "import-repo", "derive", "upsert-node", "retract", "get", "find", "slice", "work-finish", "role-prompt"],
     "audit": ["get", "find", "slice", "work-judge", "role-prompt"],
@@ -259,7 +272,7 @@ for _role in ROLES:
     ROLES[_role].append("evidence-record")
 
 # 这些命令只在拿到 claim_token 后可执行（写图/提交）。
-TOKEN_COMMANDS = ["upsert-node", "upsert-edge", "bind", "retract", "import-file", "work-finish"]
+TOKEN_COMMANDS = ["upsert-node", "upsert-edge", "bind", "retract", "import-file", "work-finish", "acceptance-add", "acceptance-import"]
 
 # implement-test 领取额外门槛：当轮明确允许改产品代码。
 PRODUCT_CODE_ROLES = ["implement-test"]
@@ -468,6 +481,29 @@ COMMANDS = {
         options=[O("--token", required=True), O("--node-ids", default=None, help="id 列表：逗号分隔、JSON 数组或 @文件"), O("--edge-ids", default=None, help="id 列表：逗号分隔、JSON 数组或 @文件")],
         token=True,
     ),
+    "acceptance-add": C(
+        "给一条需求登记一条验收条目（生成 acceptance 节点 + has_acceptance 边）；同一条文重复登记拒绝",
+        options=[
+            O("--requirement", required=True, help="需求节点 id"),
+            O("--text", required=True, help="验收条文（非空）"),
+            O("--token", required=True, help="写库令牌"),
+        ],
+        token=True,
+    ),
+    "acceptance-import": C(
+        "从 requirement.attrs.x_acceptance 批量生成验收条目（按序号+条文对齐，幂等）；把旧项目一次性接进追溯门",
+        options=[O("--feature", required=True), O("--token", default=None, help="写库令牌；--dry-run 时可省略")],
+        flags=[F("--dry-run", help="只报告将生成/已存在的条目，不写库")],
+        token=True,
+    ),
+    "trace": C(
+        "需求→验收→测试追溯矩阵：每条需求的验收条目与覆盖它的测试；有缺口退出码 1",
+        options=[
+            O("--feature", required=True),
+            O("--limit", type=int, default=20, help="每条需求最多列几条缺口，默认 20"),
+        ],
+        flags=[F("--json", help="机器可读")],
+    ),
     "bite": C(
         "记录一次必要性判定；判决集固定，写 bites 与节点 attrs.bite（唯一写入口）",
         options=[
@@ -662,6 +698,9 @@ WRITE_MODES = {
     "upsert-node": "需要 claim_token / 角色命令",
     "upsert-edge": "需要 claim_token / 角色命令",
     "bind": "需要 claim_token / 角色命令",
+    "acceptance-add": "状态库（需 claim_token / 角色命令）",
+    "acceptance-import": "状态库（需 claim_token / 角色命令；--dry-run 只读）",
+    "trace": "只读",
     "retract": "需要 claim_token / 角色命令",
     "bite": "状态库",
     "evidence-record": "状态库",
@@ -694,6 +733,7 @@ WRITE_MODES = {
 
 ATTR_SCHEMA = {
     "requirement": {"statement": "str"},
+    "acceptance": {"text": "str", "ordinal": "int"},
     "actor": {},
     "use_case": {"goal": "str", "actor": "str"},
     "component": {"duty": "str", "construction": "bool"},
@@ -773,6 +813,8 @@ INVARIANTS = [
     ("I19 回扫可断言", "sync 只读对比 DB 图与当前 AST；import-file 把本次未再出现的旧节点标 stale=1，gate 对作用域内 stale 节点 FAIL；stale 只能由重扫或设计重写清除。"),
     ("I20 控制器可常驻", "serve 周期跑 reconcile；--apply 只做补单/解阻塞/回收陈旧 claim；--once 单趟；控制器可接 SQLite 或 MySQL，裁决/咬合永不自动。"),
     ("I21 一致性只报差异", "conformance 只做差异检查：设计节点的 maps_to 锚点、depends 的代码支撑、未声明耦合、use_case 的测试覆盖；不生成节点、不补写设计，开关由 feature 的 --conformance 决定。"),
+    ("I22 验收是完成定义", "需求的可交付性由 acceptance 节点承载：每条 requirement 至少一条 acceptance（has_acceptance），每条 acceptance 至少被一个 testcase verifies；acceptance 是唯一能表达“跳到第 3 条验收”的粒度。"),
+    ("I23 空输入不判通过", "gate 对“有需求、无验收”判 UNKNOWN 而不是 PASS：输入缺失时门只能拒绝表态，不能把缺失当绿。UNKNOWN 退出码 1，与 FAIL 一样不可当作交付。"),
 ]
 
 # ---------------------------------------------------------------- 渲染
@@ -833,8 +875,8 @@ def main_contract_markdown() -> str:
     lines.append("")
     lines.append("结构性漂移判决：" + "、".join(f"`{v}`" for v in DRIFT_VERDICTS) + "（由 `--drift-limit` 控制是否拦门）。")
     lines.append("")
-    lines.append("gate / coverage / reconcile / 变更集 / 回扫 / conformance / 后端 / serve / 审计与证据 /")
-    lines.append("导出文件共 10 张规则表，以及 21 条一致性不变量，**只在 full 契约块里**——本块刻意不收，")
+    lines.append("gate / coverage / trace / reconcile / 变更集 / 回扫 / conformance / 后端 / serve / 审计与证据 /")
+    lines.append("导出文件共 11 张规则表，以及 23 条一致性不变量，**只在 full 契约块里**——本块刻意不收，")
     lines.append("避免每次加载技能都带上十几 KB 的规则正文。要看它们：`wxg contract --section full`，")
     lines.append("或读 `references/contract.md`；机器可读用 `wxg contract --json`（`gate_rules` /")
     lines.append("`coverage_rules` / … / `invariants` 都是独立键）。")
@@ -863,6 +905,13 @@ def _rules_and_invariants() -> list[str]:
     lines.append("| 规则 |")
     lines.append("|------|")
     for rule in COVERAGE_RULES:
+        lines.append(f"| {rule} |")
+    lines.append("")
+    lines.append("### 追溯（trace）")
+    lines.append("")
+    lines.append("| 规则 |")
+    lines.append("|------|")
+    for rule in TRACE_RULES:
         lines.append(f"| {rule} |")
     lines.append("")
     lines.append("### 调谐（reconcile）")
@@ -1034,6 +1083,7 @@ def contract_json() -> dict:
         "gate_rules": GATE_RULES,
         "coverage_defaults": COVERAGE_DEFAULTS,
         "coverage_rules": COVERAGE_RULES,
+        "trace_rules": TRACE_RULES,
         "reconcile_defaults": RECONCILE_DEFAULTS,
         "reconcile_rules": RECONCILE_RULES,
         "change_rules": CHANGE_RULES,

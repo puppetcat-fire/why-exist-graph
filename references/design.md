@@ -2124,6 +2124,32 @@ python refactor-lab/run_all.py           # 6 条：加真实仓扫描 / sync 回
 CHANGELOG 与 design.md、最后 `preflight --release`。这七步是九十六轮里反复走的流程，
 写下来比留在肌肉记忆里可靠。
 
+## 111. 追溯门：需求拆成验收条目，空输入判 UNKNOWN（3.6.0）
+
+起因是四仓重构项目：`gate` 一路 PASS，同时 `coverage.enforced=false`、`bites=[]`，
+而 FR-CV-06/07、FR-XWS-04/05/10 这条画布需求一条测试都没有；图库里登记的 25 个 tree-web
+testcase 全部指向同一组 5 个需求，锚点还是 `case-5`、`JSON-2` 这种碎片。统计型覆盖门回答的是
+"抽样够不够"，没有人回答"这条需求有没有测试"——门禁不是漏了检查，是**空输入默认通过**。
+
+决定：
+
+1. `acceptance` 升成节点，`requirement --has_acceptance--> acceptance`；
+   `verifies` 允许指向 acceptance，验收条目才是可判定、可单条变红的粒度。
+2. `testcase --verifies--> requirement` 只作 `direct_tests` 展示，**不算**验收覆盖——
+   否则"一条测试覆盖整条需求"又会把缺口糊回去，这正是旧登记的做法。
+3. gate 的 `traceability` 是确定性检查：有需求无验收 → `UNKNOWN`，有验收无测试 → `FAIL`；
+   作用域内没有 requirement 时按 N/A 跳过，不打扰纯代码图。
+4. `UNKNOWN` 是新增的门禁结果，退出码 1：把"无法判定"和"通过"分开，是这次改动的核心；
+   `reconcile` 对应报告 `traceability-gap` 待办。
+5. 声明期就把 `--acceptance` 的每条拆成 acceptance 节点（只补不删）：新项目因此不会落在
+   UNKNOWN 上（它们直接 FAIL 到补测试），UNKNOWN 专留给还没迁移验收条目的旧库。
+6. 迁移通道是 `acceptance-import`：按 `ordinal` + `text` 幂等，`--dry-run` 只读不写；
+   工单边界口径是"requirement 在 target_ids 内，它的 acceptance 子节点自动在边界内"。
+
+代价：契约面 32 → 33、不变量 21 → 23、命令 50 → 53；6 个既有测试 fixture 要补追溯链，
+全流程用例改用真实 `acceptance-add`，`doc_flow` 的 specify-test 阶段也要写一条 testcase
+指向验收条目。
+
 ## 附：Windows 受限 token 下的临时目录
 
 Windows 上 `tempfile.mkdtemp()` / `TemporaryDirectory()`（Python ≥ 3.12.4，为 CVE-2024-4030）

@@ -151,6 +151,17 @@ class WxgTestCase(unittest.TestCase):
     def open_targets(self, feature, kind, patterns):
         return self.cli("work-open", "--feature", feature, "--kind", kind, "--target-ids", json.dumps(patterns, ensure_ascii=False))
 
+    def ready_ticket(self, feature, kind):
+        """把指定工单直接置 ready 并清依赖：给只测单条命令的用例用，跳过上游条件链。"""
+        conn = self.db()
+        conn.execute(
+            "UPDATE work_items SET status='ready', depends_on='[]' "
+            "WHERE id='work:' || ? || ':g' || (SELECT generation FROM features WHERE id=?) || ':' || ?",
+            (feature, feature, kind),
+        )
+        conn.commit()
+        conn.close()
+
     def claim(self, role, expect=0, allow_product_code=False, actor=None):
         args = ["work-claim", "--role", role, "--actor", actor or f"agent-{role}"]
         if allow_product_code:
@@ -185,6 +196,43 @@ class WxgTestCase(unittest.TestCase):
 
     def db(self):
         return sqlite3.connect(self.root / "graph.sqlite")
+
+    def trace_ok(self, feature, requirement=None, text="返回成功"):
+        """给 fixture 补一条完整追溯链：需求 → 验收条目 → 测试。
+
+        3.6.0 起 gate 对“有需求、无验收”判 UNKNOWN。这些测试关心的是证据/漂移/调谐，
+        不是追溯本身，所以用这个 helper 直接写库补齐链条（与 `force_ready` 同类：fixture 造数）。
+        """
+        requirement = requirement or f"requirement:{feature}:main"
+        suffix = requirement.split(":", 2)[2]
+        acceptance = f"acceptance:{feature}:{suffix}:01"
+        testcase = f"testcase:{feature}:trace-ok-{suffix}"
+        conn = self.db()
+        conn.row_factory = sqlite3.Row
+        try:
+            wxg.upsert_node(conn, {
+                "id": acceptance,
+                "kind": "acceptance",
+                "name": text,
+                "attrs": {"text": text, "ordinal": 1},
+            })
+            wxg.upsert_edge(conn, {"src": requirement, "dst": acceptance, "kind": "has_acceptance"})
+            wxg.upsert_node(conn, {
+                "id": testcase,
+                "kind": "testcase",
+                "name": "trace fixture",
+                "attrs": {"path": "tests/trace_fixture.py"},
+            })
+            wxg.upsert_edge(conn, {"src": testcase, "dst": acceptance, "kind": "verifies"})
+            for node_id in (acceptance, testcase):
+                conn.execute(
+                    "INSERT OR IGNORE INTO feature_nodes(feature_id, node_id) VALUES(?,?)",
+                    (feature, node_id),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+        return acceptance
 
     def db_snapshot(self):
         conn = self.db()
@@ -264,11 +312,19 @@ class WxgTestCase(unittest.TestCase):
         self.finish(token)
         self.judge(interact["work_item_id"])
 
-        self.open_targets("feat-full", "specify-test", ["testcase:feat-full:*", "operation:demo:*"])
+        self.open_targets("feat-full", "specify-test", ["testcase:feat-full:*", "operation:demo:*", "acceptance:feat-full:*"])
         spec = self.claim("specify-test")
         token = spec["claim_token"]
         self.upsert(token, {"id": "testcase:feat-full:test-save", "kind": "testcase", "name": "save 成功", "attrs": {"path": "tests/test_shop.py"}})
         self.edge(token, "testcase:feat-full:test-save", op, "verifies")
+        # 3.6.0：需求必须拆出可判定的验收条目，测试指向验收条目而不是整条需求
+        acceptance = self.cli("acceptance-add", "--requirement", "requirement:feat-full:main",
+                              "--text", "保存后订单可读回", "--token", token)
+        # 声明时的 --acceptance 已经生成了 01，这条是 02
+        self.assertEqual(acceptance["ordinal"], 2)
+        # 声明期的验收条目（01）与新增的（02）都要有测试指向，gate 才算追溯通过
+        self.edge(token, "testcase:feat-full:test-save", "acceptance:feat-full:main:01", "verifies")
+        self.edge(token, "testcase:feat-full:test-save", acceptance["id"], "verifies")
         self.finish(token)
         self.judge(spec["work_item_id"])
 
@@ -649,6 +705,7 @@ class WxgTestCase(unittest.TestCase):
         conn.execute("UPDATE meta SET value='0.1.0' WHERE key='contract_version'")
         conn.commit()
         conn.close()
+        self.trace_ok("feat-doc")
         gate = self.cli("gate", "--feature", "feat-doc", "--json")
         self.assertEqual(gate["result"], "PASS")
         self.assertEqual(gate["ignored_dangling_bites"][0]["node"], "operation:missing:gone")
@@ -669,7 +726,7 @@ class WxgTestCase(unittest.TestCase):
         token = conn.execute("SELECT claim_token FROM work_items WHERE id='work:feat-doc:g1:model-architecture'").fetchone()
         self.assertIsNone(token[0])
         version = conn.execute("SELECT value FROM meta WHERE key='contract_version'").fetchone()
-        self.assertEqual(version[0], "3.5.1")
+        self.assertEqual(version[0], "3.6.0")
         conn.close()
         gate_after = self.cli("gate", "--feature", "feat-doc", "--json")
         self.assertEqual(gate_after["result"], "PASS")
@@ -764,7 +821,7 @@ class WxgTestCase(unittest.TestCase):
 
     def test_contract_json_is_serializable(self):
         contract = self.cli("contract", "--json")
-        self.assertEqual(contract["version"], "3.5.1")
+        self.assertEqual(contract["version"], "3.6.0")
         self.assertEqual(contract["schema_version"], 9)
         self.assertIn("evidence-record", contract["commands"])
         self.assertEqual(contract["commands"]["work-claim"]["options"][1]["type"], "str")
@@ -843,6 +900,7 @@ class WxgTestCase(unittest.TestCase):
                  "--command", "python -m unittest", "--artifact", str(artifact),
                  "--actor", "auditor-1")
         self.judge(observe["work_item_id"])
+        self.trace_ok("feat-art")
         gate = self.cli("gate", "--feature", "feat-art", "--json")
         self.assertEqual(gate["result"], "PASS")
         artifact.unlink()
@@ -1091,6 +1149,7 @@ class WxgTestCase(unittest.TestCase):
                             "--command", "python -m unittest", "--actor", "auditor-1")
         self.assertEqual(recorded["generation"], 2)
         self.judge(observe["work_item_id"])
+        self.trace_ok("feat-gen")
         gate = self.cli("gate", "--feature", "feat-gen", "--json")
         self.assertEqual(gate["result"], "PASS")
 
@@ -1115,6 +1174,7 @@ class WxgTestCase(unittest.TestCase):
         self.judge(observe["work_item_id"])
         status = self.status("feat-evidence")
         self.assertEqual(status["conditions"]["BehaviorPassed"], 1)
+        self.trace_ok("feat-evidence")
         gate = self.cli("gate", "--feature", "feat-evidence", "--json")
         self.assertEqual(gate["result"], "PASS")
 
@@ -1611,6 +1671,7 @@ class WxgTestCase(unittest.TestCase):
     def test_reconcile_dry_run_is_read_only_and_idempotent(self):
         self.init_repo()
         self.declare("feat-rec")
+        self.trace_ok("feat-rec")
         db = self.root / "graph.sqlite"
         before = hashlib.sha256(db.read_bytes()).hexdigest()
         first = self.cli("reconcile", "--feature", "feat-rec", expect=1)
@@ -2174,6 +2235,156 @@ class WxgTestCase(unittest.TestCase):
             self.assertNotIn("operation:demo:o.py:run", report["anchors"]["code_orphans"])
         finally:
             conn.close()
+
+
+    # ---------------------------------------------------------- 3.6.0 追溯门
+
+    def test_acceptance_add_creates_node_and_rejects_duplicates(self):
+        self.init_repo()
+        self.declare("feat-acc", acceptance=["声明期验收"])
+        self.open_targets("feat-acc", "specify-test", ["requirement:feat-acc:main", "acceptance:feat-acc:*"])
+        self.ready_ticket("feat-acc", "specify-test")
+        spec = self.claim("specify-test")
+        token = spec["claim_token"]
+        first = self.cli("acceptance-add", "--requirement", "requirement:feat-acc:main",
+                         "--text", "返回成功", "--token", token)
+        self.assertEqual(first["ordinal"], 2)
+        self.assertEqual(first["id"], "acceptance:feat-acc:main:02")
+        second = self.cli("acceptance-add", "--requirement", "requirement:feat-acc:main",
+                          "--text", "订单落库", "--token", token)
+        self.assertEqual(second["ordinal"], 3)
+        # 同一条文重复登记拒绝；空条文也拒绝
+        self.cli("acceptance-add", "--requirement", "requirement:feat-acc:main",
+                 "--text", "声明期验收", "--token", token, expect=2)
+        self.cli("acceptance-add", "--requirement", "requirement:feat-acc:main",
+                 "--text", "  ", "--token", token, expect=2)
+        trace = self.cli("trace", "--feature", "feat-acc", "--json", expect=1)
+        self.assertEqual(trace["summary"]["acceptance_items"], 3)
+        self.assertEqual(trace["summary"]["acceptance_tested"], 0)
+        self.assertEqual(trace["summary"]["acceptance_missing"], 3)
+
+    def test_acceptance_add_rejects_non_requirement(self):
+        self.init_repo()
+        self.declare("feat-acc-kind")
+        self.open_targets("feat-acc-kind", "specify-test", ["use_case:feat-acc-kind:*"])
+        self.ready_ticket("feat-acc-kind", "specify-test")
+        spec = self.claim("specify-test")
+        token = spec["claim_token"]
+        self.upsert(token, {"id": "use_case:feat-acc-kind:uc", "kind": "use_case", "name": "uc"})
+        rejected = self.cli("acceptance-add", "--requirement", "use_case:feat-acc-kind:uc",
+                            "--text", "x", "--token", token, expect=2)
+        self.assertIn("requirement", rejected["error"])
+
+    def test_acceptance_import_is_idempotent_and_dry_run_reads_only(self):
+        self.init_repo()
+        self.declare("feat-imp")
+        conn = self.db()
+        # 模拟旧库：需求只有 x_acceptance 文本，没有 acceptance 节点
+        conn.execute("DELETE FROM edges WHERE kind='has_acceptance'")
+        conn.execute("DELETE FROM nodes WHERE kind='acceptance'")
+        conn.execute(
+            "UPDATE nodes SET attrs_json=? WHERE id='requirement:feat-imp:main'",
+            (json.dumps({"statement": "创建订单。", "x_acceptance": ["返回成功", "订单落库"]}, ensure_ascii=False),),
+        )
+        conn.commit()
+        conn.close()
+        before = hashlib.sha256((self.root / "graph.sqlite").read_bytes()).hexdigest()
+        dry = self.cli("acceptance-import", "--feature", "feat-imp", "--dry-run")
+        self.assertEqual(dry["created_count"], 2)
+        after = hashlib.sha256((self.root / "graph.sqlite").read_bytes()).hexdigest()
+        self.assertEqual(before, after, "--dry-run 不得写状态库")
+        self.open_targets("feat-imp", "specify-test", ["requirement:feat-imp:main", "acceptance:feat-imp:*"])
+        self.ready_ticket("feat-imp", "specify-test")
+        spec = self.claim("specify-test")
+        token = spec["claim_token"]
+        first = self.cli("acceptance-import", "--feature", "feat-imp", "--token", token)
+        self.assertEqual(first["created_count"], 2)
+        second = self.cli("acceptance-import", "--feature", "feat-imp", "--token", token)
+        self.assertEqual(second["created_count"], 0)
+        self.assertEqual(second["existed_count"], 2)
+
+    def test_acceptance_import_skips_requirements_outside_targets(self):
+        self.init_repo()
+        self.declare("feat-imp2")
+        self.declare("feat-imp2")
+        conn = self.db()
+        conn.execute(
+            "UPDATE nodes SET attrs_json=? WHERE id='requirement:feat-imp2:main'",
+            (json.dumps({"statement": "main", "x_acceptance": ["main 验收"]}, ensure_ascii=False),),
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO nodes(id, kind, name, attrs_json) VALUES(?,?,?,?)",
+            ("requirement:feat-imp2:other", "requirement", "other",
+             json.dumps({"statement": "other", "x_acceptance": ["other 验收"]}, ensure_ascii=False)),
+        )
+        conn.execute("INSERT OR IGNORE INTO feature_nodes(feature_id, node_id) VALUES(?,?)",
+                     ("feat-imp2", "requirement:feat-imp2:other"))
+        conn.commit()
+        conn.close()
+        self.open_targets("feat-imp2", "specify-test", ["requirement:feat-imp2:main"])
+        self.ready_ticket("feat-imp2", "specify-test")
+        spec = self.claim("specify-test")
+        result = self.cli("acceptance-import", "--feature", "feat-imp2", "--token", spec["claim_token"])
+        self.assertEqual(result["created_count"], 1)
+        self.assertEqual(result["skipped_out_of_scope"], ["requirement:feat-imp2:other"])
+
+    def test_gate_unknown_when_requirements_have_no_acceptance(self):
+        self.init_repo()
+        self.declare("feat-unknown")
+        # 模拟旧库：需求存在，但既没有 acceptance 节点也没有 x_acceptance 文本
+        conn = self.db()
+        conn.execute("DELETE FROM edges WHERE kind='has_acceptance'")
+        conn.execute("DELETE FROM nodes WHERE kind='acceptance'")
+        conn.execute(
+            "UPDATE nodes SET attrs_json=? WHERE id='requirement:feat-unknown:main'",
+            (json.dumps({"statement": "创建订单。"}, ensure_ascii=False),),
+        )
+        conn.commit()
+        conn.close()
+        self.cli("evidence-record", "--feature", "feat-unknown", "--name", "e", "--command", "true", "--actor", "t")
+        self.force_ready("feat-unknown")
+        result = self.cli("gate", "--feature", "feat-unknown", "--json", expect=1)
+        self.assertEqual(result["result"], "UNKNOWN")
+        self.assertIn("验收", result["reason"])
+        self.assertEqual(result["traceability"]["summary"]["acceptance_items"], 0)
+
+    def test_gate_fails_when_acceptance_is_untested(self):
+        self.init_repo()
+        self.declare("feat-untested")
+        self.cli("evidence-record", "--feature", "feat-untested", "--name", "e", "--command", "true", "--actor", "t")
+        self.trace_ok("feat-untested")
+        conn = self.db()
+        conn.execute("DELETE FROM edges WHERE kind='verifies' AND dst LIKE 'acceptance:feat-untested:%'")
+        conn.commit()
+        conn.close()
+        self.force_ready("feat-untested")
+        result = self.cli("gate", "--feature", "feat-untested", "--json", expect=1)
+        self.assertEqual(result["result"], "FAIL")
+        self.assertIn("追溯", result["reason"])
+        self.assertEqual(len(result["missing_acceptance"]), 1)
+
+    def test_trace_ignores_requirement_level_verifies(self):
+        """旧式“一条测试覆盖整条需求”不算验收覆盖，只能计入 direct_tests。"""
+        self.init_repo()
+        self.declare("feat-direct")
+        self.trace_ok("feat-direct")
+        conn = self.db()
+        conn.execute(
+            "INSERT OR IGNORE INTO nodes(id, kind, name, attrs_json) VALUES(?,?,?,?)",
+            ("testcase:feat-direct:blanket", "testcase", "blanket", json.dumps({"path": "t.py"})),
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO edges(id, src, dst, kind) VALUES(?,?,?,?)",
+            ("edge:verifies:testcase:feat-direct:blanket:requirement:feat-direct:main",
+             "testcase:feat-direct:blanket", "requirement:feat-direct:main", "verifies"),
+        )
+        conn.commit()
+        conn.close()
+        trace = self.cli("trace", "--feature", "feat-direct", "--json", expect=0)
+        row = trace["requirements_detail"][0]
+        self.assertEqual(row["acceptance"], 1)
+        self.assertEqual(row["tested"], 1)
+        self.assertEqual(row["direct_tests"], 1)
 
 
 class ErrorStreamContractTest(unittest.TestCase):

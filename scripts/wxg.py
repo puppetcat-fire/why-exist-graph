@@ -97,6 +97,11 @@ from whyexist.commands_repo import (  # noqa: E402
     cmd_sync,
     cmd_up,
 )
+from whyexist.commands_trace import (  # noqa: E402
+    cmd_acceptance_add,
+    cmd_acceptance_import,
+    cmd_trace,
+)
 from whyexist.query import cmd_find, cmd_get, cmd_slice  # noqa: E402
 
 if __name__ == "__main__":

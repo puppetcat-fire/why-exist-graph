@@ -21,7 +21,7 @@ whenToUse: 需要一次性 PASS/FAIL 判定（gate / verify / doctor / 咬合结
 
 ## 为什么它设计上一致
 
-下面 21 条不变量由契约生成（见“契约”块末尾“一致性不变量”表）；`wxg verify` 校验生成文档块、命令/角色/kind/写入列交叉引用与导出样例的字节一致性（不替代 doctor 与行为测试）；`tests/test_wxg.py` 覆盖主要不变量与端到端流程（I6 的“导入器仅 Python”边界见 `references/design.md`）。
+下面 23 条不变量由契约生成（见“契约”块末尾“一致性不变量”表）；`wxg verify` 校验生成文档块、命令/角色/kind/写入列交叉引用与导出样例的字节一致性（不替代 doctor 与行为测试）；`tests/test_wxg.py` 覆盖主要不变量与端到端流程（I6 的“导入器仅 Python”边界见 `references/design.md`）。
 
 ## 首次响应：先拿退出码，别把门禁做成开放式审计
 
@@ -48,9 +48,9 @@ python <skill>/scripts/wxg.py --root <root> gate --feature <id>    # PASS/FAIL �
 python <skill>/scripts/wxg.py contract --json    # 零副作用，不需要 .why-exist
 ```
 
-它一次给全 32 个契约面：`commands`（50 条，含参数与写模式）、`roles`（8）、`conditions`（8）、
-`node_kinds` / `edge_kinds` / `attr_schema`、`gate_rules` / `coverage_rules` / `reconcile_rules` /
-`audit_rules` 等全部规则文本、`invariants`（21 条）、`export_files` 与 `export_rule`。
+它一次给全 33 个契约面：`commands`（53 条，含参数与写模式）、`roles`（8）、`conditions`（8）、
+`node_kinds` / `edge_kinds` / `attr_schema`、`gate_rules` / `coverage_rules` / `trace_rules` / `reconcile_rules` /
+`audit_rules` 等全部规则文本、`invariants`（23 条）、`export_files` 与 `export_rule`。
 
 `contract` / `verify` / `role-prompt` 在 `cli.py` 的 `needs_db` 白名单外，跑它们不会创建
 `.why-exist` 目录。要给人看的表格就别加 `--json`（默认输出 markdown）。
@@ -118,7 +118,13 @@ python <skill>/scripts/wxg.py --root <root> conformance --feature feat-x
 # 裁决 BehaviorPassed（observe 单）之前，必须先有一条同 generation、exit_code=0 的 evidence：
 python <skill>/scripts/wxg.py --root <root> evidence-record --feature feat-x --name unittest `
   --command "python -m unittest" --artifact <日志> --actor auditor-1
-python <skill>/scripts/wxg.py --root <root> gate --feature feat-x --json   # PASS=退出码 0，FAIL=1
+python <skill>/scripts/wxg.py --root <root> gate --feature feat-x --json   # PASS=退出码 0；FAIL/UNKNOWN=1
+python <skill>/scripts/wxg.py --root <root> trace --feature feat-x --json  # 需求→验收→测试矩阵；有缺口=1
+# 验收条目：feature-declare --acceptance 的每条会落成 acceptance 节点（声明即带验收）
+python <skill>/scripts/wxg.py --root <root> acceptance-add --requirement requirement:feat-x:main `
+  --text "返回成功" --token <token>
+# 旧库迁移：从 requirement.attrs.x_acceptance 一次性补登验收条目（--dry-run 只读）
+python <skill>/scripts/wxg.py --root <root> acceptance-import --feature feat-x --dry-run
 python <skill>/scripts/wxg.py --root <root> export --feature feat-x
 ```
 
@@ -142,6 +148,12 @@ python <skill>/scripts/wxg.py --root <root> up --template standard
 2. **每个条件 = 一次工单生命周期**：`work-open`（并写入边界）→ `work-claim`（拿 token）→
    写图（`upsert-node` / `upsert-edge` / `bind`）→ `work-finish` → `work-judge`。
    `implement-test` 要改产品代码，claim 时加 `--allow-product-code`。
+   **`specify-test` 这步还要把验收条目接上测试**：声明时 `--acceptance` 已生成
+   `acceptance:{feature}:main:01…`，写一条 `testcase` 并用 `verifies` 指向具体验收条目
+   （不是指向整条需求）；漏了这一步，gate 会对“有验收无测试”判 FAIL。
+
+`gate` 的 `traceability` 检查口径：有需求无验收 → `UNKNOWN`（旧库还没迁移验收条目），
+有验收没测试 → `FAIL`，全绿才 `PASS`；`trace` 命令给出同一口径的明细。
 
 八个条件按顺序推进；`gate` 的 `checks` 直接告诉你下一个卡在哪项，卡哪补哪，不必一次把
 八条都想全。完整可跑示例见 `references/design.md` 的 checks 表与
@@ -178,7 +190,7 @@ python <skill>/scripts/wxg.py --root <root> up --template standard
 | `model-architecture` | `derive`、`promote`、`upsert-node`、`upsert-edge`、`bind`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
 | `model-structure` | `derive`、`promote`、`upsert-node`、`upsert-edge`、`bind`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
 | `interact` | `upsert-node`、`upsert-edge`、`bind`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
-| `specify-test` | `upsert-node`、`upsert-edge`、`bind`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
+| `specify-test` | `upsert-node`、`upsert-edge`、`bind`、`acceptance-add`、`acceptance-import`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
 | `implement-test` | `upsert-node`、`bind`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
 | `observe` | `import-file`、`import-repo`、`derive`、`upsert-node`、`retract`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
 | `audit` | `get`、`find`、`slice`、`work-judge`、`role-prompt`、`evidence-record` |
@@ -212,6 +224,9 @@ python <skill>/scripts/wxg.py --root <root> up --template standard
 | `upsert-edge` | 写边；两端必须已存在 | --token <值> --data <值> | 需要 claim_token / 角色命令 |
 | `bind` | 绑定 parameter/argument/assertion 到已存在节点 | --token <值> --node-id <值> --bind-to <值> | 需要 claim_token / 角色命令 |
 | `retract` | 撤回 target_ids 内的节点与边；级联删除 bite 并剔除工单引用 | --token <值> | 需要 claim_token / 角色命令 |
+| `acceptance-add` | 给一条需求登记一条验收条目（生成 acceptance 节点 + has_acceptance 边）；同一条文重复登记拒绝 | --requirement <值> --text <值> --token <值> | 状态库（需 claim_token / 角色命令） |
+| `acceptance-import` | 从 requirement.attrs.x_acceptance 批量生成验收条目（按序号+条文对齐，幂等）；把旧项目一次性接进追溯门 | --feature <值> --dry-run | 状态库（需 claim_token / 角色命令；--dry-run 只读） |
+| `trace` | 需求→验收→测试追溯矩阵：每条需求的验收条目与覆盖它的测试；有缺口退出码 1 | --feature <值> --json | 只读 |
 | `bite` | 记录一次必要性判定；判决集固定，写 bites 与节点 attrs.bite（唯一写入口） | --node <值> --verdict <值> | 状态库 |
 | `evidence-record` | 记录一条可追溯证据：命令、退出码、执行者、产物 hash（BehaviorPassed 的门槛） | --feature <值> --name <值> --command <值> | 状态库 |
 | `evidence-list` | 列出某 feature 的证据记录 | --feature <值> | 只读 |
@@ -244,8 +259,8 @@ python <skill>/scripts/wxg.py --root <root> up --template standard
 
 结构性漂移判决：`UNMAPPED`、`DOC-ONLY`（由 `--drift-limit` 控制是否拦门）。
 
-gate / coverage / reconcile / 变更集 / 回扫 / conformance / 后端 / serve / 审计与证据 /
-导出文件共 10 张规则表，以及 21 条一致性不变量，**只在 full 契约块里**——本块刻意不收，
+gate / coverage / trace / reconcile / 变更集 / 回扫 / conformance / 后端 / serve / 审计与证据 /
+导出文件共 11 张规则表，以及 23 条一致性不变量，**只在 full 契约块里**——本块刻意不收，
 避免每次加载技能都带上十几 KB 的规则正文。要看它们：`wxg contract --section full`，
 或读 `references/contract.md`；机器可读用 `wxg contract --json`（`gate_rules` /
 `coverage_rules` / … / `invariants` 都是独立键）。
@@ -394,7 +409,7 @@ feature 开启 `--conformance`（默认关闭）时，gate 对 `missing`/`missin
 | `scripts/whyexist/` | 实现包：db / graph / work / workflow / gates / importer / derive / planner / 各 `commands_*` / cli，纯函数层与 Engine |
 | `scripts/wxg_mysql.py` | MySQL/MariaDB 状态库后端（纯标准库客户端，无第三方依赖） |
 | `scripts/gen_sample.py` | 生成 `references/export-sample` 的确定性 fixture |
-| `references/contract.md` | 完整契约视图（生成块，含 10 张规则表与 21 条不变量） |
+| `references/contract.md` | 完整契约视图（生成块，含 11 张规则表与 23 条不变量） |
 | `references/patterns.md` | 设计模式目录与有限应用原则（gate 强制字段的建模示例） |
 | `references/design.md` | 设计决策演进记录 |
 | `references/quality.md` | 提交质量门：可复现 / 可追溯 / 契约一致 |

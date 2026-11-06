@@ -21,9 +21,13 @@
 
 ## 能力地图
 
-**设计图**：节点（requirement / use_case / component / port / pattern / operation /
-classifier）与边（depends / uses / applies / calls / reads / writes / maps_to /
-contains / verifies / satisfies / associates）。两层：`design` 与 `code`。
+**设计图**：节点（requirement / acceptance / use_case / component / port / pattern /
+operation / classifier）与边（depends / uses / applies / calls / reads / writes / maps_to /
+contains / verifies / satisfies / has_acceptance / associates）。两层：`design` 与 `code`。
+
+**追溯**：需求拆成验收条目（`acceptance`），测试指向验收条目而不是整条需求；
+`trace` 出需求→验收→测试矩阵，gate 的 `traceability` 检查同一口径
+（有需求无验收 → UNKNOWN，有验收无测试 → FAIL）。
 
 **编译器 pass**（只读）：
 
@@ -135,6 +139,7 @@ DSH 的 dreaming 会按实际调用给每个技能打分、记录边界缺口。
 | 3.4.1 | 「文件」节随十几版改动过期 | 拆两张表（随包分发 / 仅源码仓）、补 4 项、修 3 处过期描述，22 个路径逐个验证存在 |
 | 3.5.0 | 第 18 次调用：用户拿 Java 仓库做重构，probe 预测 `fit` 仅 0.18，`likelyPitfalls` 写「Java 无法进图库」 | 3.3.0 把「多文件行为契约盘点」排除过头了——`feature` / `plan` / `brief` / `impact` 这层不依赖导入器。`whenToUse` 加回「重构落点规划」，非 Python 边界改成分层说明 |
 | 3.5.1 | 查 `%TEMP%` 发现 304MB 残留 | 安装器只留最近 3 个备份；一次性清理 95 个临时目录 |
+| 3.6.0 | 不是 dreaming：四仓重构项目实测「gate 全程 PASS 而 FR-CV-06/07、FR-XWS-04/05/10 一条测试都没有」，`coverage.enforced=false`、`bites=[]` | 加追溯门：`acceptance` 节点 + `has_acceptance` 边、`trace` / `acceptance-add` / `acceptance-import` 三条命令；gate 对「有需求无验收」判 UNKNOWN（退出码 1）、「有验收无测试」判 FAIL |
 
 ### 还没解决的
 
@@ -154,6 +159,9 @@ DSH 的 dreaming 会按实际调用给每个技能打分、记录边界缺口。
    - `wasteRate` 是否从 0.384 下降（3.4.0 的分层是否见效）
 3. 如果两者都没动，问题不在措辞，考虑动能力：例如给非 Python 仓库一个「从现有节点
    反推 use_case 候选」的只读命令。
+4. 3.6.0 的追溯门还没在真实项目上跑到全绿：四仓重构项目只把 7 条画布需求补上测试并
+   移出基线，其余 97 条仍是缺口。下次可以拿它当验收对象：`wxg trace --feature
+   four-repo-rebuild` 看还有多少验收条目没有测试。
 
 ## 下一步方向
 

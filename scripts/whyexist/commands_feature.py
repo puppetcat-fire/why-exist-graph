@@ -17,6 +17,7 @@ from .graph import get_node, upsert_node
 from .errors import Reject
 from .jsonio import dumps, load_id_list, load_json_arg, loads, new_token, utc_now
 from .query import resolve_targets, slice_payload
+from .trace import sync_acceptance
 from .work import (
     append_evidence,
     get_work,
@@ -129,10 +130,11 @@ def cmd_feature_declare(conn, args):
         "id": requirement_id,
         "kind": "requirement",
         "name": args.statement,
-        "attrs": {"statement": args.statement},
+        "attrs": {"statement": args.statement, "x_acceptance": list(acceptance)},
         "origin": "declared",
         "feature_id": feature_id,
     }, merge_attrs=True)
+    write_acceptance_children(conn, feature_id, requirement_id, acceptance)
     seeded = work_seed(conn, feature_id)
     return {"feature_id": feature_id, "generation": generation, "accepted_only": True, "work_seed": seeded}
 
@@ -159,14 +161,16 @@ def cmd_feature_register(conn, args):
         raise Reject("--generation 必须是正整数")
 
     def write_requirement() -> None:
+        requirement_id = f"requirement:{feature_id}:main"
         upsert_node(conn, {
-            "id": f"requirement:{feature_id}:main",
+            "id": requirement_id,
             "kind": "requirement",
             "name": spec["statement"],
-            "attrs": {"statement": spec["statement"]},
+            "attrs": {"statement": spec["statement"], "x_acceptance": list(spec["acceptance"])},
             "origin": "declared",
             "feature_id": feature_id,
         }, merge_attrs=True)
+        write_acceptance_children(conn, feature_id, requirement_id, spec["acceptance"])
 
     old = get_feature(conn, feature_id)
     if old is None:
@@ -712,6 +716,17 @@ def cmd_work_list(conn, args):
         (feature["id"], feature["generation"]),
     ).fetchall()
     return {"feature": feature["id"], "generation": feature["generation"], "work_items": [dict(row) for row in rows]}
+
+
+def write_acceptance_children(conn, feature_id: str, requirement_id: str, acceptance) -> list[dict]:
+    """声明入口把 `--acceptance` 的每条落成 acceptance 节点（只补不删，幂等）。
+
+    验收条目**不进 feature_nodes**：作用域口径是"咬合/导出的对象集合"，验收条目挂在需求
+    下面由 `has_acceptance` 表达，进作用域只会把覆盖统计的 S 撑大而无意义。
+    新 feature 声明即带验收条目，gate 因此不会落在“有需求无验收”的 UNKNOWN 上；
+    UNKNOWN 只留给旧库/手工 `upsert-node` 进来的需求。删验收要显式 `retract`。
+    """
+    return sync_acceptance(conn, requirement_id, acceptance or [])
 
 
 def _require_write(conn, args, command: str):

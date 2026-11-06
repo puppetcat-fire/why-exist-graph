@@ -1,5 +1,27 @@
 # Changelog — why-exist-graph
 
+## 3.6.0（2026-11-06）
+
+**门禁不再 fail-open：空输入判 UNKNOWN，需求必须拆成验收条目。** 起因是四仓重构项目里 gate 全程 PASS，
+同时 `coverage.enforced=false`、`bites=[]`，而 FR-CV-06/07、FR-XWS-04/05/10 一条测试都没有；
+图库里登记的 25 个 tree-web testcase 全部指向同一组 5 个需求。统计型覆盖门回答的是“抽样够不够”，
+没有人问“这条需求有没有测试”。
+
+- **新增 `acceptance` 节点与 `has_acceptance` 边**：需求拆成可单独判定的验收条目，
+  覆盖判定用 `testcase --verifies--> acceptance`；`testcase --verifies--> requirement`
+  这种旧式宽映射只计入 `direct_tests`，不再算验收覆盖。
+- **新增 `trace` 命令**：需求→验收→测试矩阵（每条需求的验收条目数、被指到的条目、缺口清单）；
+  有缺口退出码 1，无可追溯需求时退出 0。
+- **新增 `acceptance-add` / `acceptance-import`**：前者逐条登记（序号在需求内递增，重复条文拒绝），
+  后者从 `requirement.attrs.x_acceptance` 一次性迁移旧项目（按序号+条文幂等，`--dry-run` 只读不写）。
+- **gate 增加 `traceability` 检查**：作用域内有 requirement 但一条验收条目都没登记 → `UNKNOWN`
+  （退出码 1，不判 PASS）；有验收条目没被测试指到 → `FAIL`；作用域内没有 requirement 时按 N/A 跳过。
+  `reconcile` 对应报告 `traceability-gap` 待办动作。
+- **契约**：node kind 17→18、edge kind 20→22、命令 50→53、不变量 21→23，
+  SKILL.md 与 references/contract.md 的生成块同步；`specify-test` 角色新增两条验收命令。
+- **测试**：416 → 423（新增 7 条追溯用例；6 个既有 fixture 补了追溯链，全流程用例改用真实 `acceptance-add`）。
+- **版本**：契约 `3.5.1` → `3.6.0`；库 schema 仍为 `9`（无表结构变化）。
+
 ## 3.5.1（2026-11-06）
 
 **安装器不再无限堆备份**。查 `%TEMP%` 时发现：连装十九次技能留下 19 个备份目录
