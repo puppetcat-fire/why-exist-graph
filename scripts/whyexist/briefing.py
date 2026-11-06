@@ -7,6 +7,7 @@
 任务书包含：
 
 - 目标与验收（来自 feature 的 statement / acceptance / constraints）
+- 验收条目（边界内需求的 acceptance 节点：id + 条文，3.8.0 起）
 - 写入边界（``target_ids`` 展开后的节点 ID，执行者只能在这里写）
 - 输入契约（边界外、但边界内节点依赖的已存在节点）
 - 产出契约（该工单 kind 负责产出的节点 kind）
@@ -84,11 +85,13 @@ def build_brief(
     work: dict,
     nodes: dict[str, dict],
     edges: list[tuple[str, str, str]],
+    acceptance_items: list[dict] | None = None,
 ) -> dict:
     """生成一张工单的盲化任务书。
 
     ``nodes`` 是 ``id -> {kind, name}``；``edges`` 是 ``(src, dst, kind)``。
-    不会读数据库，也不接受其它工单的信息。
+    ``acceptance_items`` 是边界内需求的验收条目（``id`` / ``requirement`` / ``text`` /
+    ``ordinal``）；它由调用方从图里取，本函数不读数据库。
     """
     boundary = resolve_boundary(list(work.get("target_ids") or []), sorted(nodes))
     boundary_set = set(boundary)
@@ -108,6 +111,7 @@ def build_brief(
         "kind": kind,
         "goal": feature.get("statement"),
         "acceptance": list(feature.get("acceptance") or []),
+        "acceptance_items": list(acceptance_items or []),
         "constraints": list(feature.get("constraints") or []),
         "write_boundary": boundary,
         "write_patterns": list(work.get("target_ids") or []),

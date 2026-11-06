@@ -17,6 +17,7 @@ from .contract import C
 from .errors import Reject
 from .graph import upsert_edge, upsert_node
 from .jsonio import load_id_list, load_json_arg, loads
+from .trace import acceptance_children
 from .work import get_work, require_role, require_targets, require_token
 from .workflow import ensure_feature, scope_ids
 
@@ -86,6 +87,20 @@ def _brief_payload(conn, work_id: str) -> dict:
             nodes[row["id"]] = {"kind": row["kind"], "name": row["name"]}
     rows = conn.execute("SELECT src, dst, kind FROM edges").fetchall()
     edge_rows = [(row["src"], row["dst"], row["kind"]) for row in rows]
+    targets = loads(work["target_ids"], [])
+    boundary = briefing.resolve_boundary(targets, sorted(nodes))
+    acceptance_items = []
+    for node_id in boundary:
+        node = nodes.get(node_id)
+        if not node or node["kind"] != "requirement":
+            continue
+        for item in acceptance_children(conn, node_id):
+            acceptance_items.append({
+                "id": item["id"],
+                "requirement": node_id,
+                "ordinal": item["ordinal"],
+                "text": item["text"],
+            })
     return briefing.build_brief(
         feature={
             "id": feature["id"],
@@ -97,10 +112,11 @@ def _brief_payload(conn, work_id: str) -> dict:
             "id": work["id"],
             "role": work["role"],
             "kind": work["kind"],
-            "target_ids": loads(work["target_ids"], []),
+            "target_ids": targets,
         },
         nodes=nodes,
         edges=edge_rows,
+        acceptance_items=acceptance_items,
     )
 
 

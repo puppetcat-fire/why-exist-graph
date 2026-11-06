@@ -1,5 +1,20 @@
 # Changelog — why-exist-graph
 
+## 3.8.0（2026-11-06）
+
+**验收条目进工作流：任务书带验收，状态带缺口。** 3.6/3.7 把验收条目做成了可判定的节点并接上了
+门禁，但干活的人（`brief`）和看全局的人（`feature-status`）还得自己跑 `trace` 才知道验收长什么样。
+这版把它们接上：
+
+- **`brief` 新增 `acceptance_items`**：边界内需求的验收条目（`id` / `requirement` / `ordinal` /
+  `text`），执行者拿到任务书就知道"这条切片要做到哪几条验收"。`brief_version` 不加版本号，
+  字段是追加的（blind-check 只读它关心的三项，不受影响）。
+- **`feature-status` 新增 `traceability` 摘要**：验收条目数、已测数、缺口数、`complete` / `unknown`，
+  与 `trace` / `gate` 同一口径。
+- **契约**：`trace_rules` 6 → 7 条（brief/status 的验收口径）。
+- **测试**：429 → 431（briefing 两条纯函数、brief 端到端一条、feature-status 一条）。
+- **版本**：契约 `3.7.0` → `3.8.0`；库 schema 仍为 `9`。
+
 ## 3.7.0（2026-11-06）
 
 **门禁的两个输入口上锁：`bite` 不再扩作用域，`apply` 也要 token 与边界。**

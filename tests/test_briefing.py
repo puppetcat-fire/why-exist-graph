@@ -35,6 +35,35 @@ EDGES = [
 ]
 
 
+class AcceptanceItemsTest(unittest.TestCase):
+    def test_acceptance_items_are_passed_through(self):
+        items = [{
+            "id": "acceptance:feat-x:main:01",
+            "requirement": "requirement:feat-x:main",
+            "ordinal": 1,
+            "text": "返回成功",
+        }]
+        brief = B.build_brief(
+            feature=FEATURE,
+            work={"id": "work:x:g1:model-architecture", "role": "model-architecture",
+                  "kind": "model-architecture", "target_ids": ["component:demo:a"]},
+            nodes=NODES,
+            edges=EDGES,
+            acceptance_items=items,
+        )
+        self.assertEqual(items, brief["acceptance_items"])
+
+    def test_acceptance_items_default_to_empty(self):
+        brief = B.build_brief(
+            feature=FEATURE,
+            work={"id": "work:x:g1:model-architecture", "role": "model-architecture",
+                  "kind": "model-architecture", "target_ids": ["component:demo:a"]},
+            nodes=NODES,
+            edges=EDGES,
+        )
+        self.assertEqual([], brief["acceptance_items"])
+
+
 class ResolveBoundaryTest(unittest.TestCase):
     def test_exact_ids(self):
         self.assertEqual(
@@ -133,7 +162,7 @@ class BuildBriefTest(unittest.TestCase):
         self.assertNotIn("feat-y", text)
         self.assertEqual(
             {"brief_version", "blind", "work_item", "feature", "role", "kind", "goal",
-             "acceptance", "constraints", "write_boundary", "write_patterns", "inputs",
+             "acceptance", "acceptance_items", "constraints", "write_boundary", "write_patterns", "inputs",
              "produces", "forbidden", "definition_of_done"},
             set(brief),
         )

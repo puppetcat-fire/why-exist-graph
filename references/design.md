@@ -2185,6 +2185,19 @@ testcase 全部指向同一组 5 个需求，锚点还是 `case-5`、`JSON-2` �
 代价：`AUDIT_RULES` +1、`I5` 扩写、`apply`/`bite` 命令参数变化；5 个既有 fixture 要先把节点
 并入作用域再咬。
 
+## 114. 验收条目进工作流（3.8.0）
+
+3.6/3.7 把验收条目做成节点、接上门禁之后，还有一条缝：**干活的人看不到验收条目**。`brief` 只给
+功能级 `acceptance`（声明快照），执行者得自己跑 `trace` 才知道这条切片对应哪几条验收；
+`feature-status` 也不带缺口数，看全局的人得另跑一条命令。
+
+改法是把同一份数据接到两个出口：`brief` 加 `acceptance_items`（边界内需求的验收条目：id /
+requirement / ordinal / text），`feature-status` 加 `traceability` 摘要（与 trace/gate 同口径）。
+字段都是追加的，`brief_version` 不动——blind-check 只读 write_boundary / inputs / produces 三项。
+
+没做的事：没有把验收条目塞进 `write_boundary`。验收不是执行者的产出物，硬塞进去会让人以为
+"新增验收"也算这次工单的交付。
+
 ## 附：Windows 受限 token 下的临时目录
 
 Windows 上 `tempfile.mkdtemp()` / `TemporaryDirectory()`（Python ≥ 3.12.4，为 CVE-2024-4030）

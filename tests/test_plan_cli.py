@@ -251,6 +251,11 @@ class PlanCase(unittest.TestCase):
         self.assertEqual([], brief["inputs"])
         self.assertIn("component", brief["produces"])
         self.assertNotIn("feat-other", json.dumps(brief, ensure_ascii=False))
+        # 3.8.0：边界内的需求要带上验收条目，执行者才知道"做到什么算完"
+        self.assertEqual(1, len(brief["acceptance_items"]))
+        self.assertEqual("acceptance:feat-brief:main:01", brief["acceptance_items"][0]["id"])
+        self.assertEqual("requirement:feat-brief:main", brief["acceptance_items"][0]["requirement"])
+        self.assertEqual(1, brief["acceptance_items"][0]["ordinal"])
 
     def test_brief_rejects_unknown_work(self):
         self.init_repo()
@@ -820,6 +825,10 @@ class PlanCase(unittest.TestCase):
         self.declare("feat-phase")
         status = self.cli("feature-status", "--id", "feat-phase")
         self.assertEqual("ArchitectureReconciled", status["phase"])
+        # 3.8.0：状态里带追溯摘要，不必再单独跑 trace 才知道验收缺口
+        self.assertEqual(1, status["traceability"]["acceptance_items"])
+        self.assertEqual(1, status["traceability"]["acceptance_missing"])
+        self.assertFalse(status["traceability"]["complete"])
 
     def test_cycles_advise_ranks_break_edges(self):
         self.init_repo()

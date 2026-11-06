@@ -17,7 +17,7 @@ from .graph import get_node, upsert_node
 from .errors import Reject
 from .jsonio import dumps, load_id_list, load_json_arg, loads, new_token, utc_now
 from .query import resolve_targets, slice_payload
-from .trace import sync_acceptance
+from .trace import sync_acceptance, trace_report
 from .work import (
     append_evidence,
     get_work,
@@ -331,6 +331,7 @@ def cmd_feature_status(conn, args):
         "judge_history": history,
         "changes": changes,
         "coverage": coverage_report(conn, feature),
+        "traceability": trace_report(conn, feature, limit=0)["summary"],
         "drift": drift_report(conn, feature),
         "constructions": constructions,
         "stale": stale_nodes,
