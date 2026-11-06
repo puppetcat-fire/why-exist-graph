@@ -195,26 +195,41 @@ def _verifies_index(conn) -> dict[str, set[str]]:
 
 
 def trace_report(conn, feature: dict, limit: int = 20) -> dict:
-    """需求→验收→测试矩阵。只读，不改任何状态。"""
+    """需求→验收→测试矩阵。只读，不改任何状态。
+
+    `requirement:{feature}:main` 是声明入口自动建的**聚合需求**：feature 拆成多条子需求时，
+    它只是伞节点，不该因为自己没有验收条目而被判缺口（真实项目里最先撞到这条——
+    四仓重构 191 条子需求 + 1 条 main，main 没有 x_acceptance）。它仍是需求的唯一例外：
+    如果它是作用域里唯一的需求，或者自己登记了验收条目，就按普通需求算。
+    """
     if limit < 0:
         raise Reject("--limit 必须是非负整数")
     scope = sorted(scope_ids(conn, feature["id"]))
     verified = _verifies_index(conn)
+    requirement_ids = [
+        node_id
+        for node_id in scope
+        if (node := get_node(conn, node_id)) is not None and node["kind"] == "requirement"
+    ]
+    main_id = f"requirement:{feature['id']}:main"
+    aggregate_main = main_id in requirement_ids and len(requirement_ids) > 1
     rows: list[dict] = []
     missing: list[dict] = []
     without_acceptance: list[str] = []
+    aggregates: list[str] = []
     acceptance_total = 0
     acceptance_tested = 0
-    for node_id in scope:
+    for node_id in requirement_ids:
         node = get_node(conn, node_id)
-        if node is None or node["kind"] != "requirement":
-            continue
         items = acceptance_children(conn, node_id)
         tested = [item for item in items if verified.get(item["id"])]
         acceptance_total += len(items)
         acceptance_tested += len(tested)
         gaps = [item for item in items if not verified.get(item["id"])]
-        if not items:
+        is_aggregate = aggregate_main and node_id == main_id and not items
+        if is_aggregate:
+            aggregates.append(node_id)
+        elif not items:
             without_acceptance.append(node_id)
         for item in gaps:
             missing.append({"requirement": node_id, "acceptance": item["id"], "text": item["text"]})
@@ -225,7 +240,8 @@ def trace_report(conn, feature: dict, limit: int = 20) -> dict:
             "tested": len(tested),
             "direct_tests": len(verified.get(node_id, ())),
             "missing": [item["id"] for item in gaps][:limit],
-            "without_acceptance": not items,
+            "without_acceptance": not items and not is_aggregate,
+            "aggregate": is_aggregate,
         })
     requirements = len(rows)
     applicable = requirements > 0
@@ -239,14 +255,16 @@ def trace_report(conn, feature: dict, limit: int = 20) -> dict:
         "ok": (not applicable) or complete,
         "summary": {
             "requirements": requirements,
-            "requirements_with_acceptance": requirements - len(without_acceptance),
+            "requirements_with_acceptance": requirements - len(without_acceptance) - len(aggregates),
             "requirements_without_acceptance": len(without_acceptance),
+            "aggregate_requirements": len(aggregates),
             "acceptance_items": acceptance_total,
             "acceptance_tested": acceptance_tested,
             "acceptance_missing": len(missing),
             "complete": complete,
             "unknown": unknown,
         },
+        "aggregate_requirements": aggregates[:limit],
         "requirements_detail": rows[:limit] if limit else [],
         "without_acceptance": without_acceptance[:limit],
         "missing": missing[:limit],

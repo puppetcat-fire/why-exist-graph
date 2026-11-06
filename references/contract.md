@@ -147,6 +147,7 @@ gate / coverage / trace / reconcile / 变更集 / 回扫 / conformance / 后端 
 | `doctor` 只报告验收结构问题、不自动修：`acceptance-orphan`（没有 `has_acceptance` 父）、`acceptance-multi-parent`（挂到多个需求）、`acceptance-ordinal`（序号重复/缺号/非整数）、`acceptance-source-drift`（旧库 `x_acceptance` 与节点文本对不上，哪边对得人定）。 |
 | `brief` 任务书带上**边界内需求的验收条目**（`acceptance_items`：id / requirement / ordinal / text），`feature-status` 带 `traceability` 摘要（验收条目数、已测数、缺口数、complete/unknown）——执行者与控制器不必再单独跑 `trace` 才知道“做到什么算完、还差多少”。 |
 | `upsert-edge` 在**写入期**强制验收边的结构：`has_acceptance` 的 src 必须是 requirement、dst 必须是 acceptance，且一条验收只能属于一条需求；`verifies` 指向 acceptance 时 src 必须是 testcase。`doctor` 的 `acceptance-orphan` / `acceptance-multi-parent` 只兜旧库遗留数据，不替代写入期校验。 |
+| `requirement:{feature}:main` 是声明入口自动建的**聚合需求**：当作用域里还有其它需求时，它自己没有验收条目不算缺口（伞节点）；如果它是唯一需求、或自己登记了验收条目，就按普通需求算。`trace` 的 `aggregate_requirements` 与 `gate` 的追溯检查同一口径。 |
 
 ### 调谐（reconcile）
 
@@ -376,5 +377,5 @@ gate / coverage / trace / reconcile / 变更集 / 回扫 / conformance / 后端 
 
 导出只包含图里连到该 feature 的记录：01 取 requirement；02 取 satisfies 这些 requirement 的 use_case；04 取用例经 depends/associates/realizes 到达的 component 与 port，以及 feature 作用域内的 pattern；05 取用例 contains 的 operation 及其 has_input、以及 contains 指向这些 operation 的 classifier；07 每条 writes->sink 算一步，另附请求参数表（同一参数只列一次，顺序按首次出现）；测试规格取 verifies 到这些 operation/use_case 的 testcase 与 asserts 到 operation 的 assertion。缺的格子留空，禁止从任何旧文档补句。参数、测试与断言按 id 去重。
 
-契约版本 `3.9.0`，库 schema 版本 `9`。
+契约版本 `3.9.1`，库 schema 版本 `9`。
 <!-- wxg:contract:full:end -->

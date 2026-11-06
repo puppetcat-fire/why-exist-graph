@@ -2210,6 +2210,18 @@ requirement / ordinal / text），`feature-status` 加 `traceability` 摘要（�
 
 代价：`trace_rules` 8 → 9；测试 +1（正反例）；照旧不升 schema。
 
+## 116. 聚合需求 main 的豁免（3.9.1）
+
+四仓重构项目迁移验收条目时撞出来的：191 条子需求 + 1 条 `requirement:four-repo-rebuild:main`，
+`trace` 报"1 条需求没有验收条目"，`gate` 因此判 FAIL——但 main 是 `feature-declare` 自动建的
+伞节点，从来不是交付单位。
+
+规则：作用域里还有其它需求时，main 没有验收条目不算缺口，单列 `aggregate_requirements`；
+如果 main 是唯一需求（feature 没拆），或者它自己登记了验收条目，就按普通需求算——伞节点不能
+反过来变成逃避验收的后门。
+
+代价：`trace_rules` 9 → 10；测试 +2（豁免与不豁免各一条）。
+
 ## 附：Windows 受限 token 下的临时目录
 
 Windows 上 `tempfile.mkdtemp()` / `TemporaryDirectory()`（Python ≥ 3.12.4，为 CVE-2024-4030）

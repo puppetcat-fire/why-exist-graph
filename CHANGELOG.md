@@ -1,5 +1,18 @@
 # Changelog — why-exist-graph
 
+## 3.9.1（2026-11-06）
+
+**修一个真实项目撞出来的误报：`main` 是聚合需求，不该因为自己没有验收条目被判缺口。**
+四仓重构项目迁验收条目时（191 条子需求 + 1 条 `requirement:four-repo-rebuild:main`）暴露：
+`trace` 把 main 算成"1 条需求没有验收条目"，`gate` 因此报缺口——但 main 只是声明入口自动建的伞节点。
+
+- **`trace` / `gate` 的追溯口径**：当作用域里还有其它需求时，`requirement:{feature}:main`
+  没有验收条目不算缺口，单列为 `aggregate_requirements`；如果它是唯一需求、或自己登记了验收条目，
+  仍按普通需求算。
+- **契约**：`trace_rules` 9 → 10 条。
+- **测试**：432 → 434（伞节点豁免 + 唯一需求不豁免）。
+- **版本**：契约 `3.9.0` → `3.9.1`；库 schema 仍为 `9`。
+
 ## 3.9.0（2026-11-06）
 
 **验收边的结构约束挪到写入期。** 3.6 加的 `acceptance` / `has_acceptance` / `verifies` 只有 doctor

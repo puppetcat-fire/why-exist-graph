@@ -2492,6 +2492,44 @@ class WxgTestCase(unittest.TestCase):
         doctor = self.cli("doctor", expect=1)
         self.assertIn("bite-out-of-scope", doctor["by_check"])
 
+    def test_trace_treats_main_requirement_as_aggregate(self):
+        """main 是伞节点：有其它需求时，它自己没有验收条目不算缺口。"""
+        self.init_repo()
+        self.declare("feat-agg")
+        conn = self.db()
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("DELETE FROM edges WHERE kind='has_acceptance'")
+            conn.execute("DELETE FROM nodes WHERE kind='acceptance'")
+            wxg.upsert_node(conn, {"id": "requirement:feat-agg:sub", "kind": "requirement",
+                                   "name": "子需求", "attrs": {"statement": "子需求"}})
+            conn.commit()
+        finally:
+            conn.close()
+        self.trace_ok("feat-agg", requirement="requirement:feat-agg:sub")
+        trace = self.cli("trace", "--feature", "feat-agg", "--json", expect=0)
+        self.assertEqual(["requirement:feat-agg:main"], trace["aggregate_requirements"])
+        self.assertEqual([], trace["without_acceptance"])
+        self.assertEqual(1, trace["summary"]["aggregate_requirements"])
+        self.assertTrue(trace["summary"]["complete"])
+
+    def test_trace_main_requirement_is_gated_when_it_is_the_only_one(self):
+        """只有 main 一条需求时它不是伞节点，没验收就是缺口。"""
+        self.init_repo()
+        self.declare("feat-agg-only")
+        conn = self.db()
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("DELETE FROM edges WHERE kind='has_acceptance'")
+            conn.execute("DELETE FROM nodes WHERE kind='acceptance'")
+            conn.commit()
+        finally:
+            conn.close()
+        trace = self.cli("trace", "--feature", "feat-agg-only", "--json", expect=1)
+        self.assertEqual([], trace["aggregate_requirements"])
+        self.assertEqual(["requirement:feat-agg-only:main"], trace["without_acceptance"])
+        self.assertFalse(trace["summary"]["complete"])
+
     def test_trace_ignores_requirement_level_verifies(self):
         """旧式“一条测试覆盖整条需求”不算验收覆盖，只能计入 direct_tests。"""
         self.init_repo()
