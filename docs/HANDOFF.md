@@ -89,24 +89,71 @@ cd .. && PYTHONUTF8=1 python refactor-lab/run_all.py
 ## 目录
 
 ```
-why-exist-graph/          技能本体（随发布包分发）
-  SKILL.md                使用说明（工作流 + 边界 + 文件表）
+why-exist-graph/          技能本体
+  SKILL.md                使用说明（首次响应 + 契约块 + 工作流 + 已知边界 + 文件表）
   README.md               介绍与快速开始
   CHANGELOG.md            全版本变更记录
-  docs/PRODUCT-PLAN.md    产品定位、三层模型、路线图与进度
-  references/
-    contract.md           契约全文（生成）
-    design.md             设计决策演进记录
-    patterns.md           设计模式目录
-    quality.md            质量清单
+  VERSION                 版本号唯一真源
+  references/             契约全文 / 设计演进 / 模式目录 / 质量清单 / 导出样例
   scripts/                薄入口 + whyexist 包
   tests/                  回归用例
-  tools/                  发布工具（不随包分发）
-  dist/                   发布包
+       ↑ 以上随发布包分发（build_release 的 INCLUDE 清单）
 
-refactor-lab/             验证与实验（不随包分发）
+  tools/                  发布与校验工具（不随包分发）
+  docs/                   产品文档与审计（不随包分发）
+    PRODUCT-PLAN.md       产品定位、三层模型、路线图
+    HANDOFF.md            交接说明（本文件）
+    CAMPAIGN-2026-11.md   2026-11 改造战报
+    audit/                16 片契约审计产物（REPORT / DECISIONS / 契约卡 / 探针）
+    RELEASE-*.md          各版本发布说明（SHA 由 check_release_notes 对账）
+  dist/                   发布包（每版本 zip + manifest + archive.sha256）
+
+refactor-lab/             验证与实验（与仓同级，不随包分发）
   14 个真实仓样本、6 个验证脚本、4 份报告
 ```
+
+## 技能维护：按 dreaming 反馈迭代（2026-11-06）
+
+DSH 的 dreaming 会按实际调用给每个技能打分、记录边界缺口。这一节记录 3.3.0～3.5.1
+的维护依据与结论，供下次继续。
+
+### 依据的字段
+
+- `skills['why-exist-graph'].counts`：`boundaryGaps`（边界缺口）、`misapplied`、`partial`
+- `metrics`：`boundaryAccuracy`（边界判断准确率）、`wasteRate`（加载的技能 token 中被浪费的比例）
+- `learned`：`knownFailures` / `actualScope` / `cheaperAlternatives` / `preconditions`
+- `episodes.jsonl` 每次调用：`task.userGoal`、`prediction.fit`、`judge.verdict`、
+  `cost.skillLoad`、`trace.turnEnd`、`trace.observedMs`
+
+### 已经做过什么
+
+| 版本 | 依据 | 改动 |
+|---|---|---|
+| 3.3.0 | `knownFailures` 五条都在说「用临时探针替代 verify/doctor/gate，超时无结论」 | SKILL.md 加「首次响应」节：先跑三条命令拿退出码；**能力边界写进 description**——模型读的是 description，不是正文 |
+| 3.3.1 | `cheaperAlternatives`：「做契约盘点时 grep 比加载技能更快」 | 补「想要契约清单：`contract --json` 一条命令」+「什么时候不该加载」对照表 |
+| 3.4.0 | wasteRate 只从 42.5% 降到 38%——指令改对了，但加载成本本身太大 | 契约块分层：main 只放结构（命令/角色/条件），10 张规则表 + 21 条不变量进 full 块。SKILL.md 60.6KB → 45.4KB |
+| 3.4.1 | 「文件」节随十几版改动过期 | 拆两张表（随包分发 / 仅源码仓）、补 4 项、修 3 处过期描述，22 个路径逐个验证存在 |
+| 3.5.0 | 第 18 次调用：用户拿 Java 仓库做重构，probe 预测 `fit` 仅 0.18，`likelyPitfalls` 写「Java 无法进图库」 | 3.3.0 把「多文件行为契约盘点」排除过头了——`feature` / `plan` / `brief` / `impact` 这层不依赖导入器。`whenToUse` 加回「重构落点规划」，非 Python 边界改成分层说明 |
+| 3.5.1 | 查 `%TEMP%` 发现 304MB 残留 | 安装器只留最近 3 个备份；一次性清理 95 个临时目录 |
+
+### 还没解决的
+
+- **`boundaryGaps` 仍是 10、`wasteRate` 仍是 38.4%**——3.3.0 之后没有新的 judge 数据，
+  这些改动还没被验证过。
+- **「技能不做需求挖掘」这条能力缺口是真的**：probe 自己指出「无法从 Java 代码自动推导
+  出全部需求和用例」。这不是措辞问题，是能力边界；要不要补取决于产品定位。
+- **测试临时目录还会漏**：全量测试被外部超时 kill 时 `tearDown` 不执行。
+
+### 下次从哪继续
+
+1. 先看 `~/.dsh/dreaming/state.json` 里 `skills['why-exist-graph']` 的 `lastUsedAt`
+   与 `counts`。**如果还停在 2026-11-06 07:32、n=17，说明技能没被调用过——不要再改描述
+   造版本，改了也没有数据能验证。**
+2. 有新 judge 数据后重点看两件事：
+   - `boundaryAccuracy` 是否从 0.412 上升（3.5.0 的定位修正是否见效）
+   - `wasteRate` 是否从 0.384 下降（3.4.0 的分层是否见效）
+3. 如果两者都没动，问题不在措辞，考虑动能力：例如给非 Python 仓库一个「从现有节点
+   反推 use_case 候选」的只读命令。
 
 ## 下一步方向
 
