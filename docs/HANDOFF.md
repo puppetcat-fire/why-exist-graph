@@ -141,6 +141,7 @@ DSH 的 dreaming 会按实际调用给每个技能打分、记录边界缺口。
 | 3.5.1 | 查 `%TEMP%` 发现 304MB 残留 | 安装器只留最近 3 个备份；一次性清理 95 个临时目录 |
 | 3.6.0 | 不是 dreaming：四仓重构项目实测「gate 全程 PASS 而 FR-CV-06/07、FR-XWS-04/05/10 一条测试都没有」，`coverage.enforced=false`、`bites=[]` | 加追溯门：`acceptance` 节点 + `has_acceptance` 边、`trace` / `acceptance-add` / `acceptance-import` 三条命令；gate 对「有需求无验收」判 UNKNOWN（退出码 1）、「有验收无测试」判 FAIL |
 | 3.6.1 | 3.6.0 后自检发现同一"验收"有三份表示（feature JSON / requirement attrs / acceptance 节点），导出读 A、门禁读 C | 收成单一来源：导出只读节点、声明不再写 `x_acceptance`、doctor 四类验收结构检查（只报告） |
+| 3.7.0 | 审计 P2.12 一直挂着的两处：`bite --feature` 会顺手扩作用域、`apply` 无 token 无边界 | 门的两个输入口上锁：`bite` 要求节点已在作用域（`--allow-new-scope` 显式承担）、`apply` 落库要 token + 落 `target_ids`、doctor 报 `bite-out-of-scope` |
 
 ### 还没解决的
 

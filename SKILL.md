@@ -187,11 +187,11 @@ python <skill>/scripts/wxg.py --root <root> up --template standard
 | 角色 | 允许命令 |
 |------|----------|
 | `scan` | `import-file`、`import-repo`、`derive`、`upsert-node`、`retract`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
-| `model-architecture` | `derive`、`promote`、`upsert-node`、`upsert-edge`、`bind`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
-| `model-structure` | `derive`、`promote`、`upsert-node`、`upsert-edge`、`bind`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
-| `interact` | `upsert-node`、`upsert-edge`、`bind`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
-| `specify-test` | `upsert-node`、`upsert-edge`、`bind`、`acceptance-add`、`acceptance-import`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
-| `implement-test` | `upsert-node`、`bind`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
+| `model-architecture` | `derive`、`promote`、`upsert-node`、`upsert-edge`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
+| `model-structure` | `derive`、`promote`、`upsert-node`、`upsert-edge`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
+| `interact` | `upsert-node`、`upsert-edge`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
+| `specify-test` | `upsert-node`、`upsert-edge`、`bind`、`acceptance-add`、`acceptance-import`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
+| `implement-test` | `upsert-node`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
 | `observe` | `import-file`、`import-repo`、`derive`、`upsert-node`、`retract`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
 | `audit` | `get`、`find`、`slice`、`work-judge`、`role-prompt`、`evidence-record` |
 
@@ -227,7 +227,7 @@ python <skill>/scripts/wxg.py --root <root> up --template standard
 | `acceptance-add` | 给一条需求登记一条验收条目（生成 acceptance 节点 + has_acceptance 边）；同一条文重复登记拒绝 | --requirement <值> --text <值> --token <值> | 状态库（需 claim_token / 角色命令） |
 | `acceptance-import` | 从 requirement.attrs.x_acceptance 批量生成验收条目（按序号+条文对齐，幂等）；把旧项目一次性接进追溯门 | --feature <值> --dry-run | 状态库（需 claim_token / 角色命令；--dry-run 只读） |
 | `trace` | 需求→验收→测试追溯矩阵：每条需求的验收条目与覆盖它的测试；有缺口退出码 1 | --feature <值> --json | 只读 |
-| `bite` | 记录一次必要性判定；判决集固定，写 bites 与节点 attrs.bite（唯一写入口） | --node <值> --verdict <值> | 状态库 |
+| `bite` | 记录一次必要性判定；判决集固定，写 bites 与节点 attrs.bite（唯一写入口） | --node <值> --verdict <值> --allow-new-scope | 状态库 |
 | `evidence-record` | 记录一条可追溯证据：命令、退出码、执行者、产物 hash（BehaviorPassed 的门槛） | --feature <值> --name <值> --command <值> | 状态库 |
 | `evidence-list` | 列出某 feature 的证据记录 | --feature <值> | 只读 |
 | `coverage` | 按咬合覆盖公式计算各阶段 n/d/p/n_required 与调度索引（只读） | --feature <值> --json | 只读 |
@@ -239,7 +239,7 @@ python <skill>/scripts/wxg.py --root <root> up --template standard
 | `brief` | 生成一张工单的盲化任务书：只含写入边界、输入契约、产出契约与完成定义（只读） | --work <值> | 只读（--out 时写文件） |
 | `blind-check` | 盲执行校验：拿任务书与独立执行者的产出，检查写入边界、产出契约与依赖引用（只读） | --work <值> --result <值> | 只读 |
 | `patch` | 把一次盲执行产出规范成补丁文件（只读；--out 写文件），供 apply 合并 | --work <值> --result <值> --out <值> | 只读（--out 时写文件） |
-| `apply` | 合并补丁并写入图库：冲突显式报告且不写半截；--dry-run 只报告 | --patches <值> --dry-run | 状态库（全量校验通过才写） |
+| `apply` | 合并补丁并写入图库：冲突显式报告且不写半截；写库需 --token（落在工单 target_ids 内），--dry-run 只报告 | --patches <值> --dry-run | 状态库（全量校验通过才写） |
 | `impact` | 影响域闭包：改动节点的下游可达集与需求覆盖，或断掉依赖边后的失去可达（只读） | --feature <值> | 只读 |
 | `conflicts` | 声明期冲突检测：列出 feature 之间会重叠的 target_ids 写边界（只读） | — | 只读 |
 | `conformance` | 只读一致性检查：设计锚点、depends 的代码支撑、未声明耦合、use_case 的测试覆盖；只报差异 | --feature <值> | 只读 |

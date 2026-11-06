@@ -17,7 +17,7 @@ from .contract import C
 from .errors import Reject
 from .graph import upsert_edge, upsert_node
 from .jsonio import load_id_list, load_json_arg, loads
-from .work import get_work
+from .work import get_work, require_role, require_targets, require_token
 from .workflow import ensure_feature, scope_ids
 
 def cmd_plan(conn, args):
@@ -280,6 +280,17 @@ def cmd_apply(conn, args):
     merged.update({"applied": False, "written_nodes": 0, "written_edges": 0})
     if not merged["ok"] or args.dry_run:
         return merged
+
+    # apply 是并行产出的合并写入口，I5 同样适用：没有 token 只能验合并，不能落库。
+    token = getattr(args, "token", None)
+    if not token:
+        raise Reject("写库需要 --token（先用 work-claim 领取工单）；只验证合并请加 --dry-run")
+    item = require_token(conn, token)
+    require_role(item, "apply")
+    written = [node["id"] for node in merged["nodes"]]
+    for edge in merged["edges"]:
+        written.extend([edge["src"], edge["dst"]])
+    require_targets(item, list(dict.fromkeys(written)))
 
     for node in merged["nodes"]:
         upsert_node(conn, node)

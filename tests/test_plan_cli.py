@@ -418,7 +418,6 @@ class PlanCase(unittest.TestCase):
         claim = self.claim("model-architecture")
         token = claim["claim_token"]
         self.upsert(token, {"id": "component:demo:a", "kind": "component", "name": "A", "attrs": {"duty": "a"}})
-        self.finish(token)
 
         out1 = self.base / "out1.json"
         out1.write_text(
@@ -445,7 +444,11 @@ class PlanCase(unittest.TestCase):
         patch2 = self.base / "p2.json"
         self.cli("patch", "--work", claim["work_item_id"], "--result", str(out2), "--out", str(patch2))
 
-        merged = self.cli("apply", "--patches", f"{patch1},{patch2}")
+        # 3.7.0：apply 写库要 token（落在 target_ids 内）；无 token 只能 --dry-run
+        rejected = self.cli("apply", "--patches", f"{patch1},{patch2}", expect=2)
+        self.assertIn("--token", rejected["error"])
+        merged = self.cli("apply", "--patches", f"{patch1},{patch2}", "--token", token)
+        self.finish(token)
 
         self.assertTrue(merged["ok"])
         self.assertTrue(merged["applied"])
@@ -455,6 +458,44 @@ class PlanCase(unittest.TestCase):
             self.assertIsNotNone(conn.execute("SELECT id FROM nodes WHERE id='component:demo:b'").fetchone())
         finally:
             conn.close()
+
+    def test_apply_rejects_nodes_outside_target_boundary(self):
+        """3.7.0：apply 落库也要落在工单 target_ids 内，和 upsert-node 同一条边界。"""
+        self.init_repo()
+        self.declare("feat-apply-bound")
+        self.open_targets("feat-apply-bound", "model-architecture", ["component:demo:*"])
+        claim = self.claim("model-architecture")
+        out = self.base / "outside.json"
+        out.write_text(
+            json.dumps({"nodes": [{"id": "classifier:demo:outside.X", "kind": "classifier", "name": "X"}]},
+                       ensure_ascii=False),
+            encoding="utf-8",
+        )
+        patch_file = self.base / "p-out.json"
+        self.cli("patch", "--work", claim["work_item_id"], "--result", str(out), "--out", str(patch_file))
+        rejected = self.cli("apply", "--patches", str(patch_file), "--token", claim["claim_token"], expect=2)
+        self.assertIn("target_ids", rejected["error"])
+
+    def test_apply_role_must_be_allowed(self):
+        self.init_repo()
+        self.declare("feat-apply-role")
+        conn = self.db()
+        try:
+            conn.execute(
+                "INSERT INTO work_items(id, feature_id, generation, kind, role, target_ids, status, "
+                "depends_on, claimed_by, claim_token, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                ("work:feat-apply-role:g1:scan", "feat-apply-role", 1, "scan", "scan",
+                 '["*"]', "claimed", "[]", "tester", "tok-scan", "2026-01-01T00:00:00Z"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        out = self.base / "role.json"
+        out.write_text(json.dumps({"nodes": []}, ensure_ascii=False), encoding="utf-8")
+        patch_file = self.base / "p-role.json"
+        self.cli("patch", "--work", "work:feat-apply-role:g1:scan", "--result", str(out), "--out", str(patch_file))
+        rejected = self.cli("apply", "--patches", str(patch_file), "--token", "tok-scan", expect=2)
+        self.assertIn("不能执行 apply", rejected["error"])
 
     def test_apply_conflict_reports_and_writes_nothing(self):
         self.init_repo()

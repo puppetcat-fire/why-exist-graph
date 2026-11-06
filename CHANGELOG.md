@@ -1,5 +1,25 @@
 # Changelog — why-exist-graph
 
+## 3.7.0（2026-11-06）
+
+**门禁的两个输入口上锁：`bite` 不再扩作用域，`apply` 也要 token 与边界。**
+
+审计里 P2.12 早就记着这两处，一直没动是因为「顺手修会静默改变既有门禁结果」——所以单独一版，
+把变化写清楚：
+
+- **`bite --feature` 不再顺手扩大作用域**：节点必须已经在 feature 作用域内，否则拒绝并提示
+  先 `work-open` 并入。作用域是 `plan` / `coverage` 的分母，咬合顺手撑大等于被审方自己改判据。
+  确需并入时显式加 `--allow-new-scope`，返回值里的 `added_to_feature_scope` 照旧报告。
+- **`apply` 落库要 `--token`**，且写出的每个节点/边端点都必须在工单 `target_ids` 内；
+  只想验证合并用 `--dry-run`（可无 token）。角色边界同步：`apply` 只给
+  model-architecture / model-structure / interact / specify-test / implement-test。
+- **`doctor` 新增 `bite-out-of-scope`**：旧库可能留着「咬合带节点进作用域」时期的越界咬合，只报告。
+- **契约**：`AUDIT_RULES` 加一条咬合边界规则；`I5` 把 `apply` / 验收命令一并纳入写边界；
+  `TOKEN_COMMANDS` 加 `apply`；命令表 `apply` 补 `--token`、`bite` 补 `--allow-new-scope`。
+- **测试**：426 → 429（apply 无 token / 越界 / 角色限制三条；bite 越界拒绝与显式扩域改写；
+  5 个既有 fixture 补作用域）。
+- **版本**：契约 `3.6.1` → `3.7.0`；库 schema 仍为 `9`（无表结构变化）。
+
 ## 3.6.1（2026-11-06）
 
 **验收条目收成单一来源。** 3.6.0 引入 `acceptance` 节点后，同一个"验收"其实有三份表示：

@@ -2166,6 +2166,25 @@ testcase 全部指向同一组 5 个需求，锚点还是 `case-5`、`JSON-2` �
 
 代价：`trace_rules` 从 5 条加到 7 条；测试 +3。
 
+## 113. 给门禁的两个输入口上锁（3.7.0）
+
+`gate` 的判据来自两处：`bites`（咬合判决）与图内容（节点/边）。这两处此前都没有写入边界：
+
+1. **`bite --feature` 会顺手把节点塞进 `feature_nodes`**。那是 `plan` / `coverage` / `conformance`
+   的输入集合，也就是门禁的分母。被审方可以用咬合扩大自己的作用域，然后再去覆盖它。
+2. **`apply` 直接把补丁写进图库**，不要求 token、不检查 `target_ids`。它是并行产出的合并写入口，
+   等于一条绕过 I5 的旁路。
+
+改法：`bite` 要求节点已在作用域内（`--allow-new-scope` 显式承担后果并在返回值报告）；
+`apply` 写库要 token、要落在工单 `target_ids` 内，`--dry-run` 保持无 token 可验合并；
+`doctor` 对旧库里的越界咬合报 `bite-out-of-scope`。
+
+为什么现在才做：审计里 P2.12 记着「这三处一时顺手修就会静默改门禁结果」。它们改的是门的输入，
+不是门的输出，混在功能版里会让既有项目的绿转红而无从解释——所以单独一版，CHANGELOG 里写明。
+
+代价：`AUDIT_RULES` +1、`I5` 扩写、`apply`/`bite` 命令参数变化；5 个既有 fixture 要先把节点
+并入作用域再咬。
+
 ## 附：Windows 受限 token 下的临时目录
 
 Windows 上 `tempfile.mkdtemp()` / `TemporaryDirectory()`（Python ≥ 3.12.4，为 CVE-2024-4030）

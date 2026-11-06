@@ -168,13 +168,15 @@ class WxgTestCase(unittest.TestCase):
             args.append("--allow-product-code")
         return self.cli(*args, expect=expect)
 
-    def bite(self, node, verdict, feature=None, reason=None, actor="agent-lead"):
+    def bite(self, node, verdict, feature=None, reason=None, actor="agent-lead", allow_new_scope=False, expect=0):
         args = ["bite", "--node", node, "--verdict", verdict, "--actor", actor]
         if feature:
             args += ["--feature", feature]
         if reason:
             args += ["--reason", reason]
-        return self.cli(*args)
+        if allow_new_scope:
+            args.append("--allow-new-scope")
+        return self.cli(*args, expect=expect)
 
     def upsert(self, token, payload):
         return self.cli("upsert-node", "--token", token, "--data", json.dumps(payload, ensure_ascii=False))
@@ -517,17 +519,19 @@ class WxgTestCase(unittest.TestCase):
         self.assertIn("edges_deleted_out_of_scope", result)
         self.assertGreaterEqual(result["edges_deleted_out_of_scope"], 1)
 
-    def test_bite_reports_when_it_expands_feature_scope(self):
-        """`bite --feature` 会把节点塞进 feature_nodes——那是 plan / coverage 的输入
-        集合，属于作用域变更而不是纯观察，必须在返回值里看得见。"""
+    def test_bite_rejects_out_of_scope_and_only_expands_with_explicit_flag(self):
+        """`bite --feature` 不再顺手扩作用域：作用域是 plan / coverage 的分母，
+        被审方不该用咬合扩大它。要扩就显式 `--allow-new-scope` 并在返回值里看得见。"""
         self.init_repo()
         self.declare("feat-bite-a")
         self.declare("feat-bite-b")
         self.import_scan("feat-bite-a")
         node = "classifier:demo:shop.py:OrderRepo"
-        first = self.bite(node, "KEEP", feature="feat-bite-b")
+        rejected = self.bite(node, "KEEP", feature="feat-bite-b", expect=2)
+        self.assertIn("作用域", rejected["error"])
+        first = self.bite(node, "KEEP", feature="feat-bite-b", allow_new_scope=True)
         self.assertTrue(first["added_to_feature_scope"])
-        second = self.bite(node, "KEEP", feature="feat-bite-b")
+        second = self.bite(node, "KEEP", feature="feat-bite-b", allow_new_scope=True)
         self.assertFalse(second["added_to_feature_scope"])
 
     def test_scope_ids_order_is_hash_seed_independent(self):
@@ -1408,7 +1412,8 @@ class WxgTestCase(unittest.TestCase):
             conn.commit()
         finally:
             conn.close()
-        # 跨节点 KEEP 不再抵消 UNNECESSARY
+        # 跨节点 KEEP 不再抵消 UNNECESSARY（先把该节点并进作用域：bite 不再顺手扩域）
+        self.open_targets("feat-latest", "scan", ["use_case:feat-latest:*"])
         self.bite("requirement:feat-latest:main", "UNNECESSARY", feature="feat-latest", reason="多余")
         self.bite(other, "KEEP", feature="feat-latest", reason="别处需要")
         gate = self.cli("gate", "--feature", "feat-latest", "--json", expect=1)
@@ -1493,8 +1498,17 @@ class WxgTestCase(unittest.TestCase):
         self.assertGreater(cov["phases"][0]["n_required"], 0)
         nodes = self.cli("find")["nodes"]
         self.assertGreaterEqual(len(nodes), cov["phases"][0]["n_required"])
-        for node in nodes:
-            self.bite(node["id"], "KEEP", feature="feat-cov")
+        sys.path.insert(0, str(SKILL / "scripts"))
+        from whyexist.workflow import scope_ids  # noqa: WPS433
+
+        conn = self.db()
+        conn.row_factory = sqlite3.Row
+        try:
+            scope = scope_ids(conn, "feat-cov")
+        finally:
+            conn.close()
+        for node_id in scope:
+            self.bite(node_id, "KEEP", feature="feat-cov")
         cov = self.cli("coverage", "--feature", "feat-cov")
         self.assertTrue(cov["phases"][0]["met"], cov)
         self.judge(arch["work_item_id"])
@@ -1572,8 +1586,9 @@ class WxgTestCase(unittest.TestCase):
         self.assertIn("结构性漂移", gate["reason"])
         self.assertEqual(gate["drift"]["count"], 1)
         self.assertTrue(gate["drift"]["enforced"])
-        # 上限 1 时不因漂移拦门（仍会因条件未齐失败）；节点已存在，bite 会把它挂进新 feature 作用域
+        # 上限 1 时不因漂移拦门（仍会因条件未齐失败）；bite 不再顺手扩域，先开作用域
         self.declare("feat-drift2", drift_limit=1)
+        self.open_targets("feat-drift2", "scan", ["classifier:demo:*"])
         node2 = self.cli("find", "--kind", "classifier")["nodes"][0]["id"]
         self.bite(node2, "UNMAPPED", feature="feat-drift2")
         gate = self.cli("gate", "--feature", "feat-drift2", "--json", expect=1)
@@ -1750,6 +1765,7 @@ class WxgTestCase(unittest.TestCase):
     def test_construction_marker_blocks_gate_and_can_be_cleared(self):
         self.init_repo()
         self.declare("feat-cons")
+        self.open_targets("feat-cons", "scan", ["operation:feat-cons:*"])
         node_id = "operation:feat-cons:op"
         conn = self.db()
         conn.row_factory = sqlite3.Row
@@ -2417,6 +2433,25 @@ class WxgTestCase(unittest.TestCase):
         conn.close()
         doctor = self.cli("doctor", expect=1)
         self.assertIn("acceptance-source-drift", doctor["by_check"])
+
+    def test_doctor_reports_bite_out_of_scope(self):
+        """旧库可能留着“咬合把节点带进作用域”时期的越界咬合，doctor 只报告。"""
+        self.init_repo()
+        self.declare("feat-bite-doc")
+        conn = self.db()
+        conn.row_factory = sqlite3.Row
+        try:
+            wxg.upsert_node(conn, {"id": "operation:outside:op", "kind": "operation", "name": "op"})
+            conn.execute(
+                "INSERT INTO bites(node_id, feature_id, generation, phase, verdict, reason, actor, created_at) "
+                "VALUES(?,?,?,?,?,?,?,?)",
+                ("operation:outside:op", "feat-bite-doc", 1, None, "KEEP", "旧库", "agent", "2026-01-01T00:00:00Z"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        doctor = self.cli("doctor", expect=1)
+        self.assertIn("bite-out-of-scope", doctor["by_check"])
 
     def test_trace_ignores_requirement_level_verifies(self):
         """旧式“一条测试覆盖整条需求”不算验收覆盖，只能计入 direct_tests。"""

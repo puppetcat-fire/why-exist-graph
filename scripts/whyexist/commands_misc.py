@@ -553,6 +553,20 @@ def doctor_report(conn) -> list[dict]:
                     "extra_count": len(extra),
                 })
 
+    # 3.7.0 咬合边界：feature 咬合必须落在该 feature 作用域内（旧库可能已有越界咬合）
+    for feature in conn.execute("SELECT id FROM features").fetchall():
+        scope = set(scope_ids(conn, feature["id"]))
+        for row in conn.execute(
+            "SELECT id, node_id FROM bites WHERE feature_id=?", (feature["id"],)
+        ).fetchall():
+            if row["node_id"] not in scope:
+                issues.append({
+                    "check": "bite-out-of-scope",
+                    "feature": feature["id"],
+                    "bite": row["id"],
+                    "node": row["node_id"],
+                })
+
     for feature in conn.execute("SELECT * FROM features").fetchall():
         generations = {
             row["generation"]

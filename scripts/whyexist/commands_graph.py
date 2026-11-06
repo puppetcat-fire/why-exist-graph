@@ -15,7 +15,7 @@ from .evidence import sha256_file
 from .graph import bind_node, get_node, upsert_edge, upsert_node
 from .jsonio import dumps, load_id_list, load_json_arg, loads, utc_now
 from .work import append_evidence, get_work, require_targets
-from .workflow import actor_value, current_phase, ensure_feature
+from .workflow import actor_value, current_phase, ensure_feature, scope_ids
 
 def cmd_upsert_node(conn, args):
     item = _require_write(conn, args, "upsert-node")
@@ -143,17 +143,22 @@ def cmd_bite(conn, args):
         feature = ensure_feature(conn, args.feature)
         generation = feature["generation"]
         phase = current_phase(conn, feature)
-        # bite 会把这个节点塞进 feature_nodes —— 那是 plan / conformance / coverage
-        # 的输入集合，不是无副作用的观察。这里要报出来，否则作用域会悄悄变大。
-        existing = conn.execute(
-            "SELECT 1 FROM feature_nodes WHERE feature_id=? AND node_id=?",
-            (args.feature, args.node),
-        ).fetchone()
-        conn.execute(
-            "INSERT OR IGNORE INTO feature_nodes(feature_id, node_id) VALUES(?,?)",
-            (args.feature, args.node),
-        )
-        added_to_scope = existing is None
+        # 咬合是观察，不是扩作用域：节点得先在图的作用域里。作用域是 plan / conformance /
+        # coverage 的输入集合，咬合顺手把它撑大，等于门禁的分母由被审方自己改。
+        in_scope = args.node in set(scope_ids(conn, feature["id"]))
+        allow_new = bool(getattr(args, "allow_new_scope", False))
+        if not in_scope and not allow_new:
+            raise Reject(
+                f"节点不在 feature 作用域内：{args.node}。"
+                "先把节点并进作用域（`work-open --feature … --target-ids …`），"
+                "或显式加 `--allow-new-scope` 承担扩大作用域的后果"
+            )
+        if not in_scope:
+            conn.execute(
+                "INSERT OR IGNORE INTO feature_nodes(feature_id, node_id) VALUES(?,?)",
+                (args.feature, args.node),
+            )
+            added_to_scope = True
     conn.execute(
         "INSERT INTO bites(node_id, feature_id, generation, phase, verdict, reason, actor, created_at) "
         "VALUES(?,?,?,?,?,?,?,?)",

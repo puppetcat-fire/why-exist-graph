@@ -22,11 +22,11 @@
 | 角色 | 允许命令 |
 |------|----------|
 | `scan` | `import-file`、`import-repo`、`derive`、`upsert-node`、`retract`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
-| `model-architecture` | `derive`、`promote`、`upsert-node`、`upsert-edge`、`bind`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
-| `model-structure` | `derive`、`promote`、`upsert-node`、`upsert-edge`、`bind`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
-| `interact` | `upsert-node`、`upsert-edge`、`bind`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
-| `specify-test` | `upsert-node`、`upsert-edge`、`bind`、`acceptance-add`、`acceptance-import`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
-| `implement-test` | `upsert-node`、`bind`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
+| `model-architecture` | `derive`、`promote`、`upsert-node`、`upsert-edge`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
+| `model-structure` | `derive`、`promote`、`upsert-node`、`upsert-edge`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
+| `interact` | `upsert-node`、`upsert-edge`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
+| `specify-test` | `upsert-node`、`upsert-edge`、`bind`、`acceptance-add`、`acceptance-import`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
+| `implement-test` | `upsert-node`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
 | `observe` | `import-file`、`import-repo`、`derive`、`upsert-node`、`retract`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
 | `audit` | `get`、`find`、`slice`、`work-judge`、`role-prompt`、`evidence-record` |
 
@@ -62,7 +62,7 @@
 | `acceptance-add` | 给一条需求登记一条验收条目（生成 acceptance 节点 + has_acceptance 边）；同一条文重复登记拒绝 | --requirement <值> --text <值> --token <值> | 状态库（需 claim_token / 角色命令） |
 | `acceptance-import` | 从 requirement.attrs.x_acceptance 批量生成验收条目（按序号+条文对齐，幂等）；把旧项目一次性接进追溯门 | --feature <值> --dry-run | 状态库（需 claim_token / 角色命令；--dry-run 只读） |
 | `trace` | 需求→验收→测试追溯矩阵：每条需求的验收条目与覆盖它的测试；有缺口退出码 1 | --feature <值> --json | 只读 |
-| `bite` | 记录一次必要性判定；判决集固定，写 bites 与节点 attrs.bite（唯一写入口） | --node <值> --verdict <值> | 状态库 |
+| `bite` | 记录一次必要性判定；判决集固定，写 bites 与节点 attrs.bite（唯一写入口） | --node <值> --verdict <值> --allow-new-scope | 状态库 |
 | `evidence-record` | 记录一条可追溯证据：命令、退出码、执行者、产物 hash（BehaviorPassed 的门槛） | --feature <值> --name <值> --command <值> | 状态库 |
 | `evidence-list` | 列出某 feature 的证据记录 | --feature <值> | 只读 |
 | `coverage` | 按咬合覆盖公式计算各阶段 n/d/p/n_required 与调度索引（只读） | --feature <值> --json | 只读 |
@@ -74,7 +74,7 @@
 | `brief` | 生成一张工单的盲化任务书：只含写入边界、输入契约、产出契约与完成定义（只读） | --work <值> | 只读（--out 时写文件） |
 | `blind-check` | 盲执行校验：拿任务书与独立执行者的产出，检查写入边界、产出契约与依赖引用（只读） | --work <值> --result <值> | 只读 |
 | `patch` | 把一次盲执行产出规范成补丁文件（只读；--out 写文件），供 apply 合并 | --work <值> --result <值> --out <值> | 只读（--out 时写文件） |
-| `apply` | 合并补丁并写入图库：冲突显式报告且不写半截；--dry-run 只报告 | --patches <值> --dry-run | 状态库（全量校验通过才写） |
+| `apply` | 合并补丁并写入图库：冲突显式报告且不写半截；写库需 --token（落在工单 target_ids 内），--dry-run 只报告 | --patches <值> --dry-run | 状态库（全量校验通过才写） |
 | `impact` | 影响域闭包：改动节点的下游可达集与需求覆盖，或断掉依赖边后的失去可达（只读） | --feature <值> | 只读 |
 | `conflicts` | 声明期冲突检测：列出 feature 之间会重叠的 target_ids 写边界（只读） | — | 只读 |
 | `conformance` | 只读一致性检查：设计锚点、depends 的代码支撑、未声明耦合、use_case 的测试覆盖；只报差异 | --feature <值> | 只读 |
@@ -217,6 +217,7 @@ gate / coverage / trace / reconcile / 变更集 / 回扫 / conformance / 后端 
 | `work-judge` 同时写 `judged_at`；一个工单的 `judged_by` 不允许被后续裁决覆盖（仅允许从空到有值）。 |
 | `work-judge` 每次裁决（passed/failed）都写入 `judge_history`（裁决、理由、actor、时间，只增不删）；judge(passed) 同时清空该工单的陈旧 `fail_reason`。 |
 | `attrs.bite` 只能由 `bite` 命令写入；`upsert-node` 等图写入不得写入 bite，gate 不采信图写入里的 bite 值。 |
+| `bite --feature` 不扩作用域：节点必须已经在 feature 作用域内，否则拒绝（作用域是 plan / coverage 的分母，咬合顺手撑大等于被审方自己改判据）。确需并入时用 `work-open` 或显式 `--allow-new-scope`，并在输出里报告 `added_to_feature_scope`。 |
 | 审计日志/证据不得只复述结论：至少记录执行者、命令、退出码或产物 hash，否则只能标 `UNKNOWN`/过程证据，不计入交付门。 |
 | 证据是状态库的一等记录：每次测试、HTTP 冒烟、gate、export、独立重跑用 `evidence-record` 写入 `evidence` 表。 |
 | 证据记录至少包含：feature、名称、命令、退出码、执行者、时间；有产物文件时同时写 artifact 路径与 SHA-256。 |
@@ -245,7 +246,7 @@ gate / coverage / trace / reconcile / 变更集 / 回扫 / conformance / 后端 
 | I2 generation 是身份 | 条件与工单 id 都带 generation；重新声明会开启新一代并 supersede 旧工单，work-claim 只发当前代；不会出现旧 passed 工单挡住或混淆新条件。 |
 | I3 交付门只读 | gate 不写库；正常流程中条件只由 work-judge(passed) 改写，Accepted 由声明/登记入口新建时置真。判定与状态变更分离。 |
 | I4 判决可校验 | bite 是唯一写入咬合的命令，只接受固定判决集；gate 只采信 bites 表，作用域包含 feature_nodes、requirement 前缀与当前代工单 target_ids。 |
-| I5 写入有边界 | 图内容写入（upsert-node/upsert-edge/bind/retract/import-file）必须带 claim_token 且落在工单 target_ids 内；角色只能调用自己在 ROLES 里的命令。feature-declare / feature-register 只写 feature 元数据与 requirement 节点，bite 只写 bites/attrs.bite 且必须带 actor。 |
+| I5 写入有边界 | 图内容写入（upsert-node/upsert-edge/bind/apply/retract/import-file/acceptance-add/acceptance-import）必须带 claim_token 且落在工单 target_ids 内；角色只能调用自己在 ROLES 里的命令。feature-declare / feature-register 只写 feature 元数据与 requirement/acceptance 节点，bite 只写 bites/attrs.bite 且必须带 actor、不扩作用域。 |
 | I6 技能通用 | 技能不写死仓名、工作区路径；仓在运行期 repo-add 登记，状态库路径用 --root 指定；导入器当前仅 Python AST（扩展边界见 design.md）。 |
 | I7 不臆造 | 认不出的节点/边标 unmapped=1；导出缺 id 留空；BehaviorPassed 置真前必须有**同 generation**、exit_code=0 的 evidence，judge 与 gate 双向强制。 |
 | I8 文档即生成的视图 | SKILL.md 与 references/contract.md 的契约块、references/export-sample 的样例都由同一实现生成；verify 比较字节。 |
@@ -373,5 +374,5 @@ gate / coverage / trace / reconcile / 变更集 / 回扫 / conformance / 后端 
 
 导出只包含图里连到该 feature 的记录：01 取 requirement；02 取 satisfies 这些 requirement 的 use_case；04 取用例经 depends/associates/realizes 到达的 component 与 port，以及 feature 作用域内的 pattern；05 取用例 contains 的 operation 及其 has_input、以及 contains 指向这些 operation 的 classifier；07 每条 writes->sink 算一步，另附请求参数表（同一参数只列一次，顺序按首次出现）；测试规格取 verifies 到这些 operation/use_case 的 testcase 与 asserts 到 operation 的 assertion。缺的格子留空，禁止从任何旧文档补句。参数、测试与断言按 id 去重。
 
-契约版本 `3.6.1`，库 schema 版本 `9`。
+契约版本 `3.7.0`，库 schema 版本 `9`。
 <!-- wxg:contract:full:end -->

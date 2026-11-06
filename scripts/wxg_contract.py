@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 
 SCHEMA_VERSION = 9
-CONTRACT_VERSION = "3.6.1"
+CONTRACT_VERSION = "3.7.0"
 
 #: ``doctor --fix`` 能自动修的检查项。其余问题（legacy 身份、条件行缺失、审计配对等）
 #: 只能报给人看——要么需要裁决，要么需要改设计，自动修等于替人做决定。
@@ -150,6 +150,7 @@ AUDIT_RULES = [
     "`work-judge` 同时写 `judged_at`；一个工单的 `judged_by` 不允许被后续裁决覆盖（仅允许从空到有值）。",
     "`work-judge` 每次裁决（passed/failed）都写入 `judge_history`（裁决、理由、actor、时间，只增不删）；judge(passed) 同时清空该工单的陈旧 `fail_reason`。",
     "`attrs.bite` 只能由 `bite` 命令写入；`upsert-node` 等图写入不得写入 bite，gate 不采信图写入里的 bite 值。",
+    "`bite --feature` 不扩作用域：节点必须已经在 feature 作用域内，否则拒绝（作用域是 plan / coverage 的分母，咬合顺手撑大等于被审方自己改判据）。确需并入时用 `work-open` 或显式 `--allow-new-scope`，并在输出里报告 `added_to_feature_scope`。",
     "审计日志/证据不得只复述结论：至少记录执行者、命令、退出码或产物 hash，否则只能标 `UNKNOWN`/过程证据，不计入交付门。",
 ]
 
@@ -260,11 +261,11 @@ CONFORMANCE_RULES = [
 
 ROLES = {
     "scan": ["import-file", "import-repo", "derive", "upsert-node", "retract", "get", "find", "slice", "work-finish", "role-prompt"],
-    "model-architecture": ["derive", "promote", "upsert-node", "upsert-edge", "bind", "get", "find", "slice", "work-finish", "role-prompt"],
-    "model-structure": ["derive", "promote", "upsert-node", "upsert-edge", "bind", "get", "find", "slice", "work-finish", "role-prompt"],
-    "interact": ["upsert-node", "upsert-edge", "bind", "get", "find", "slice", "work-finish", "role-prompt"],
-    "specify-test": ["upsert-node", "upsert-edge", "bind", "acceptance-add", "acceptance-import", "get", "find", "slice", "work-finish", "role-prompt"],
-    "implement-test": ["upsert-node", "bind", "get", "find", "slice", "work-finish", "role-prompt"],
+    "model-architecture": ["derive", "promote", "upsert-node", "upsert-edge", "bind", "apply", "get", "find", "slice", "work-finish", "role-prompt"],
+    "model-structure": ["derive", "promote", "upsert-node", "upsert-edge", "bind", "apply", "get", "find", "slice", "work-finish", "role-prompt"],
+    "interact": ["upsert-node", "upsert-edge", "bind", "apply", "get", "find", "slice", "work-finish", "role-prompt"],
+    "specify-test": ["upsert-node", "upsert-edge", "bind", "acceptance-add", "acceptance-import", "apply", "get", "find", "slice", "work-finish", "role-prompt"],
+    "implement-test": ["upsert-node", "bind", "apply", "get", "find", "slice", "work-finish", "role-prompt"],
     "observe": ["import-file", "import-repo", "derive", "upsert-node", "retract", "get", "find", "slice", "work-finish", "role-prompt"],
     "audit": ["get", "find", "slice", "work-judge", "role-prompt"],
 }
@@ -274,7 +275,7 @@ for _role in ROLES:
     ROLES[_role].append("evidence-record")
 
 # 这些命令只在拿到 claim_token 后可执行（写图/提交）。
-TOKEN_COMMANDS = ["upsert-node", "upsert-edge", "bind", "retract", "import-file", "work-finish", "acceptance-add", "acceptance-import"]
+TOKEN_COMMANDS = ["upsert-node", "upsert-edge", "bind", "retract", "import-file", "work-finish", "acceptance-add", "acceptance-import", "apply"]
 
 # implement-test 领取额外门槛：当轮明确允许改产品代码。
 PRODUCT_CODE_ROLES = ["implement-test"]
@@ -512,9 +513,10 @@ COMMANDS = {
             O("--node", required=True),
             O("--verdict", required=True, choices=BITE_VERDICTS),
             O("--reason", default=""),
-            O("--feature", default=None, help="同时登记为 feature 作用域内的咬合"),
+            O("--feature", default=None, help="同时登记为 feature 作用域内的咬合；节点须已在作用域内"),
             O("--actor", default=None, help="撕咬执行者 id；也可用 WXG_ACTOR 环境变量"),
         ],
+        flags=[F("--allow-new-scope", help="节点不在作用域时把它并进来（显式承担扩大作用域的后果）")],
     ),
     "evidence-record": C(
         "记录一条可追溯证据：命令、退出码、执行者、产物 hash（BehaviorPassed 的门槛）",
@@ -621,11 +623,13 @@ COMMANDS = {
         ],
     ),
     "apply": C(
-        "合并补丁并写入图库：冲突显式报告且不写半截；--dry-run 只报告",
+        "合并补丁并写入图库：冲突显式报告且不写半截；写库需 --token（落在工单 target_ids 内），--dry-run 只报告",
         options=[
             O("--patches", required=True, help="补丁文件列表，逗号分隔"),
+            O("--token", default=None, help="写库令牌；--dry-run 时可省略"),
         ],
         flags=[F("--dry-run", help="只合并与校验，不写库")],
+        token=True,
     ),
     "impact": C(
         "影响域闭包：改动节点的下游可达集与需求覆盖，或断掉依赖边后的失去可达（只读）",
@@ -798,7 +802,7 @@ INVARIANTS = [
     ("I2 generation 是身份", "条件与工单 id 都带 generation；重新声明会开启新一代并 supersede 旧工单，work-claim 只发当前代；不会出现旧 passed 工单挡住或混淆新条件。"),
     ("I3 交付门只读", "gate 不写库；正常流程中条件只由 work-judge(passed) 改写，Accepted 由声明/登记入口新建时置真。判定与状态变更分离。"),
     ("I4 判决可校验", "bite 是唯一写入咬合的命令，只接受固定判决集；gate 只采信 bites 表，作用域包含 feature_nodes、requirement 前缀与当前代工单 target_ids。"),
-    ("I5 写入有边界", "图内容写入（upsert-node/upsert-edge/bind/retract/import-file）必须带 claim_token 且落在工单 target_ids 内；角色只能调用自己在 ROLES 里的命令。feature-declare / feature-register 只写 feature 元数据与 requirement 节点，bite 只写 bites/attrs.bite 且必须带 actor。"),
+    ("I5 写入有边界", "图内容写入（upsert-node/upsert-edge/bind/apply/retract/import-file/acceptance-add/acceptance-import）必须带 claim_token 且落在工单 target_ids 内；角色只能调用自己在 ROLES 里的命令。feature-declare / feature-register 只写 feature 元数据与 requirement/acceptance 节点，bite 只写 bites/attrs.bite 且必须带 actor、不扩作用域。"),
     ("I6 技能通用", "技能不写死仓名、工作区路径；仓在运行期 repo-add 登记，状态库路径用 --root 指定；导入器当前仅 Python AST（扩展边界见 design.md）。"),
     ("I7 不臆造", "认不出的节点/边标 unmapped=1；导出缺 id 留空；BehaviorPassed 置真前必须有**同 generation**、exit_code=0 的 evidence，judge 与 gate 双向强制。"),
     ("I8 文档即生成的视图", "SKILL.md 与 references/contract.md 的契约块、references/export-sample 的样例都由同一实现生成；verify 比较字节。"),
