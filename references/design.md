@@ -2222,6 +2222,18 @@ requirement / ordinal / text），`feature-status` 加 `traceability` 摘要（�
 
 代价：`trace_rules` 9 → 10；测试 +2（豁免与不豁免各一条）。
 
+## 117. 让红区可行动（3.10.0）
+
+3.9.1 之后四仓项目的 gate 终于说了真话："742 条验收条目没有测试指向"。然后呢？哪 742 条、
+从哪条需求开始补，得自己在 `--json` 里翻 192 条需求。**门禁只说"不通过"是不够的，它得能指出
+"先补这里"**——否则红区只是让人焦虑，不会让人行动。
+
+改法：`trace --md` 出按缺口降序的人读矩阵（谁最红在最上面）；`trace --requirement` 钻取单条
+需求；`gate` 的追溯 FAIL 直接带 `top_gaps`（前 5 条）与 `next` 提示。三条都只读，不改判定。
+
+实测：四仓项目 `--md` 的第一屏就是 AUTH 组（6/6/6/5… 条验收全无测试），和它"未做"的组级结论
+对得上——人读输出与统计口径一致，这比多一个命令重要。
+
 ## 附：Windows 受限 token 下的临时目录
 
 Windows 上 `tempfile.mkdtemp()` / `TemporaryDirectory()`（Python ≥ 3.12.4，为 CVE-2024-4030）

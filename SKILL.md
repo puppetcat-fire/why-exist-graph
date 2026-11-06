@@ -226,7 +226,7 @@ python <skill>/scripts/wxg.py --root <root> up --template standard
 | `retract` | 撤回 target_ids 内的节点与边；级联删除 bite 并剔除工单引用 | --token <值> | 需要 claim_token / 角色命令 |
 | `acceptance-add` | 给一条需求登记一条验收条目（生成 acceptance 节点 + has_acceptance 边）；同一条文重复登记拒绝 | --requirement <值> --text <值> --token <值> | 状态库（需 claim_token / 角色命令） |
 | `acceptance-import` | 从 requirement.attrs.x_acceptance 批量生成验收条目（按序号+条文对齐，幂等）；把旧项目一次性接进追溯门 | --feature <值> --dry-run | 状态库（需 claim_token / 角色命令；--dry-run 只读） |
-| `trace` | 需求→验收→测试追溯矩阵：每条需求的验收条目与覆盖它的测试；有缺口退出码 1 | --feature <值> --json | 只读 |
+| `trace` | 需求→验收→测试追溯矩阵：每条需求的验收条目与覆盖它的测试；有缺口退出码 1 | --feature <值> --json --md | 只读 |
 | `bite` | 记录一次必要性判定；判决集固定，写 bites 与节点 attrs.bite（唯一写入口） | --node <值> --verdict <值> --allow-new-scope | 状态库 |
 | `evidence-record` | 记录一条可追溯证据：命令、退出码、执行者、产物 hash（BehaviorPassed 的门槛） | --feature <值> --name <值> --command <值> | 状态库 |
 | `evidence-list` | 列出某 feature 的证据记录 | --feature <值> | 只读 |

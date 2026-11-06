@@ -194,13 +194,15 @@ def _verifies_index(conn) -> dict[str, set[str]]:
     return index
 
 
-def trace_report(conn, feature: dict, limit: int = 20) -> dict:
+def trace_report(conn, feature: dict, limit: int = 20, requirement: str | None = None) -> dict:
     """需求→验收→测试矩阵。只读，不改任何状态。
 
     `requirement:{feature}:main` 是声明入口自动建的**聚合需求**：feature 拆成多条子需求时，
     它只是伞节点，不该因为自己没有验收条目而被判缺口（真实项目里最先撞到这条——
     四仓重构 191 条子需求 + 1 条 main，main 没有 x_acceptance）。它仍是需求的唯一例外：
     如果它是作用域里唯一的需求，或者自己登记了验收条目，就按普通需求算。
+
+    `requirement` 给定 id 时只算这一条需求（钻取用；聚合豁免按该 feature 的全量需求判断）。
     """
     if limit < 0:
         raise Reject("--limit 必须是非负整数")
@@ -213,10 +215,15 @@ def trace_report(conn, feature: dict, limit: int = 20) -> dict:
     ]
     main_id = f"requirement:{feature['id']}:main"
     aggregate_main = main_id in requirement_ids and len(requirement_ids) > 1
+    if requirement is not None:
+        if requirement not in requirement_ids:
+            raise Reject(f"需求不在该 feature 作用域内：{requirement}")
+        requirement_ids = [requirement]
     rows: list[dict] = []
     missing: list[dict] = []
     without_acceptance: list[str] = []
     aggregates: list[str] = []
+    tail: list[tuple[int, dict]] = []
     acceptance_total = 0
     acceptance_tested = 0
     for node_id in requirement_ids:
@@ -233,26 +240,37 @@ def trace_report(conn, feature: dict, limit: int = 20) -> dict:
             without_acceptance.append(node_id)
         for item in gaps:
             missing.append({"requirement": node_id, "acceptance": item["id"], "text": item["text"]})
-        rows.append({
+        row = {
             "id": node_id,
             "name": node["name"],
             "acceptance": len(items),
             "tested": len(tested),
+            "missing_count": len(gaps),
             "direct_tests": len(verified.get(node_id, ())),
             "missing": [item["id"] for item in gaps][:limit],
             "without_acceptance": not items and not is_aggregate,
             "aggregate": is_aggregate,
-        })
+        }
+        rows.append(row)
+        tail.append((len(gaps), row))
     requirements = len(rows)
     applicable = requirements > 0
     unknown = applicable and acceptance_total == 0
     complete = applicable and not missing and not without_acceptance
+    # 缺口最多的需求：让红区直接可行动（gate FAIL 里也用它）
+    top_gaps = [
+        {"id": row["id"], "missing": count, "acceptance": row["acceptance"]}
+        for count, row in sorted(tail, key=lambda pair: (-pair[0], pair[1]["id"]))[:5]
+        if count
+    ]
     return {
         "feature": feature["id"],
         "generation": feature["generation"],
         "requirements": requirements,
         "applicable": applicable,
         "ok": (not applicable) or complete,
+        "requirement": requirement,
+        "top_gaps": top_gaps,
         "summary": {
             "requirements": requirements,
             "requirements_with_acceptance": requirements - len(without_acceptance) - len(aggregates),

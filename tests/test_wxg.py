@@ -2530,6 +2530,37 @@ class WxgTestCase(unittest.TestCase):
         self.assertEqual(["requirement:feat-agg-only:main"], trace["without_acceptance"])
         self.assertFalse(trace["summary"]["complete"])
 
+    def test_trace_md_and_requirement_drilldown(self):
+        """3.10.0：--md 出人读表格，--requirement 钻取单条需求。"""
+        self.init_repo()
+        self.declare("feat-md")
+        self.open_targets("feat-md", "specify-test", ["requirement:feat-md:main", "acceptance:feat-md:*"])
+        self.ready_ticket("feat-md", "specify-test")
+        spec = self.claim("specify-test")
+        self.cli("acceptance-add", "--requirement", "requirement:feat-md:main",
+                 "--text", "第二条", "--token", spec["claim_token"])
+        md = self.cli("trace", "--feature", "feat-md", "--md", expect=1)
+        self.assertIsInstance(md, str)
+        self.assertIn("# 追溯矩阵", md)
+        self.assertIn("requirement:feat-md:main", md)
+        self.assertIn("| 需求 | 验收 | 已测 | 缺口 |", md)
+        drill = self.cli("trace", "--feature", "feat-md", "--requirement", "requirement:feat-md:main", expect=1)
+        self.assertEqual(1, drill["requirements"])
+        self.assertEqual(2, drill["summary"]["acceptance_items"])
+        self.assertEqual(2, drill["summary"]["acceptance_missing"])
+        self.cli("trace", "--feature", "feat-md", "--requirement", "requirement:nope:main", expect=2)
+
+    def test_gate_fail_lists_top_gaps(self):
+        self.init_repo()
+        self.declare("feat-gap-lead")
+        self.cli("evidence-record", "--feature", "feat-gap-lead", "--name", "e", "--command", "true", "--actor", "t")
+        self.force_ready("feat-gap-lead")
+        gate = self.cli("gate", "--feature", "feat-gap-lead", "--json", expect=1)
+        self.assertEqual(gate["result"], "FAIL")
+        self.assertEqual("requirement:feat-gap-lead:main", gate["top_gaps"][0]["id"])
+        self.assertEqual(1, gate["top_gaps"][0]["missing"])
+        self.assertIn("trace", gate["next"])
+
     def test_trace_ignores_requirement_level_verifies(self):
         """旧式“一条测试覆盖整条需求”不算验收覆盖，只能计入 direct_tests。"""
         self.init_repo()

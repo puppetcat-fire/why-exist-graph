@@ -145,6 +145,7 @@ DSH 的 dreaming 会按实际调用给每个技能打分、记录边界缺口。
 | 3.8.0 | 3.6/3.7 之后验收条目只进得了门禁，进不了任务书与状态：执行者得自己跑 trace 才知道验收长什么样 | `brief` 加 `acceptance_items`（边界内需求的验收条目），`feature-status` 加 `traceability` 摘要（与 trace/gate 同口径） |
 | 3.9.0 | 验收边只有 doctor 事后报告结构问题，`upsert-edge` 什么都放行 | 结构约束挪到写入期：`has_acceptance` 两端 kind 固定且一条验收只能属于一条需求；`verifies` 指向 acceptance 时 src 必须是 testcase；doctor 退为兜旧库 |
 | 3.9.1 | 四仓项目迁验收时暴露：`main` 是伞节点却被算成"没验收的需求" | `trace`/`gate` 对 `requirement:{f}:main` 豁免（有其它需求时），单列 `aggregate_requirements`；唯一需求或自己登记验收时不豁免 |
+| 3.10.0 | 3.9.1 后 gate 说"742 条验收没测试"就没了下文，得自己翻 JSON 找从哪补 | `trace --md` 按缺口降序出人读矩阵、`--requirement` 钻取；gate 追溯 FAIL 带 `top_gaps` 与 `next` 提示 |
 
 ### 还没解决的
 

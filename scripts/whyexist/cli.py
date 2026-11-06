@@ -103,6 +103,9 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0 if result.get("result") == "PASS" else 1
     if args.cmd == "trace":
+        if getattr(args, "md", False):
+            print(result["markdown"], end="")
+            return 0 if result.get("ok") else 1
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0 if result.get("ok") else 1
     if args.cmd == "apply":

@@ -57,6 +57,41 @@ def cmd_acceptance_import(conn, args):
     return result
 
 
+def _render_markdown(report: dict) -> str:
+    summary = report["summary"]
+    lines = [
+        f"# 追溯矩阵：{report['feature']}（generation {report['generation']}）",
+        "",
+        (
+            f"需求 {summary['requirements']} 条；验收条目 {summary['acceptance_items']}，"
+            f"已测 {summary['acceptance_tested']}，缺口 {summary['acceptance_missing']}；"
+            f"未登记验收 {summary['requirements_without_acceptance']}，"
+            f"聚合需求 {summary['aggregate_requirements']}。"
+        ),
+        "",
+        "| 需求 | 验收 | 已测 | 缺口 |",
+        "|---|---|---|---|",
+    ]
+    rows = sorted(report["requirements_detail"], key=lambda row: (-row["missing_count"], row["id"]))
+    for row in rows:
+        lines.append(f"| `{row['id']}` | {row['acceptance']} | {row['tested']} | {row['missing_count']} |")
+    if not rows:
+        lines.append("| （无需求） | | | |")
+    if report["truncated"]:
+        lines.append("")
+        lines.append("明细按 `--limit` 截断；完整清单用 `--json`。")
+    return "\n".join(lines) + "\n"
+
+
 def cmd_trace(conn, args):
     feature = ensure_feature(conn, args.feature)
-    return trace_mod.trace_report(conn, feature, limit=args.limit)
+    limit = args.limit if args.limit is not None else 20
+    report = trace_mod.trace_report(
+        conn,
+        feature,
+        limit=limit,
+        requirement=getattr(args, "requirement", None),
+    )
+    if getattr(args, "md", False):
+        return {"ok": report["ok"], "markdown": _render_markdown(report), "summary": report["summary"]}
+    return report

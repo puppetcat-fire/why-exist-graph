@@ -333,6 +333,8 @@ def cmd_gate(conn, args):
             ),
             "missing_acceptance": traceability["missing"],
             "without_acceptance": traceability["without_acceptance"],
+            "top_gaps": traceability["top_gaps"],
+            "next": "按 top_gaps 从缺口最多的需求开始补测试；`wxg trace --feature … --md` 看全表",
             **base,
         }
     if coverage["enforced"] and coverage["unmet"]:

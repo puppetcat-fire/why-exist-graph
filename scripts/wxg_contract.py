@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 
 SCHEMA_VERSION = 9
-CONTRACT_VERSION = "3.9.1"
+CONTRACT_VERSION = "3.10.0"
 
 #: ``doctor --fix`` 能自动修的检查项。其余问题（legacy 身份、条件行缺失、审计配对等）
 #: 只能报给人看——要么需要裁决，要么需要改设计，自动修等于替人做决定。
@@ -188,6 +188,7 @@ TRACE_RULES = [
     "`brief` 任务书带上**边界内需求的验收条目**（`acceptance_items`：id / requirement / ordinal / text），`feature-status` 带 `traceability` 摘要（验收条目数、已测数、缺口数、complete/unknown）——执行者与控制器不必再单独跑 `trace` 才知道“做到什么算完、还差多少”。",
     "`upsert-edge` 在**写入期**强制验收边的结构：`has_acceptance` 的 src 必须是 requirement、dst 必须是 acceptance，且一条验收只能属于一条需求；`verifies` 指向 acceptance 时 src 必须是 testcase。`doctor` 的 `acceptance-orphan` / `acceptance-multi-parent` 只兜旧库遗留数据，不替代写入期校验。",
     "`requirement:{feature}:main` 是声明入口自动建的**聚合需求**：当作用域里还有其它需求时，它自己没有验收条目不算缺口（伞节点）；如果它是唯一需求、或自己登记了验收条目，就按普通需求算。`trace` 的 `aggregate_requirements` 与 `gate` 的追溯检查同一口径。",
+    "`trace` 支持人读与钻取：`--md` 输出按缺口降序的矩阵表，`--requirement <id>` 只看一条需求；`gate` 的追溯 FAIL 带 `top_gaps`（缺口最多的 5 条需求）与 `next` 提示——红区必须能直接指出下一步补哪里。",
 ]
 
 JUDGE_HISTORY_COLUMNS = [
@@ -507,8 +508,9 @@ COMMANDS = {
         options=[
             O("--feature", required=True),
             O("--limit", type=int, default=20, help="每条需求最多列几条缺口，默认 20"),
+            O("--requirement", default=None, help="只钻取这一条需求（id）"),
         ],
-        flags=[F("--json", help="机器可读")],
+        flags=[F("--json", help="机器可读"), F("--md", help="输出 markdown 表格（按缺口降序）")],
     ),
     "bite": C(
         "记录一次必要性判定；判决集固定，写 bites 与节点 attrs.bite（唯一写入口）",

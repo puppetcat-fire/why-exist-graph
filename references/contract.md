@@ -61,7 +61,7 @@
 | `retract` | 撤回 target_ids 内的节点与边；级联删除 bite 并剔除工单引用 | --token <值> | 需要 claim_token / 角色命令 |
 | `acceptance-add` | 给一条需求登记一条验收条目（生成 acceptance 节点 + has_acceptance 边）；同一条文重复登记拒绝 | --requirement <值> --text <值> --token <值> | 状态库（需 claim_token / 角色命令） |
 | `acceptance-import` | 从 requirement.attrs.x_acceptance 批量生成验收条目（按序号+条文对齐，幂等）；把旧项目一次性接进追溯门 | --feature <值> --dry-run | 状态库（需 claim_token / 角色命令；--dry-run 只读） |
-| `trace` | 需求→验收→测试追溯矩阵：每条需求的验收条目与覆盖它的测试；有缺口退出码 1 | --feature <值> --json | 只读 |
+| `trace` | 需求→验收→测试追溯矩阵：每条需求的验收条目与覆盖它的测试；有缺口退出码 1 | --feature <值> --json --md | 只读 |
 | `bite` | 记录一次必要性判定；判决集固定，写 bites 与节点 attrs.bite（唯一写入口） | --node <值> --verdict <值> --allow-new-scope | 状态库 |
 | `evidence-record` | 记录一条可追溯证据：命令、退出码、执行者、产物 hash（BehaviorPassed 的门槛） | --feature <值> --name <值> --command <值> | 状态库 |
 | `evidence-list` | 列出某 feature 的证据记录 | --feature <值> | 只读 |
@@ -148,6 +148,7 @@ gate / coverage / trace / reconcile / 变更集 / 回扫 / conformance / 后端 
 | `brief` 任务书带上**边界内需求的验收条目**（`acceptance_items`：id / requirement / ordinal / text），`feature-status` 带 `traceability` 摘要（验收条目数、已测数、缺口数、complete/unknown）——执行者与控制器不必再单独跑 `trace` 才知道“做到什么算完、还差多少”。 |
 | `upsert-edge` 在**写入期**强制验收边的结构：`has_acceptance` 的 src 必须是 requirement、dst 必须是 acceptance，且一条验收只能属于一条需求；`verifies` 指向 acceptance 时 src 必须是 testcase。`doctor` 的 `acceptance-orphan` / `acceptance-multi-parent` 只兜旧库遗留数据，不替代写入期校验。 |
 | `requirement:{feature}:main` 是声明入口自动建的**聚合需求**：当作用域里还有其它需求时，它自己没有验收条目不算缺口（伞节点）；如果它是唯一需求、或自己登记了验收条目，就按普通需求算。`trace` 的 `aggregate_requirements` 与 `gate` 的追溯检查同一口径。 |
+| `trace` 支持人读与钻取：`--md` 输出按缺口降序的矩阵表，`--requirement <id>` 只看一条需求；`gate` 的追溯 FAIL 带 `top_gaps`（缺口最多的 5 条需求）与 `next` 提示——红区必须能直接指出下一步补哪里。 |
 
 ### 调谐（reconcile）
 
@@ -377,5 +378,5 @@ gate / coverage / trace / reconcile / 变更集 / 回扫 / conformance / 后端 
 
 导出只包含图里连到该 feature 的记录：01 取 requirement；02 取 satisfies 这些 requirement 的 use_case；04 取用例经 depends/associates/realizes 到达的 component 与 port，以及 feature 作用域内的 pattern；05 取用例 contains 的 operation 及其 has_input、以及 contains 指向这些 operation 的 classifier；07 每条 writes->sink 算一步，另附请求参数表（同一参数只列一次，顺序按首次出现）；测试规格取 verifies 到这些 operation/use_case 的 testcase 与 asserts 到 operation 的 assertion。缺的格子留空，禁止从任何旧文档补句。参数、测试与断言按 id 去重。
 
-契约版本 `3.9.1`，库 schema 版本 `9`。
+契约版本 `3.10.0`，库 schema 版本 `9`。
 <!-- wxg:contract:full:end -->
