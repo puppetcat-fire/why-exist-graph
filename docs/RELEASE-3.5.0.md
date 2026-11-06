@@ -15,7 +15,7 @@ python tools/install_skill.py --zip dist/v3.5.0/why-exist-graph-3.5.0.zip
 
 | 文件 | 大小 | SHA-256 |
 |---|---|---|
-| `why-exist-graph-3.5.0.zip`（63 个文件） | 343793 | `b47f13165e6e90957e070dd2cbb32b67f09f2529348ab1e1e54feb37f04c8a79` |
+| `why-exist-graph-3.5.0.zip`（63 个文件） | 344031 | `e32d37cf550f5cc89b4d608d3f3ebedb9faa953fb3ebfdcc9251f99604822418` |
 
 来源提交：`e07a9b2`（manifest 里 `source.commit` / `source.dirty=false`）。
 
