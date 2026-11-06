@@ -16,7 +16,11 @@ python tools/install_skill.py --zip dist/v2.97.0/why-exist-graph-2.97.0.zip
 
 | 文件 | 大小 | SHA-256 |
 |---|---|---|
-| `why-exist-graph-2.97.0.zip`（63 个文件） | 335482 | `c1fe9d6921b2548768b6c8f32ac2d469a8e1e0dd753700630b659aad32ca8baf` |
+| `why-exist-graph-2.97.0.zip`（63 个文件） | 335129 | `a1ccec26397a80857a912336363934ae9ad5ebc7d1cd3681c9e767050938a1af` |
+
+> 这个包在 2.98.0 修完行尾后重建过。本版刚发布时，本地工作树被 `core.autocrlf`
+> 弄成 CRLF，打出来的包是 `c1fe9d69…`（335482 字节）；CI 的 Release 附件与修正后的
+> 本地重建都是 `a1ccec26…`。差异原因与修法见 `RELEASE-2.98.0.md`。
 
 来源提交：`97f95f8`（manifest 里 `source.commit` / `source.dirty=false`）。
 包内含 `SKILL.md` / `VERSION` / `CHANGELOG.md` / `references/` / `scripts/` / `tests/`，

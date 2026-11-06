@@ -132,6 +132,10 @@ def main(argv: list[str] | None = None) -> int:
         shutil.rmtree(tmp2, ignore_errors=True)
         shutil.rmtree(tmp2.parent / "demo-repo", ignore_errors=True)
 
+    step("发布说明校验（docs/RELEASE-*.md 的 SHA 与 dist 对照）")
+    sh([sys.executable, str(HERE / "check_release_notes.py")])
+    ok("PASS")
+
     step("后端集成（可选，需 WXG_TEST_MYSQL_URL / WXG_TEST_PG_URL）")
     proc = sh([sys.executable, str(HERE / "test_backend.py")])
     backend_lines = [line for line in proc.stdout.splitlines() if line.startswith("后端集成测试")]
