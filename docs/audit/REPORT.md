@@ -116,10 +116,11 @@
 | P2.11 非 Python 定位修正 | 完成 | 3.5.0：dreaming 第 18 次调用是 Java 仓库重构，probe `fit` 仅 0.18。`whenToUse` 加回「重构落点规划」，非 Python 边界改成分层说明（哪些命令依赖导入器） |
 | P2.12 发布说明校验 | 完成 | 3.5.0：`tools/check_release_notes.py` 校验 `docs/RELEASE-*.md` 的 SHA 与 `dist` 一致，接进 preflight（第 12 步）；顺带修复 2.97 的历史记录 |
 | P2.13 临时目录卫生 | 完成 | 3.5.1：安装器只留最近 3 个备份；清理 `%TEMP%` 下 304MB / 95 个残留目录 |
+| P2.14 门禁 fail-open | 完成（breaking） | 3.6.0：四仓项目实测 gate PASS 而画布需求零测试。加 `acceptance` 节点 + `trace` / `acceptance-add` / `acceptance-import`；gate 对「有需求无验收」判 UNKNOWN（退出码 1）、「有验收无测试」判 FAIL；`doc_flow` 与 `verify_release` 的最短路径补写 testcase→acceptance |
 | 3.3.0 – 3.5.1 发布闭环 | 完成 | 六个版本各自有 `dist/v<ver>`、annotated tag、GitHub Release；附件 SHA 与本地构建逐字节一致 |
 | Release asset 上传 | 自动（此前判断有误） | `release.yml` 在 tag push 时构建并上传 zip；实测 v2.96.0 附件 SHA `889e2af3…` 与干净 checkout 构建逐字节一致 |
 
-发布版本：`2.92.0` → `3.5.1`（schema 仍为 9），对应提交 `3e522db` 之后的 `90d91f5` 系列。
+发布版本：`2.92.0` → `3.6.0`（schema 仍为 9），对应提交 `3e522db` 之后的 `3d335d2` 系列。
 审计本身（16 片契约卡、592 条契约、152 条判定）是 **2.92.0 的快照**；本表记录其后的修复进展。
 
 ### P0：先让事实存在（全部可并行，纯机械）
