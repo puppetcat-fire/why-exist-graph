@@ -136,6 +136,7 @@
 | P2.31 四仓 BASE-01 补测 | 完成 | gen38：`EnvelopeAcceptanceTest` 覆盖验收 3/6 + 复用 `AuthApiTest` 证明验收 4；验收 1/2/5 用 `acceptance-status` 标注未统一。tested 38→41、缺口 724→721、标注 6→9；sysj 120 测试 |
 | P2.32 四仓 FANZ-03/08 映射 | 完成 | gen39：`PlanFingerprintApiTest`（指纹稳定/变更、回读新快照）、`PlanApiTest`（缺内码 404）、`PlanGroupApiTest`（编组树层级）映射 4 条验收；FANZ-03 验收 1/5 与 FANZ-08 验收 2 标注部分实现。tested 41→45、缺口 721→717、标注 9→12 |
 | P2.33 四仓需求实现审计 | 完成 | gen40：191 条需求按 10 片并行只读审计（10 个子代理），结论 8 已实现 / 136 部分实现 / 47 未实现；结果写回图库（需求 `x_current`/`x_audit`，695 条验收标 `x_status`），缺口 717 中 696 条获得原因；产物 `docs/实现审计-0.2.0.md` |
+| P2.34 四仓已实现需求补测 | 完成 | gen41：8 条已实现需求映射 28 条 `verifies`（cv-07/xws-05 用 tree-web linkRules 单测、c2-03/c2-04 用 by5 行为树契约测试、auth-03/04/07 用 sysj 测试），并修复 `/auth/logout` 不幂等（验收测试逼出真差异）；tested 45→65、缺口 717→697 |
 | 3.3.0 – 3.5.1 发布闭环 | 完成 | 六个版本各自有 `dist/v<ver>`、annotated tag、GitHub Release；附件 SHA 与本地构建逐字节一致 |
 | Release asset 上传 | 自动（此前判断有误） | `release.yml` 在 tag push 时构建并上传 zip；实测 v2.96.0 附件 SHA `889e2af3…` 与干净 checkout 构建逐字节一致 |
 
