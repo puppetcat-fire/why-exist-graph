@@ -13,6 +13,7 @@ from .evidence import evidence_qualifies, sha256_file
 from .graph import get_node
 from .jsonio import dumps, loads
 from .temp import make_temp_dir, temp_dir
+from .trace import acceptance_children
 from .work import get_work
 from .workflow import ensure_feature, scope_ids
 
@@ -61,7 +62,9 @@ def cmd_export(conn, args):
         requirement_rows.append([
             row["id"],
             attrs.get("statement") or row["name"],
-            "；".join(loads(feature["acceptance_json"], [])),
+            # 验收条目只有一个权威来源：acceptance 节点（3.6.0）。feature.acceptance_json 只是
+            # 声明快照，进的是任务书（brief），不进交付视图——两处都读就会各自漂。
+            "；".join(item["text"] for item in acceptance_children(conn, row["id"])),
             "；".join(loads(feature["constraints_json"], [])),
         ])
     write(
@@ -501,6 +504,54 @@ def doctor_report(conn) -> list[dict]:
         missing = [key for key in ("applicability", "not_applicable") if not str(attrs.get(key) or "").strip()]
         if missing:
             issues.append({"check": "pattern-unjustified", "node": node["id"], "missing": missing})
+
+    # 3.6.0 追溯：验收条目的结构一致性（只报告，不自动修——修法涉及语义，得人来定）
+    parents: dict[str, list[str]] = {}
+    for edge in conn.execute("SELECT src, dst FROM edges WHERE kind='has_acceptance'").fetchall():
+        parents.setdefault(edge["dst"], []).append(edge["src"])
+    for row in conn.execute("SELECT id FROM nodes WHERE kind='acceptance'").fetchall():
+        holders = parents.get(row["id"], [])
+        if not holders:
+            issues.append({"check": "acceptance-orphan", "node": row["id"]})
+        elif len(holders) > 1:
+            issues.append({"check": "acceptance-multi-parent", "node": row["id"], "parents": holders})
+    for requirement in conn.execute("SELECT id, attrs_json FROM nodes WHERE kind='requirement'").fetchall():
+        items = conn.execute(
+            "SELECT d.id AS id, d.attrs_json AS attrs_json FROM edges e JOIN nodes d ON d.id = e.dst "
+            "WHERE e.src = ? AND e.kind = 'has_acceptance' ORDER BY d.id",
+            (requirement["id"],),
+        ).fetchall()
+        ordinals: list[int] = []
+        texts: set[str] = set()
+        for item in items:
+            attrs = loads(item["attrs_json"], {})
+            texts.add(str(attrs.get("text") or "").strip())
+            ordinal = attrs.get("ordinal")
+            if not isinstance(ordinal, int):
+                issues.append({"check": "acceptance-ordinal", "node": item["id"], "ordinal": ordinal})
+                continue
+            ordinals.append(ordinal)
+        if ordinals and sorted(ordinals) != list(range(1, len(ordinals) + 1)):
+            issues.append({
+                "check": "acceptance-ordinal",
+                "requirement": requirement["id"],
+                "ordinals": sorted(ordinals),
+            })
+        declared = loads(requirement["attrs_json"], {}).get("x_acceptance")
+        # 旧库迁移后两处都在才对得上；新库只有节点，这条不触发
+        if isinstance(declared, list) and items:
+            declared_texts = [str(value).strip() for value in declared if str(value).strip()]
+            missing = [text for text in declared_texts if text not in texts]
+            extra = [text for text in texts if text and text not in declared_texts]
+            if missing or extra:
+                issues.append({
+                    "check": "acceptance-source-drift",
+                    "requirement": requirement["id"],
+                    "missing": missing[:5],
+                    "extra": extra[:5],
+                    "missing_count": len(missing),
+                    "extra_count": len(extra),
+                })
 
     for feature in conn.execute("SELECT * FROM features").fetchall():
         generations = {

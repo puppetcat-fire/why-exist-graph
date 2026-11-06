@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 
 SCHEMA_VERSION = 9
-CONTRACT_VERSION = "3.6.0"
+CONTRACT_VERSION = "3.6.1"
 
 #: ``doctor --fix`` 能自动修的检查项。其余问题（legacy 身份、条件行缺失、审计配对等）
 #: 只能报给人看——要么需要裁决，要么需要改设计，自动修等于替人做决定。
@@ -182,6 +182,8 @@ TRACE_RULES = [
     "`acceptance-import` 从 `requirement.attrs.x_acceptance` 幂等迁移旧项目：已有条目按 `ordinal` + `text` 对齐，只补缺的；`--dry-run` 只报告不写库。",
     "`trace` 只读输出需求→验收→测试矩阵：每条需求的验收条目数、被测试指向的条目数、缺口清单；有缺口退出码 1，无缺口 0。",
     "gate 的追溯检查与 `trace` 同一口径：有需求无验收 → `UNKNOWN`，有验收无测试 → `FAIL`，全绿才不影响 PASS；作用域内无 requirement 时该检查不适用。",
+    "验收条目的**唯一权威**是 `acceptance` 节点：`export` 的 01-需求.md 验收列只读它；`features.acceptance_json` 只进 `brief` 任务书（功能级目标），`requirement.attrs.x_acceptance` 只作 `acceptance-import` 的迁移来源，两者都不参与交付判定与导出。",
+    "`doctor` 只报告验收结构问题、不自动修：`acceptance-orphan`（没有 `has_acceptance` 父）、`acceptance-multi-parent`（挂到多个需求）、`acceptance-ordinal`（序号重复/缺号/非整数）、`acceptance-source-drift`（旧库 `x_acceptance` 与节点文本对不上，哪边对得人定）。",
 ]
 
 JUDGE_HISTORY_COLUMNS = [

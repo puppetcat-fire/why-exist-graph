@@ -726,7 +726,7 @@ class WxgTestCase(unittest.TestCase):
         token = conn.execute("SELECT claim_token FROM work_items WHERE id='work:feat-doc:g1:model-architecture'").fetchone()
         self.assertIsNone(token[0])
         version = conn.execute("SELECT value FROM meta WHERE key='contract_version'").fetchone()
-        self.assertEqual(version[0], "3.6.0")
+        self.assertEqual(version[0], (SKILL / "VERSION").read_text(encoding="utf-8").strip())
         conn.close()
         gate_after = self.cli("gate", "--feature", "feat-doc", "--json")
         self.assertEqual(gate_after["result"], "PASS")
@@ -821,7 +821,7 @@ class WxgTestCase(unittest.TestCase):
 
     def test_contract_json_is_serializable(self):
         contract = self.cli("contract", "--json")
-        self.assertEqual(contract["version"], "3.6.0")
+        self.assertEqual(contract["version"], (SKILL / "VERSION").read_text(encoding="utf-8").strip())
         self.assertEqual(contract["schema_version"], 9)
         self.assertIn("evidence-record", contract["commands"])
         self.assertEqual(contract["commands"]["work-claim"]["options"][1]["type"], "str")
@@ -2362,6 +2362,61 @@ class WxgTestCase(unittest.TestCase):
         self.assertEqual(result["result"], "FAIL")
         self.assertIn("追溯", result["reason"])
         self.assertEqual(len(result["missing_acceptance"]), 1)
+
+    def test_export_reads_acceptance_nodes_not_declaration_json(self):
+        """01-需求.md 的验收列只认 acceptance 节点；声明快照不再写进 requirement attrs。"""
+        self.init_repo()
+        self.declare("feat-exp", acceptance=["返回成功", "订单落库"])
+        self.open_targets("feat-exp", "specify-test", ["requirement:feat-exp:main", "acceptance:feat-exp:*"])
+        self.ready_ticket("feat-exp", "specify-test")
+        spec = self.claim("specify-test")
+        self.cli("acceptance-add", "--requirement", "requirement:feat-exp:main",
+                 "--text", "日志可查", "--token", spec["claim_token"])
+        exported = self.cli("export", "--feature", "feat-exp")
+        text = (Path(exported["dir"]) / "01-需求.md").read_text(encoding="utf-8")
+        self.assertIn("返回成功", text)
+        self.assertIn("订单落库", text)
+        self.assertIn("日志可查", text)
+        conn = self.db()
+        attrs = json.loads(conn.execute(
+            "SELECT attrs_json FROM nodes WHERE id='requirement:feat-exp:main'").fetchone()[0])
+        conn.close()
+        self.assertNotIn("x_acceptance", attrs, "声明快照不应再写进 requirement attrs（与 acceptance 节点重复）")
+
+    def test_doctor_reports_acceptance_structure_issues(self):
+        self.init_repo()
+        self.declare("feat-doc-acc")
+        conn = self.db()
+        conn.row_factory = sqlite3.Row
+        wxg.upsert_node(conn, {"id": "acceptance:feat-doc-acc:main:09", "kind": "acceptance",
+                               "name": "孤儿", "attrs": {"text": "孤儿", "ordinal": 9}})
+        wxg.upsert_node(conn, {"id": "requirement:feat-doc-acc:other", "kind": "requirement",
+                               "name": "other", "attrs": {"statement": "other"}})
+        wxg.upsert_edge(conn, {"src": "requirement:feat-doc-acc:other",
+                               "dst": "acceptance:feat-doc-acc:main:01", "kind": "has_acceptance"})
+        conn.execute(
+            "UPDATE nodes SET attrs_json=? WHERE id='acceptance:feat-doc-acc:main:01'",
+            (json.dumps({"text": "返回成功", "ordinal": 3}, ensure_ascii=False),),
+        )
+        conn.commit()
+        conn.close()
+        doctor = self.cli("doctor", expect=1)
+        for name in ("acceptance-orphan", "acceptance-multi-parent", "acceptance-ordinal"):
+            self.assertIn(name, doctor["by_check"])
+
+    def test_doctor_reports_acceptance_source_drift(self):
+        """旧库两边都在但对不上时，doctor 报漂移（不自动修：哪边对得人定）。"""
+        self.init_repo()
+        self.declare("feat-drift-acc")
+        conn = self.db()
+        conn.execute(
+            "UPDATE nodes SET attrs_json=? WHERE id='requirement:feat-drift-acc:main'",
+            (json.dumps({"statement": "创建订单。", "x_acceptance": ["另一条验收"]}, ensure_ascii=False),),
+        )
+        conn.commit()
+        conn.close()
+        doctor = self.cli("doctor", expect=1)
+        self.assertIn("acceptance-source-drift", doctor["by_check"])
 
     def test_trace_ignores_requirement_level_verifies(self):
         """旧式“一条测试覆盖整条需求”不算验收覆盖，只能计入 direct_tests。"""

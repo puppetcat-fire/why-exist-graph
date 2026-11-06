@@ -1,5 +1,22 @@
 # Changelog — why-exist-graph
 
+## 3.6.1（2026-11-06）
+
+**验收条目收成单一来源。** 3.6.0 引入 `acceptance` 节点后，同一个"验收"其实有三份表示：
+`features.acceptance_json`、`requirement.attrs.x_acceptance`、`acceptance` 节点。导出还读的是
+第一份，门禁读第三份——两边迟早各说各话。
+
+- **`export` 的 01-需求.md 验收列改读 `acceptance` 节点**（按序号升序、`；` 连接）；
+  不再读 `features.acceptance_json`。导出样例同步重生成，`verify` 字节一致。
+- **`feature-declare` / `feature-register` 不再往 `requirement.attrs` 写 `x_acceptance`**：
+  声明直接落成 `acceptance` 节点，`x_acceptance` 只保留作旧库 `acceptance-import` 的迁移来源。
+- **doctor 新增四类验收结构检查**（只报告不自动修）：`acceptance-orphan`、
+  `acceptance-multi-parent`、`acceptance-ordinal`（重复/缺号/非整数）、
+  `acceptance-source-drift`（旧库两边都在但文本对不上，哪边对得人定）。
+- **契约**：`trace_rules` 从 5 条补到 7 条（权威来源、doctor 口径）。
+- **测试**：423 → 426（新增：导出只认节点、doctor 四类中三类、声明不写 `x_acceptance`）。
+- **版本**：契约 `3.6.0` → `3.6.1`；库 schema 仍为 `9`。
+
 ## 3.6.0（2026-11-06）
 
 **门禁不再 fail-open：空输入判 UNKNOWN，需求必须拆成验收条目。** 起因是四仓重构项目里 gate 全程 PASS，

@@ -117,6 +117,7 @@
 | P2.12 发布说明校验 | 完成 | 3.5.0：`tools/check_release_notes.py` 校验 `docs/RELEASE-*.md` 的 SHA 与 `dist` 一致，接进 preflight（第 12 步）；顺带修复 2.97 的历史记录 |
 | P2.13 临时目录卫生 | 完成 | 3.5.1：安装器只留最近 3 个备份；清理 `%TEMP%` 下 304MB / 95 个残留目录 |
 | P2.14 门禁 fail-open | 完成（breaking） | 3.6.0：四仓项目实测 gate PASS 而画布需求零测试。加 `acceptance` 节点 + `trace` / `acceptance-add` / `acceptance-import`；gate 对「有需求无验收」判 UNKNOWN（退出码 1）、「有验收无测试」判 FAIL；`doc_flow` 与 `verify_release` 的最短路径补写 testcase→acceptance |
+| P2.15 验收单一来源 | 完成 | 3.6.1：导出的 01-需求.md 改读 acceptance 节点、声明不再写 `x_acceptance`、doctor 加四类验收结构检查（孤儿/多父/序号/声明漂移，只报告） |
 | 3.3.0 – 3.5.1 发布闭环 | 完成 | 六个版本各自有 `dist/v<ver>`、annotated tag、GitHub Release；附件 SHA 与本地构建逐字节一致 |
 | Release asset 上传 | 自动（此前判断有误） | `release.yml` 在 tag push 时构建并上传 zip；实测 v2.96.0 附件 SHA `889e2af3…` 与干净 checkout 构建逐字节一致 |
 

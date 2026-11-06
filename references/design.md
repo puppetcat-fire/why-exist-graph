@@ -2150,6 +2150,22 @@ testcase 全部指向同一组 5 个需求，锚点还是 `case-5`、`JSON-2` �
 全流程用例改用真实 `acceptance-add`，`doc_flow` 的 specify-test 阶段也要写一条 testcase
 指向验收条目。
 
+## 112. 验收条目收成单一来源（3.6.1）
+
+3.6.0 引入 `acceptance` 节点之后，同一个"验收"在图里其实有三份：`features.acceptance_json`
+（声明快照）、`requirement.attrs.x_acceptance`（旧迁移来源）、`acceptance` 节点（可寻址）。
+导出当时还读第一份，门禁读第三份——两套读法迟早各说各话，而这正是本技能存在理由的反面。
+
+收口办法：
+
+1. 交付视图（`export` 的 01-需求.md）只读 `acceptance` 节点；`features.acceptance_json`
+   降级成功能级目标，只进 `brief` 任务书。
+2. 声明入口不再写 `x_acceptance`；它只作为旧库迁移来源保留，`acceptance-import` 读完即完成使命。
+3. `doctor` 新增四类结构检查，只报告不自动修：孤儿验收、多父挂载、序号重复/缺号、
+   旧库声明与节点文本漂移。修法涉及语义，不替人裁决。
+
+代价：`trace_rules` 从 5 条加到 7 条；测试 +3。
+
 ## 附：Windows 受限 token 下的临时目录
 
 Windows 上 `tempfile.mkdtemp()` / `TemporaryDirectory()`（Python ≥ 3.12.4，为 CVE-2024-4030）

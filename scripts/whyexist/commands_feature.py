@@ -130,7 +130,7 @@ def cmd_feature_declare(conn, args):
         "id": requirement_id,
         "kind": "requirement",
         "name": args.statement,
-        "attrs": {"statement": args.statement, "x_acceptance": list(acceptance)},
+        "attrs": {"statement": args.statement},
         "origin": "declared",
         "feature_id": feature_id,
     }, merge_attrs=True)
@@ -166,7 +166,7 @@ def cmd_feature_register(conn, args):
             "id": requirement_id,
             "kind": "requirement",
             "name": spec["statement"],
-            "attrs": {"statement": spec["statement"], "x_acceptance": list(spec["acceptance"])},
+            "attrs": {"statement": spec["statement"]},
             "origin": "declared",
             "feature_id": feature_id,
         }, merge_attrs=True)

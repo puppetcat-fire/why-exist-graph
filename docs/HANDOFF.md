@@ -140,6 +140,7 @@ DSH 的 dreaming 会按实际调用给每个技能打分、记录边界缺口。
 | 3.5.0 | 第 18 次调用：用户拿 Java 仓库做重构，probe 预测 `fit` 仅 0.18，`likelyPitfalls` 写「Java 无法进图库」 | 3.3.0 把「多文件行为契约盘点」排除过头了——`feature` / `plan` / `brief` / `impact` 这层不依赖导入器。`whenToUse` 加回「重构落点规划」，非 Python 边界改成分层说明 |
 | 3.5.1 | 查 `%TEMP%` 发现 304MB 残留 | 安装器只留最近 3 个备份；一次性清理 95 个临时目录 |
 | 3.6.0 | 不是 dreaming：四仓重构项目实测「gate 全程 PASS 而 FR-CV-06/07、FR-XWS-04/05/10 一条测试都没有」，`coverage.enforced=false`、`bites=[]` | 加追溯门：`acceptance` 节点 + `has_acceptance` 边、`trace` / `acceptance-add` / `acceptance-import` 三条命令；gate 对「有需求无验收」判 UNKNOWN（退出码 1）、「有验收无测试」判 FAIL |
+| 3.6.1 | 3.6.0 后自检发现同一"验收"有三份表示（feature JSON / requirement attrs / acceptance 节点），导出读 A、门禁读 C | 收成单一来源：导出只读节点、声明不再写 `x_acceptance`、doctor 四类验收结构检查（只报告） |
 
 ### 还没解决的
 
