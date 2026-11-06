@@ -2273,6 +2273,19 @@ PASS 是同一种病，只是下沉了一层。
 实测四仓 `fr-auth-02`：明细直接显示第 5 条「签名密钥短于最小长度时启动失败」没有任何测试——
 而它本来就是没实现的那条，缺口和事实第一次在同一张表上对齐。
 
+## 121. 批量写入给一条命令（3.14.0）
+
+在四仓项目登记 10 条验收测试要写 10 个节点 + 10 条边，只能逐条 `upsert-node`/`upsert-edge`。
+于是项目侧自己写了 `batch_write2.py` 去循环内部 API——**每个项目都会重新发明一次**，而且它绕开
+了 CLI 的参数校验与错误信封。这是"同一职责两份实现"的典型味道。
+
+改法：`wxg bulk --token … --nodes a.jsonl --edges b.jsonl`。语义是**先全量校验、再整批写**：
+kind/id 形态/attrs/边 kind/端点存在/批次内重复 id 全部先查，任一条不合法整批不落库（不是"写到一半失败"）；
+边界仍是 token + 工单 `target_ids`，角色只给能同时写节点和边的四个角色。
+
+没做的事：没有把项目侧 `batch_write2.py` 删掉——它在 `C:\Users\xiaob\Projects\.why-exist\work\rebuild`
+里，属于项目的工作目录、不在发布包里；但它现在有官方替代，下一轮项目侧该换成 `wxg bulk`。
+
 ## 附：Windows 受限 token 下的临时目录
 
 Windows 上 `tempfile.mkdtemp()` / `TemporaryDirectory()`（Python ≥ 3.12.4，为 CVE-2024-4030）

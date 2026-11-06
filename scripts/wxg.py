@@ -72,6 +72,7 @@ from whyexist.commands_gates import (  # noqa: E402
 from whyexist.commands_graph import (  # noqa: E402
     cmd_bind,
     cmd_bite,
+    cmd_bulk,
     cmd_evidence_list,
     cmd_evidence_record,
     cmd_retract,

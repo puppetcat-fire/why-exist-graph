@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from .commands_feature import _require_write
 from .contract import C
 from .errors import Reject
 from .evidence import sha256_file
-from .graph import bind_node, get_node, upsert_edge, upsert_node
+from .graph import bind_node, check_attrs, check_kind, check_node_id, get_node, upsert_edge, upsert_node
 from .jsonio import dumps, load_id_list, load_json_arg, loads, utc_now
 from .work import append_evidence, get_work, require_targets
 from .workflow import actor_value, current_phase, ensure_feature, scope_ids
@@ -45,6 +46,91 @@ def cmd_upsert_edge(conn, args):
     result = upsert_edge(conn, payload)
     append_evidence(conn, item, [payload["src"], payload["dst"]])
     return result
+
+
+def _load_jsonl(paths: str | None, label: str) -> list[dict]:
+    """读一个或多个 JSONL 文件（逗号分隔）；行为空跳过，格式错报到行号。"""
+    if not paths:
+        return []
+    out: list[dict] = []
+    for entry in [item.strip() for item in paths.split(",") if item.strip()]:
+        path = Path(entry)
+        if not path.is_file():
+            raise Reject(f"{label} 文件不存在：{entry}")
+        for number, line in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), start=1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise Reject(f"{entry}:{number} 不是合法 JSON：{exc}") from exc
+            if not isinstance(payload, dict):
+                raise Reject(f"{entry}:{number} 必须是 JSON 对象")
+            out.append(payload)
+    return out
+
+
+def cmd_bulk(conn, args):
+    """批量写节点与边：先全量校验，任何一条不合法整批不写；一条命令一个事务。
+
+    这是把「并行产出的多份补丁/测试登记」一次落库的通道，边界与 upsert-node /
+    upsert-edge 相同（token + 工单 target_ids），只是省掉逐条调用。
+    """
+    item = _require_write(conn, args, "bulk")
+    nodes = _load_jsonl(getattr(args, "nodes", None), "--nodes")
+    edges = _load_jsonl(getattr(args, "edges", None), "--edges")
+    if not nodes and not edges:
+        raise Reject("--nodes / --edges 至少要给一个非空 JSONL")
+    existing = {row["id"] for row in conn.execute("SELECT id FROM nodes").fetchall()}
+    edge_kinds = [entry["kind"] for entry in C.EDGE_KINDS]
+    batch_ids: set[str] = set()
+    for node in nodes:
+        node_id = node.get("id")
+        kind = node.get("kind")
+        if not isinstance(node_id, str) or not node_id:
+            raise Reject("节点缺少字符串 id")
+        if not isinstance(kind, str) or not kind:
+            raise Reject(f"节点 {node_id} 缺少字符串 kind")
+        check_kind(kind)
+        check_node_id(kind, node_id)
+        check_attrs(kind, node.get("attrs") or {})
+        if node_id in batch_ids:
+            raise Reject(f"批次里重复节点 id：{node_id}")
+        batch_ids.add(node_id)
+    known = existing | batch_ids
+    edge_endpoints: set[str] = set()
+    for edge in edges:
+        for key in ("src", "dst", "kind"):
+            if not isinstance(edge.get(key), str) or not edge[key]:
+                raise Reject(f"边缺少字符串 {key}：{edge}")
+        if edge["kind"] not in edge_kinds:
+            raise Reject(f"未知边 kind：{edge['kind']}")
+        for end in ("src", "dst"):
+            if edge[end] not in known:
+                raise Reject(f"边端点不存在（本批次与库中都没有）：{edge[end]}")
+            edge_endpoints.add(edge[end])
+    touched = list(dict.fromkeys([*sorted(batch_ids), *sorted(edge_endpoints)]))
+    require_targets(item, touched)
+    if getattr(args, "dry_run", False):
+        return {
+            "dry_run": True,
+            "nodes": len(nodes),
+            "edges": len(edges),
+            "ids": len(touched),
+            "touched": touched,
+        }
+    for node in nodes:
+        upsert_node(conn, node)
+    for edge in edges:
+        upsert_edge(conn, edge)
+    for node_id in batch_ids:
+        conn.execute(
+            "INSERT OR IGNORE INTO feature_nodes(feature_id, node_id) VALUES(?,?)",
+            (item["feature_id"], node_id),
+        )
+    append_evidence(conn, item, touched)
+    return {"nodes": len(nodes), "edges": len(edges), "ids": len(touched), "touched": touched}
 
 
 def cmd_bind(conn, args):

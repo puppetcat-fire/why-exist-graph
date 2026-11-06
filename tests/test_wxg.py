@@ -2603,6 +2603,110 @@ class WxgTestCase(unittest.TestCase):
         md = self.cli("trace", "--feature", "feat-pri", "--md", expect=1)
         self.assertLess(md.index("requirement:feat-pri:sub"), md.index("requirement:feat-pri:main"))
 
+    def test_bulk_writes_nodes_and_edges_in_one_command(self):
+        """3.14.0：批量登记 testcase+verifies 这类成对写入，一条命令一个事务。"""
+        self.init_repo()
+        self.declare("feat-bulk")
+        self.open_targets("feat-bulk", "specify-test",
+                          ["requirement:feat-bulk:main", "acceptance:feat-bulk:*", "testcase:feat-bulk:*"])
+        self.ready_ticket("feat-bulk", "specify-test")
+        spec = self.claim("specify-test")
+        token = spec["claim_token"]
+        nodes = self.base / "bulk-nodes.jsonl"
+        nodes.write_text(
+            "\n".join(json.dumps(node, ensure_ascii=False) for node in (
+                {"id": "testcase:feat-bulk:t1", "kind": "testcase", "name": "t1",
+                 "attrs": {"path": "tests/test_bulk.py", "text": "t1"}},
+                {"id": "testcase:feat-bulk:t2", "kind": "testcase", "name": "t2",
+                 "attrs": {"path": "tests/test_bulk.py", "text": "t2"}},
+            )) + "\n",
+            encoding="utf-8",
+        )
+        edges = self.base / "bulk-edges.jsonl"
+        edges.write_text(
+            "\n".join(json.dumps(edge, ensure_ascii=False) for edge in (
+                {"kind": "verifies", "src": "testcase:feat-bulk:t1", "dst": "acceptance:feat-bulk:main:01"},
+                {"kind": "verifies", "src": "testcase:feat-bulk:t2", "dst": "acceptance:feat-bulk:main:01"},
+            )) + "\n",
+            encoding="utf-8",
+        )
+        result = self.cli("bulk", "--token", token, "--nodes", str(nodes), "--edges", str(edges))
+        self.assertEqual(2, result["nodes"])
+        self.assertEqual(2, result["edges"])
+        trace = self.cli("trace", "--feature", "feat-bulk", "--json", expect=0)
+        self.assertEqual(1, trace["summary"]["acceptance_tested"])
+
+    def test_bulk_is_all_or_nothing_and_respects_boundary(self):
+        self.init_repo()
+        self.declare("feat-bulk2")
+        self.open_targets("feat-bulk2", "specify-test", ["testcase:feat-bulk2:*"])
+        self.ready_ticket("feat-bulk2", "specify-test")
+        spec = self.claim("specify-test")
+        token = spec["claim_token"]
+        nodes = self.base / "bulk2.jsonl"
+        nodes.write_text(
+            "\n".join(json.dumps(node, ensure_ascii=False) for node in (
+                {"id": "testcase:feat-bulk2:ok", "kind": "testcase", "name": "ok",
+                 "attrs": {"path": "tests/t.py"}},
+                {"id": "testcase:elsewhere:bad", "kind": "testcase", "name": "越界",
+                 "attrs": {"path": "tests/t.py"}},
+            )) + "\n",
+            encoding="utf-8",
+        )
+        rejected = self.cli("bulk", "--token", token, "--nodes", str(nodes), expect=2)
+        self.assertIn("target_ids", rejected["error"])
+        conn = self.db()
+        try:
+            self.assertIsNone(conn.execute(
+                "SELECT id FROM nodes WHERE id='testcase:feat-bulk2:ok'").fetchone())
+        finally:
+            conn.close()
+        dry = self.cli("bulk", "--token", token, "--nodes", str(nodes), "--dry-run", expect=2)
+        self.assertIn("target_ids", dry["error"])
+
+    def test_bulk_rejects_duplicate_ids_and_unknown_endpoints(self):
+        self.init_repo()
+        self.declare("feat-bulk3")
+        self.open_targets("feat-bulk3", "specify-test", ["testcase:feat-bulk3:*", "acceptance:feat-bulk3:*"])
+        self.ready_ticket("feat-bulk3", "specify-test")
+        spec = self.claim("specify-test")
+        token = spec["claim_token"]
+        dup = self.base / "bulk3-nodes.jsonl"
+        dup.write_text(
+            "\n".join([json.dumps({"id": "testcase:feat-bulk3:x", "kind": "testcase", "name": "x"})] * 2) + "\n",
+            encoding="utf-8",
+        )
+        self.cli("bulk", "--token", token, "--nodes", str(dup), expect=2)
+        dangling = self.base / "bulk3-edges.jsonl"
+        dangling.write_text(
+            json.dumps({"kind": "verifies", "src": "testcase:feat-bulk3:x",
+                        "dst": "acceptance:nope:main:01"}) + "\n",
+            encoding="utf-8",
+        )
+        rejected = self.cli("bulk", "--token", token, "--edges", str(dangling), expect=2)
+        self.assertIn("端点不存在", rejected["error"])
+
+    def test_bulk_requires_role_and_token(self):
+        self.init_repo()
+        self.declare("feat-bulk4")
+        nodes = self.base / "bulk4.jsonl"
+        nodes.write_text(json.dumps({"id": "testcase:feat-bulk4:x", "kind": "testcase", "name": "x"}) + "\n",
+                         encoding="utf-8")
+        self.cli("bulk", "--nodes", str(nodes), expect=2)
+        conn = self.db()
+        try:
+            conn.execute(
+                "INSERT INTO work_items(id, feature_id, generation, kind, role, target_ids, status, "
+                "depends_on, claimed_by, claim_token, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                ("work:feat-bulk4:g1:scan", "feat-bulk4", 1, "scan", "scan", '["*"]',
+                 "claimed", "[]", "tester", "tok-scan", "2026-01-01T00:00:00Z"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        rejected = self.cli("bulk", "--token", "tok-scan", "--nodes", str(nodes), expect=2)
+        self.assertIn("不能执行 bulk", rejected["error"])
+
     def test_trace_requires_anchored_tests(self):
         """3.12.0：只有测试规格（没路径）不算交付证据；node.path 与 attrs.path 都算锚点。"""
         self.init_repo()

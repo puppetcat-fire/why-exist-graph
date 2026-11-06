@@ -128,6 +128,7 @@
 | P2.23 测试规格不冒充证据 | 完成（breaking） | 3.12.0：验收覆盖要求 `testcase` 带代码锚点（节点 path 或 attrs.path）；纯规格单列 `acceptance_spec_only`，gate 理由点出；四仓 289 个 testcase 全带锚点，数字不变 |
 | P2.24 四仓 P0 组开工 | 完成 | gen34：写 `AuthAcceptanceTest` 10 条（FR-AUTH-02/03 的 9 条验收），登记 testcase 节点 + verifies 边；四仓 tested 20→30、缺口 742→732，`fr-auth-02/03` 退出 top_gaps |
 | P2.25 缺口条目级明细 | 完成 | 3.13.0：`trace --requirement` 带 `items`（条文/是否被覆盖/测试 id），`--md` 出条目明细表；补测试时按条目看 |
+| P2.26 批量写入入口 | 完成 | 3.14.0：`bulk` 命令（JSONL，先全量校验再整批写，token+target 边界）；替掉项目侧自造的 `batch_write2.py` 那类循环脚本 |
 | 3.3.0 – 3.5.1 发布闭环 | 完成 | 六个版本各自有 `dist/v<ver>`、annotated tag、GitHub Release；附件 SHA 与本地构建逐字节一致 |
 | Release asset 上传 | 自动（此前判断有误） | `release.yml` 在 tag push 时构建并上传 zip；实测 v2.96.0 附件 SHA `889e2af3…` 与干净 checkout 构建逐字节一致 |
 

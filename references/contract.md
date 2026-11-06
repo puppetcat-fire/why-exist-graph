@@ -22,10 +22,10 @@
 | 角色 | 允许命令 |
 |------|----------|
 | `scan` | `import-file`、`import-repo`、`derive`、`upsert-node`、`retract`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
-| `model-architecture` | `derive`、`promote`、`upsert-node`、`upsert-edge`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
-| `model-structure` | `derive`、`promote`、`upsert-node`、`upsert-edge`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
-| `interact` | `upsert-node`、`upsert-edge`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
-| `specify-test` | `upsert-node`、`upsert-edge`、`bind`、`acceptance-add`、`acceptance-import`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
+| `model-architecture` | `derive`、`promote`、`upsert-node`、`upsert-edge`、`bulk`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
+| `model-structure` | `derive`、`promote`、`upsert-node`、`upsert-edge`、`bulk`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
+| `interact` | `upsert-node`、`upsert-edge`、`bulk`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
+| `specify-test` | `upsert-node`、`upsert-edge`、`bulk`、`bind`、`acceptance-add`、`acceptance-import`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
 | `implement-test` | `upsert-node`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
 | `observe` | `import-file`、`import-repo`、`derive`、`upsert-node`、`retract`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
 | `audit` | `get`、`find`、`slice`、`work-judge`、`role-prompt`、`evidence-record` |
@@ -57,6 +57,7 @@
 | `work-list` | 列出某 feature 当前 generation 的工单 | --feature <值> | 只读 |
 | `upsert-node` | 写节点；id 已存在则更新（不接受 attrs.bite） | --token <值> --data <值> | 需要 claim_token / 角色命令 |
 | `upsert-edge` | 写边；两端必须已存在 | --token <值> --data <值> | 需要 claim_token / 角色命令 |
+| `bulk` | 批量写节点与边（JSONL）：先全量校验再写，任一条不合法整批不落库；边界同 upsert-node/upsert-edge | --token <值> --dry-run | 状态库（需 claim_token / 角色命令；--dry-run 只读） |
 | `bind` | 绑定 parameter/argument/assertion 到已存在节点 | --token <值> --node-id <值> --bind-to <值> | 需要 claim_token / 角色命令 |
 | `retract` | 撤回 target_ids 内的节点与边；级联删除 bite 并剔除工单引用 | --token <值> | 需要 claim_token / 角色命令 |
 | `acceptance-add` | 给一条需求登记一条验收条目（生成 acceptance 节点 + has_acceptance 边）；同一条文重复登记拒绝 | --requirement <值> --text <值> --token <值> | 状态库（需 claim_token / 角色命令） |
@@ -253,7 +254,7 @@ gate / coverage / trace / reconcile / 变更集 / 回扫 / conformance / 后端 
 | I2 generation 是身份 | 条件与工单 id 都带 generation；重新声明会开启新一代并 supersede 旧工单，work-claim 只发当前代；不会出现旧 passed 工单挡住或混淆新条件。 |
 | I3 交付门只读 | gate 不写库；正常流程中条件只由 work-judge(passed) 改写，Accepted 由声明/登记入口新建时置真。判定与状态变更分离。 |
 | I4 判决可校验 | bite 是唯一写入咬合的命令，只接受固定判决集；gate 只采信 bites 表，作用域包含 feature_nodes、requirement 前缀与当前代工单 target_ids。 |
-| I5 写入有边界 | 图内容写入（upsert-node/upsert-edge/bind/apply/retract/import-file/acceptance-add/acceptance-import）必须带 claim_token 且落在工单 target_ids 内；角色只能调用自己在 ROLES 里的命令。feature-declare / feature-register 只写 feature 元数据与 requirement/acceptance 节点，bite 只写 bites/attrs.bite 且必须带 actor、不扩作用域。 |
+| I5 写入有边界 | 图内容写入（upsert-node/upsert-edge/bulk/bind/apply/retract/import-file/acceptance-add/acceptance-import）必须带 claim_token 且落在工单 target_ids 内；角色只能调用自己在 ROLES 里的命令。feature-declare / feature-register 只写 feature 元数据与 requirement/acceptance 节点，bite 只写 bites/attrs.bite 且必须带 actor、不扩作用域。 |
 | I6 技能通用 | 技能不写死仓名、工作区路径；仓在运行期 repo-add 登记，状态库路径用 --root 指定；导入器当前仅 Python AST（扩展边界见 design.md）。 |
 | I7 不臆造 | 认不出的节点/边标 unmapped=1；导出缺 id 留空；BehaviorPassed 置真前必须有**同 generation**、exit_code=0 的 evidence，judge 与 gate 双向强制。 |
 | I8 文档即生成的视图 | SKILL.md 与 references/contract.md 的契约块、references/export-sample 的样例都由同一实现生成；verify 比较字节。 |
@@ -381,5 +382,5 @@ gate / coverage / trace / reconcile / 变更集 / 回扫 / conformance / 后端 
 
 导出只包含图里连到该 feature 的记录：01 取 requirement；02 取 satisfies 这些 requirement 的 use_case；04 取用例经 depends/associates/realizes 到达的 component 与 port，以及 feature 作用域内的 pattern；05 取用例 contains 的 operation 及其 has_input、以及 contains 指向这些 operation 的 classifier；07 每条 writes->sink 算一步，另附请求参数表（同一参数只列一次，顺序按首次出现）；测试规格取 verifies 到这些 operation/use_case 的 testcase 与 asserts 到 operation 的 assertion。缺的格子留空，禁止从任何旧文档补句。参数、测试与断言按 id 去重。
 
-契约版本 `3.13.0`，库 schema 版本 `9`。
+契约版本 `3.14.0`，库 schema 版本 `9`。
 <!-- wxg:contract:full:end -->

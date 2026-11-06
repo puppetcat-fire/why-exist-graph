@@ -1,5 +1,20 @@
 # Changelog — why-exist-graph
 
+## 3.14.0（2026-11-06）
+
+**批量写入有官方入口了：`bulk`。** 在四仓项目里登记 10 条测试要写 10 个节点 + 10 条边，
+之前只能逐条 `upsert-node`/`upsert-edge`，于是每个项目都自己写一个 `batch_write2.py`
+去循环调用内部 API——这正是"同一职责两份实现"的味道。现在技能里就有一条命令。
+
+- **`wxg bulk --token … --nodes a.jsonl --edges b.jsonl [--dry-run]`**：JSONL 批量写节点与边，
+  先全量校验（kind / id 形态 / attrs / 边 kind / 端点存在 / 批次内重复 id），任一条不合法整批不落库；
+  校验通过后在一个事务里写，并记一条 evidence。
+- **边界与 `upsert-node` / `upsert-edge` 相同**：token + 工单 `target_ids`；角色只给
+  model-architecture / model-structure / interact / specify-test（能同时写节点和边的角色）。
+- **契约**：命令 53 → 54、`TOKEN_COMMANDS` 加 `bulk`、`I5` 写入边界清单加 `bulk`。
+- **测试**：439 → 443（成对写入、整批原子 + 边界拒绝、重复 id/悬空端点、角色与 token）。
+- **版本**：契约 `3.13.0` → `3.14.0`；库 schema 仍为 `9`。
+
 ## 3.13.0（2026-11-06）
 
 **缺口是条目级的，钻取要看到条目。** 在四仓项目里补 AUTH 验收测试时发现：`trace --requirement`

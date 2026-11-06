@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 
 SCHEMA_VERSION = 9
-CONTRACT_VERSION = "3.13.0"
+CONTRACT_VERSION = "3.14.0"
 
 #: ``doctor --fix`` 能自动修的检查项。其余问题（legacy 身份、条件行缺失、审计配对等）
 #: 只能报给人看——要么需要裁决，要么需要改设计，自动修等于替人做决定。
@@ -268,10 +268,10 @@ CONFORMANCE_RULES = [
 
 ROLES = {
     "scan": ["import-file", "import-repo", "derive", "upsert-node", "retract", "get", "find", "slice", "work-finish", "role-prompt"],
-    "model-architecture": ["derive", "promote", "upsert-node", "upsert-edge", "bind", "apply", "get", "find", "slice", "work-finish", "role-prompt"],
-    "model-structure": ["derive", "promote", "upsert-node", "upsert-edge", "bind", "apply", "get", "find", "slice", "work-finish", "role-prompt"],
-    "interact": ["upsert-node", "upsert-edge", "bind", "apply", "get", "find", "slice", "work-finish", "role-prompt"],
-    "specify-test": ["upsert-node", "upsert-edge", "bind", "acceptance-add", "acceptance-import", "apply", "get", "find", "slice", "work-finish", "role-prompt"],
+    "model-architecture": ["derive", "promote", "upsert-node", "upsert-edge", "bulk", "bind", "apply", "get", "find", "slice", "work-finish", "role-prompt"],
+    "model-structure": ["derive", "promote", "upsert-node", "upsert-edge", "bulk", "bind", "apply", "get", "find", "slice", "work-finish", "role-prompt"],
+    "interact": ["upsert-node", "upsert-edge", "bulk", "bind", "apply", "get", "find", "slice", "work-finish", "role-prompt"],
+    "specify-test": ["upsert-node", "upsert-edge", "bulk", "bind", "acceptance-add", "acceptance-import", "apply", "get", "find", "slice", "work-finish", "role-prompt"],
     "implement-test": ["upsert-node", "bind", "apply", "get", "find", "slice", "work-finish", "role-prompt"],
     "observe": ["import-file", "import-repo", "derive", "upsert-node", "retract", "get", "find", "slice", "work-finish", "role-prompt"],
     "audit": ["get", "find", "slice", "work-judge", "role-prompt"],
@@ -282,7 +282,7 @@ for _role in ROLES:
     ROLES[_role].append("evidence-record")
 
 # 这些命令只在拿到 claim_token 后可执行（写图/提交）。
-TOKEN_COMMANDS = ["upsert-node", "upsert-edge", "bind", "retract", "import-file", "work-finish", "acceptance-add", "acceptance-import", "apply"]
+TOKEN_COMMANDS = ["upsert-node", "upsert-edge", "bind", "retract", "import-file", "work-finish", "acceptance-add", "acceptance-import", "apply", "bulk"]
 
 # implement-test 领取额外门槛：当轮明确允许改产品代码。
 PRODUCT_CODE_ROLES = ["implement-test"]
@@ -476,6 +476,16 @@ COMMANDS = {
     "work-list": C("列出某 feature 当前 generation 的工单", options=[O("--feature", required=True)]),
     "upsert-node": C("写节点；id 已存在则更新（不接受 attrs.bite）", options=[O("--token", required=True), O("--data", required=True, help="JSON 或 @文件")], token=True),
     "upsert-edge": C("写边；两端必须已存在", options=[O("--token", required=True), O("--data", required=True, help="JSON 或 @文件")], token=True),
+    "bulk": C(
+        "批量写节点与边（JSONL）：先全量校验再写，任一条不合法整批不落库；边界同 upsert-node/upsert-edge",
+        options=[
+            O("--token", required=True),
+            O("--nodes", default=None, help="节点 JSONL 路径（逗号分隔可多个）"),
+            O("--edges", default=None, help="边 JSONL 路径（逗号分隔可多个）"),
+        ],
+        flags=[F("--dry-run", help="只校验不写库")],
+        token=True,
+    ),
     "bind": C(
         "绑定 parameter/argument/assertion 到已存在节点",
         options=[
@@ -712,6 +722,7 @@ WRITE_MODES = {
     "upsert-node": "需要 claim_token / 角色命令",
     "upsert-edge": "需要 claim_token / 角色命令",
     "bind": "需要 claim_token / 角色命令",
+    "bulk": "状态库（需 claim_token / 角色命令；--dry-run 只读）",
     "acceptance-add": "状态库（需 claim_token / 角色命令）",
     "acceptance-import": "状态库（需 claim_token / 角色命令；--dry-run 只读）",
     "trace": "只读",
@@ -810,7 +821,7 @@ INVARIANTS = [
     ("I2 generation 是身份", "条件与工单 id 都带 generation；重新声明会开启新一代并 supersede 旧工单，work-claim 只发当前代；不会出现旧 passed 工单挡住或混淆新条件。"),
     ("I3 交付门只读", "gate 不写库；正常流程中条件只由 work-judge(passed) 改写，Accepted 由声明/登记入口新建时置真。判定与状态变更分离。"),
     ("I4 判决可校验", "bite 是唯一写入咬合的命令，只接受固定判决集；gate 只采信 bites 表，作用域包含 feature_nodes、requirement 前缀与当前代工单 target_ids。"),
-    ("I5 写入有边界", "图内容写入（upsert-node/upsert-edge/bind/apply/retract/import-file/acceptance-add/acceptance-import）必须带 claim_token 且落在工单 target_ids 内；角色只能调用自己在 ROLES 里的命令。feature-declare / feature-register 只写 feature 元数据与 requirement/acceptance 节点，bite 只写 bites/attrs.bite 且必须带 actor、不扩作用域。"),
+    ("I5 写入有边界", "图内容写入（upsert-node/upsert-edge/bulk/bind/apply/retract/import-file/acceptance-add/acceptance-import）必须带 claim_token 且落在工单 target_ids 内；角色只能调用自己在 ROLES 里的命令。feature-declare / feature-register 只写 feature 元数据与 requirement/acceptance 节点，bite 只写 bites/attrs.bite 且必须带 actor、不扩作用域。"),
     ("I6 技能通用", "技能不写死仓名、工作区路径；仓在运行期 repo-add 登记，状态库路径用 --root 指定；导入器当前仅 Python AST（扩展边界见 design.md）。"),
     ("I7 不臆造", "认不出的节点/边标 unmapped=1；导出缺 id 留空；BehaviorPassed 置真前必须有**同 generation**、exit_code=0 的 evidence，judge 与 gate 双向强制。"),
     ("I8 文档即生成的视图", "SKILL.md 与 references/contract.md 的契约块、references/export-sample 的样例都由同一实现生成；verify 比较字节。"),

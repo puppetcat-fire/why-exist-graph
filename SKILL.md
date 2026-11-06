@@ -48,7 +48,7 @@ python <skill>/scripts/wxg.py --root <root> gate --feature <id>    # PASS/FAIL �
 python <skill>/scripts/wxg.py contract --json    # 零副作用，不需要 .why-exist
 ```
 
-它一次给全 33 个契约面：`commands`（53 条，含参数与写模式）、`roles`（8）、`conditions`（8）、
+它一次给全 33 个契约面：`commands`（54 条，含参数与写模式）、`roles`（8）、`conditions`（8）、
 `node_kinds` / `edge_kinds` / `attr_schema`、`gate_rules` / `coverage_rules` / `trace_rules` / `reconcile_rules` /
 `audit_rules` 等全部规则文本、`invariants`（23 条）、`export_files` 与 `export_rule`。
 
@@ -187,10 +187,10 @@ python <skill>/scripts/wxg.py --root <root> up --template standard
 | 角色 | 允许命令 |
 |------|----------|
 | `scan` | `import-file`、`import-repo`、`derive`、`upsert-node`、`retract`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
-| `model-architecture` | `derive`、`promote`、`upsert-node`、`upsert-edge`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
-| `model-structure` | `derive`、`promote`、`upsert-node`、`upsert-edge`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
-| `interact` | `upsert-node`、`upsert-edge`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
-| `specify-test` | `upsert-node`、`upsert-edge`、`bind`、`acceptance-add`、`acceptance-import`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
+| `model-architecture` | `derive`、`promote`、`upsert-node`、`upsert-edge`、`bulk`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
+| `model-structure` | `derive`、`promote`、`upsert-node`、`upsert-edge`、`bulk`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
+| `interact` | `upsert-node`、`upsert-edge`、`bulk`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
+| `specify-test` | `upsert-node`、`upsert-edge`、`bulk`、`bind`、`acceptance-add`、`acceptance-import`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
 | `implement-test` | `upsert-node`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
 | `observe` | `import-file`、`import-repo`、`derive`、`upsert-node`、`retract`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
 | `audit` | `get`、`find`、`slice`、`work-judge`、`role-prompt`、`evidence-record` |
@@ -222,6 +222,7 @@ python <skill>/scripts/wxg.py --root <root> up --template standard
 | `work-list` | 列出某 feature 当前 generation 的工单 | --feature <值> | 只读 |
 | `upsert-node` | 写节点；id 已存在则更新（不接受 attrs.bite） | --token <值> --data <值> | 需要 claim_token / 角色命令 |
 | `upsert-edge` | 写边；两端必须已存在 | --token <值> --data <值> | 需要 claim_token / 角色命令 |
+| `bulk` | 批量写节点与边（JSONL）：先全量校验再写，任一条不合法整批不落库；边界同 upsert-node/upsert-edge | --token <值> --dry-run | 状态库（需 claim_token / 角色命令；--dry-run 只读） |
 | `bind` | 绑定 parameter/argument/assertion 到已存在节点 | --token <值> --node-id <值> --bind-to <值> | 需要 claim_token / 角色命令 |
 | `retract` | 撤回 target_ids 内的节点与边；级联删除 bite 并剔除工单引用 | --token <值> | 需要 claim_token / 角色命令 |
 | `acceptance-add` | 给一条需求登记一条验收条目（生成 acceptance 节点 + has_acceptance 边）；同一条文重复登记拒绝 | --requirement <值> --text <值> --token <值> | 状态库（需 claim_token / 角色命令） |
