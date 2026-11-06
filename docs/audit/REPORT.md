@@ -110,9 +110,17 @@
 | 3.2.1 发布闭环 | 完成 | `dist/v3.2.1`（63 文件，SHA `d6a82927…`，commit `61f2286`）+ 技能已装 3.2.1 + tag |
 | P2.7 doctor 不可修检查补测 | 完成 | 3.2.2：`applies-invalid` / `pattern-unjustified` / `evidence-artifact-changed` / `evidence-work-missing` / `legacy-identity` 五类补齐，三条变异验证 |
 | 3.2.2 发布闭环 | 完成 | `dist/v3.2.2`（63 文件，SHA `53e86695…`，commit `02c82f2`）+ 技能已装 3.2.2 + tag |
+| P2.8 SKILL.md 指令维护（按 dreaming） | 完成 | 3.3.0 / 3.3.1：首次响应规则（先跑 verify/doctor/gate 拿退出码）+ 能力边界写进 description + 契约速查（`contract --json`）+ 「什么时候不该加载」对照表 |
+| P2.9 契约块分层 | 完成 | 3.4.0：main 块只放结构，10 张规则表 + 21 条不变量进 full 块；SKILL.md 60.6KB→45.4KB（-25%），`doc_flow` 仍 PASS |
+| P2.10 「文件」节对齐 | 完成 | 3.4.1：拆成「随包分发 / 仅源码仓」两张表，补 4 项漏项、修 3 处过期描述，22 个路径逐个验证存在 |
+| P2.11 非 Python 定位修正 | 完成 | 3.5.0：dreaming 第 18 次调用是 Java 仓库重构，probe `fit` 仅 0.18。`whenToUse` 加回「重构落点规划」，非 Python 边界改成分层说明（哪些命令依赖导入器） |
+| P2.12 发布说明校验 | 完成 | 3.5.0：`tools/check_release_notes.py` 校验 `docs/RELEASE-*.md` 的 SHA 与 `dist` 一致，接进 preflight（第 12 步）；顺带修复 2.97 的历史记录 |
+| P2.13 临时目录卫生 | 完成 | 3.5.1：安装器只留最近 3 个备份；清理 `%TEMP%` 下 304MB / 95 个残留目录 |
+| 3.3.0 – 3.5.1 发布闭环 | 完成 | 六个版本各自有 `dist/v<ver>`、annotated tag、GitHub Release；附件 SHA 与本地构建逐字节一致 |
 | Release asset 上传 | 自动（此前判断有误） | `release.yml` 在 tag push 时构建并上传 zip；实测 v2.96.0 附件 SHA `889e2af3…` 与干净 checkout 构建逐字节一致 |
 
-发布版本：`2.92.0` → `2.93.0`（schema 仍为 9），提交 `9c9be79`。
+发布版本：`2.92.0` → `3.5.1`（schema 仍为 9），对应提交 `3e522db` 之后的 `90d91f5` 系列。
+审计本身（16 片契约卡、592 条契约、152 条判定）是 **2.92.0 的快照**；本表记录其后的修复进展。
 
 ### P0：先让事实存在（全部可并行，纯机械）
 
