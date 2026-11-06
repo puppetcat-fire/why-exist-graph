@@ -126,6 +126,8 @@
 | P2.21 红区可行动 | 完成 | 3.10.0：`trace --md`（缺口降序矩阵）、`trace --requirement`（钻取）；gate 追溯 FAIL 带 `top_gaps` 与 `next`。四仓项目首屏即 AUTH 组，与组级结论一致 |
 | P2.22 缺口按优先级排 | 完成 | 3.11.0：`x_priority` 接入矩阵与 `top_gaps` 排序（优先级 → 缺口数 → id），未登记按最低优先级不报错；四仓首屏变成 P0 组打头 |
 | P2.23 测试规格不冒充证据 | 完成（breaking） | 3.12.0：验收覆盖要求 `testcase` 带代码锚点（节点 path 或 attrs.path）；纯规格单列 `acceptance_spec_only`，gate 理由点出；四仓 289 个 testcase 全带锚点，数字不变 |
+| P2.24 四仓 P0 组开工 | 完成 | gen34：写 `AuthAcceptanceTest` 10 条（FR-AUTH-02/03 的 9 条验收），登记 testcase 节点 + verifies 边；四仓 tested 20→30、缺口 742→732，`fr-auth-02/03` 退出 top_gaps |
+| P2.25 缺口条目级明细 | 完成 | 3.13.0：`trace --requirement` 带 `items`（条文/是否被覆盖/测试 id），`--md` 出条目明细表；补测试时按条目看 |
 | 3.3.0 – 3.5.1 发布闭环 | 完成 | 六个版本各自有 `dist/v<ver>`、annotated tag、GitHub Release；附件 SHA 与本地构建逐字节一致 |
 | Release asset 上传 | 自动（此前判断有误） | `release.yml` 在 tag push 时构建并上传 zip；实测 v2.96.0 附件 SHA `889e2af3…` 与干净 checkout 构建逐字节一致 |
 

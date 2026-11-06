@@ -148,6 +148,7 @@ DSH 的 dreaming 会按实际调用给每个技能打分、记录边界缺口。
 | 3.10.0 | 3.9.1 后 gate 说"742 条验收没测试"就没了下文，得自己翻 JSON 找从哪补 | `trace --md` 按缺口降序出人读矩阵、`--requirement` 钻取；gate 追溯 FAIL 带 `top_gaps` 与 `next` 提示 |
 | 3.11.0 | 3.10 的 `top_gaps` 只按缺口数量排，四仓首屏被 P1/P2 条数多的需求占满 | 接入 `x_priority`：矩阵与 `top_gaps` 按"优先级 → 缺口数 → id"排；没登记按最低优先级不报错；md 多一列优先级 |
 | 3.12.0 | 追溯门只问"有没有 testcase 指向"，一个没路径的规格节点也能满足 | 验收覆盖要求代码锚点（节点 path 或 attrs.path）；纯规格单列 `acceptance_spec_only`，gate 理由里点出；文件级校验留给项目侧 |
+| 3.13.0 | 四仓补 AUTH 验收测试时，`trace --requirement` 只给"缺 1 条"，不说哪条 | 钻取加 `items` 明细（id/序号/条文/是否被带锚点测试覆盖/测试 id），`--md` 出「验收条目明细」表 |
 
 ### 还没解决的
 

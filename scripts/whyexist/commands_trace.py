@@ -85,6 +85,11 @@ def _render_markdown(report: dict) -> str:
         )
     if not rows:
         lines.append("| （无需求） | | | | | |")
+    if report.get("items"):
+        lines.extend(["", "### 验收条目明细", "", "| # | 验收 | 覆盖测试 |", "|---|---|---|"])
+        for item in report["items"]:
+            tests = "、".join(f"`{test.split(':')[-1]}`" for test in item["tests"]) or "—"
+            lines.append(f"| {item['ordinal']} | {item['text']} | {tests} |")
     if report["truncated"]:
         lines.append("")
         lines.append("明细按 `--limit` 截断；完整清单用 `--json`。")

@@ -2548,6 +2548,14 @@ class WxgTestCase(unittest.TestCase):
         self.assertEqual(1, drill["requirements"])
         self.assertEqual(2, drill["summary"]["acceptance_items"])
         self.assertEqual(2, drill["summary"]["acceptance_missing"])
+        # 3.13.0：钻取带条目明细，能一眼看出哪条没人测
+        self.assertEqual(2, len(drill["items"]))
+        self.assertEqual([1, 2], [item["ordinal"] for item in drill["items"]])
+        self.assertTrue(all(item["tested"] is False for item in drill["items"]))
+        self.assertTrue(all(item["tests"] == [] for item in drill["items"]))
+        drill_md = self.cli("trace", "--feature", "feat-md", "--requirement",
+                            "requirement:feat-md:main", "--md", expect=1)
+        self.assertIn("### 验收条目明细", drill_md)
         self.cli("trace", "--feature", "feat-md", "--requirement", "requirement:nope:main", expect=2)
 
     def test_gate_fail_lists_top_gaps(self):

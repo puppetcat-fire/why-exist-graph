@@ -238,6 +238,7 @@ def trace_report(conn, feature: dict, limit: int = 20, requirement: str | None =
     ]
     main_id = f"requirement:{feature['id']}:main"
     aggregate_main = main_id in requirement_ids and len(requirement_ids) > 1
+    item_rows: list[dict] = []
     if requirement is not None:
         if requirement not in requirement_ids:
             raise Reject(f"需求不在该 feature 作用域内：{requirement}")
@@ -286,6 +287,16 @@ def trace_report(conn, feature: dict, limit: int = 20, requirement: str | None =
         }
         rows.append(row)
         tail.append((len(gaps), row))
+        if requirement is not None:
+            for item in items:
+                item_tests = _anchored_verifiers(verified, item["id"])
+                item_rows.append({
+                    "id": item["id"],
+                    "text": item["text"],
+                    "ordinal": item["ordinal"],
+                    "tested": bool(item_tests),
+                    "tests": sorted(item_tests),
+                })
     requirements = len(rows)
     applicable = requirements > 0
     unknown = applicable and acceptance_total == 0
@@ -311,6 +322,7 @@ def trace_report(conn, feature: dict, limit: int = 20, requirement: str | None =
         "applicable": applicable,
         "ok": (not applicable) or complete,
         "requirement": requirement,
+        "items": item_rows,
         "top_gaps": top_gaps,
         "summary": {
             "requirements": requirements,

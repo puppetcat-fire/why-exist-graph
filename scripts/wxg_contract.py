@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 
 SCHEMA_VERSION = 9
-CONTRACT_VERSION = "3.12.0"
+CONTRACT_VERSION = "3.13.0"
 
 #: ``doctor --fix`` 能自动修的检查项。其余问题（legacy 身份、条件行缺失、审计配对等）
 #: 只能报给人看——要么需要裁决，要么需要改设计，自动修等于替人做决定。
@@ -191,6 +191,7 @@ TRACE_RULES = [
     "`trace` 支持人读与钻取：`--md` 输出按缺口降序的矩阵表，`--requirement <id>` 只看一条需求；`gate` 的追溯 FAIL 带 `top_gaps`（缺口最多的 5 条需求）与 `next` 提示——红区必须能直接指出下一步补哪里。",
     "`x_priority`（`P0`/`P1`/…，大小写不敏感）参与排序：矩阵与 `top_gaps` 先按优先级、再按缺口数量、最后按 id 排；没登记或认不出的按最低优先级，不报错（优先级是增强项，不是必填）。",
     "交付证据要带**代码锚点**：`testcase` 的 `path`（节点自身或 `attrs.path`）非空才算覆盖；只有测试规格、没有路径的 `testcase` 不计入验收覆盖，`trace` 单列 `acceptance_spec_only`，gate 的理由里也会点出来。锚点只校验“写了路径”，不校验文件是否存在于哪个仓（跨仓路径校验留给项目侧）。",
+    "`trace --requirement <id>` 同时给出**条目明细**（`items`：id / 序号 / 条文 / 是否被带锚点的测试覆盖 / 覆盖它的测试 id），`--md` 渲染成「验收条目明细」表——补测试时按条目看，不要按需求看；缺口是条目级的，不是需求级的。",
 ]
 
 JUDGE_HISTORY_COLUMNS = [
