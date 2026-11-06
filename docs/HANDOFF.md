@@ -152,6 +152,7 @@ DSH 的 dreaming 会按实际调用给每个技能打分、记录边界缺口。
 | 3.14.0 | 登记 10 条测试要写 10 节点 + 10 边，项目侧只好自造 `batch_write2.py` 循环内部 API | 加 `bulk` 命令：JSONL 批量写节点与边，先全量校验再整批落库（token+target 边界不变），替代那类自造脚本 |
 | 3.15.0 | 查 `fr-cat-09` 发现 5 条验收里 4 条根本没实现，门禁把"没实现"和"缺测试"算成同一个缺口 | 验收条目可标 `x_status`（未实现/不适用/阻塞原因）；`trace` 单列 `acceptance_blocked`、明细多一列状态；**标注不豁免**，gate 仍 FAIL |
 | 3.16.0 | 写 `x_status` 只能靠 `upsert-node` 整体回写 attrs，漏键会丢 text/ordinal | 加 `acceptance-status` 专用命令（只改一个键，省略 `--status` 即清除）；与 `acceptance-add` 分工写明 |
+| 3.17.0 | 审计后 47 条 0.1.0 旧需求与"没做完"混在同一缺口列表，门禁分不出"决定不做"与"还没做" | 加 `requirement-scope`（范围外必须写理由）；`trace` 单列 `descoped` 并从缺口移出，`gate` PASS/FAIL 都报数目——记账分开，不豁免 |
 
 ### 还没解决的
 

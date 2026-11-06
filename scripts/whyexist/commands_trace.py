@@ -69,7 +69,10 @@ def _render_markdown(report: dict) -> str:
             f"已测（带锚点）{summary['acceptance_tested']}，仅规格 {summary['acceptance_spec_only']}，"
             f"缺口 {summary['acceptance_missing']}（其中标注未实现/阻塞 {summary.get('acceptance_blocked', 0)}）；"
             f"未登记验收 {summary['requirements_without_acceptance']}，"
-            f"聚合需求 {summary['aggregate_requirements']}。"
+            f"聚合需求 {summary['aggregate_requirements']}"
+            + (f"，范围外需求 {summary['descoped_requirements']}（不计缺口）"
+               if summary.get("descoped_requirements") else "")
+            + "。"
         ),
         "",
         "| 需求 | 优先级 | 验收 | 已测 | 仅规格 | 缺口 | 未实现 |",
@@ -96,6 +99,11 @@ def _render_markdown(report: dict) -> str:
     if report["truncated"]:
         lines.append("")
         lines.append("明细按 `--limit` 截断；完整清单用 `--json`。")
+    if report.get("descoped"):
+        lines.extend(["", "## 范围外需求（不计缺口）", "", "| 需求 | 优先级 | 理由 |", "|---|---|---|"])
+        for entry in report["descoped"]:
+            reason = entry.get("reason") or "（未写理由）"
+            lines.append(f"| `{entry['id']}` | {entry.get('priority') or '—'} | {reason} |")
     return "\n".join(lines) + "\n"
 
 
@@ -126,6 +134,44 @@ def cmd_acceptance_status(conn, args):
     })
     append_evidence(conn, item, [args.acceptance])
     return {"id": args.acceptance, "status": status or None, "cleared": not status}
+
+
+def cmd_requirement_scope(conn, args):
+    """声明需求在/不在本次交付范围内（`x_scope` = out 时需给 `x_scope_reason`）。
+
+    范围外不等于"不做也算了"：`trace` 仍把这条需求列出来，只是不再把它的验收算成缺口；
+    gate 的输出里会写"另有 N 条需求声明为范围外"，不藏。
+    """
+    item = _require_write(conn, args, "requirement-scope")
+    node = get_node(conn, args.requirement)
+    if node is None:
+        raise Reject(f"节点不存在：{args.requirement}")
+    if node["kind"] != "requirement":
+        raise Reject(f"{args.requirement} 不是 requirement 节点（实际 kind={node['kind']}）")
+    require_targets(item, [args.requirement])
+    scope = (args.scope or "in").strip().lower()
+    attrs = loads(node["attrs_json"], {})
+    if scope in ("in", "in-scope", ""):
+        attrs.pop("x_scope", None)
+        attrs.pop("x_scope_reason", None)
+        reason = ""
+    elif scope in ("out", "out-of-scope"):
+        reason = (args.reason or "").strip()
+        if not reason:
+            raise Reject("--scope out 必须同时给 --reason（写清为什么不做）")
+        attrs["x_scope"] = "out"
+        attrs["x_scope_reason"] = reason
+    else:
+        raise Reject(f"--scope 只能是 in / out，收到：{args.scope}")
+    upsert_node(conn, {
+        "id": args.requirement,
+        "kind": "requirement",
+        "name": node["name"],
+        "attrs": attrs,
+    })
+    append_evidence(conn, item, [args.requirement])
+    return {"id": args.requirement, "scope": "out" if scope.startswith("out") else "in",
+            "reason": reason or None}
 
 
 def cmd_trace(conn, args):

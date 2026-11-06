@@ -335,6 +335,8 @@ def cmd_gate(conn, args):
             reason += f"（其中 {spec_only} 条只有测试规格、没有代码锚点）"
         if blocked:
             reason += f"（其中 {blocked} 条标注了未实现/阻塞，仍算缺口、不豁免）"
+        if summary.get("descoped_requirements"):
+            reason += f"；另有 {summary['descoped_requirements']} 条需求声明为范围外（见 traceability.descoped）"
         return {
             "result": "FAIL",
             "reason": reason,
@@ -349,6 +351,14 @@ def cmd_gate(conn, args):
             "result": "FAIL",
             "reason": "咬合覆盖未达标：" + "、".join(coverage["unmet"]),
             "missing_coverage": coverage["unmet"],
+            **base,
+        }
+    descoped = traceability.get("descoped") or []
+    if descoped:
+        return {
+            "result": "PASS",
+            "descoped": descoped,
+            "note": f"另有 {len(descoped)} 条需求声明为范围外（见 _wxg_traceability.descoped）",
             **base,
         }
     return {"result": "PASS", **base}

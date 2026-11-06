@@ -2438,6 +2438,71 @@ class WxgTestCase(unittest.TestCase):
         doctor = self.cli("doctor", expect=1)
         self.assertIn("acceptance-source-drift", doctor["by_check"])
 
+    def test_descoped_requirement_is_listed_but_not_counted(self):
+        """3.17.0：x_scope=out 的需求不参与缺口/完成度，但仍列出理由，gate PASS 时也写明。"""
+        self.init_repo()
+        self.declare("feat-scope")
+        # 两条需求：01 有带锚点的测试；02 声明范围外
+        self.trace_ok("feat-scope")
+        conn = self.db()
+        conn.row_factory = sqlite3.Row
+        try:
+            wxg.upsert_node(conn, {"id": "requirement:feat-scope:legacy", "kind": "requirement",
+                                   "name": "历史包袱", "attrs": {
+                                       "statement": "0.1.0 的会话式编辑",
+                                       "x_scope": "out",
+                                       "x_scope_reason": "0.2.0 不重建会话式编辑",
+                                       "x_priority": "P2"}})
+            wxg.upsert_node(conn, {"id": "acceptance:feat-scope:legacy:01", "kind": "acceptance",
+                                   "name": "打开会话", "attrs": {"text": "打开会话", "ordinal": 1}})
+            wxg.upsert_edge(conn, {"src": "requirement:feat-scope:legacy",
+                                   "dst": "acceptance:feat-scope:legacy:01", "kind": "has_acceptance"})
+            conn.execute("INSERT OR IGNORE INTO feature_nodes(feature_id, node_id) VALUES(?,?)",
+                         ("feat-scope", "requirement:feat-scope:legacy"))
+            conn.execute("INSERT OR IGNORE INTO feature_nodes(feature_id, node_id) VALUES(?,?)",
+                         ("feat-scope", "acceptance:feat-scope:legacy:01"))
+            conn.commit()
+        finally:
+            conn.close()
+        self.force_ready("feat-scope")
+        self.cli("evidence-record", "--feature", "feat-scope", "--name", "e", "--command", "true", "--actor", "t")
+        trace = self.cli("trace", "--feature", "feat-scope", "--json")
+        self.assertEqual(1, trace["summary"]["requirements"])
+        self.assertEqual(1, trace["summary"]["descoped_requirements"])
+        self.assertEqual(1, trace["summary"]["descoped_acceptance"])
+        self.assertEqual(0, trace["summary"]["acceptance_missing"])
+        self.assertEqual("requirement:feat-scope:legacy", trace["descoped"][0]["id"])
+        self.assertEqual("0.2.0 不重建会话式编辑", trace["descoped"][0]["reason"])
+        gate = self.cli("gate", "--feature", "feat-scope", "--json")
+        self.assertEqual("PASS", gate["result"])
+        self.assertEqual(1, len(gate["descoped"]))
+        self.assertIn("范围外", gate["note"])
+        md = self.cli("trace", "--feature", "feat-scope", "--md")
+        self.assertIn("## 范围外需求（不计缺口）", md)
+        self.assertIn("0.2.0 不重建会话式编辑", md)
+
+    def test_requirement_scope_command_sets_and_clears(self):
+        self.init_repo()
+        self.declare("feat-scope2")
+        self.open_targets("feat-scope2", "specify-test", ["requirement:feat-scope2:*"])
+        self.ready_ticket("feat-scope2", "specify-test")
+        spec = self.claim("specify-test")
+        token = spec["claim_token"]
+        req = "requirement:feat-scope2:main"
+        out = self.cli("requirement-scope", "--requirement", req, "--scope", "out",
+                       "--reason", "不在 0.2.0 范围", "--token", token)
+        self.assertEqual("out", out["scope"])
+        trace = self.cli("trace", "--feature", "feat-scope2", "--json")
+        self.assertEqual(1, trace["summary"]["descoped_requirements"])
+        self.assertEqual(0, trace["summary"]["requirements"])
+        # 缺理由要拒绝；恢复 in 后清掉两个键
+        self.cli("requirement-scope", "--requirement", req, "--scope", "out", "--token", token, expect=2)
+        back = self.cli("requirement-scope", "--requirement", req, "--scope", "in", "--token", token)
+        self.assertEqual("in", back["scope"])
+        trace = self.cli("trace", "--feature", "feat-scope2", "--json", expect=1)
+        self.assertEqual(0, trace["summary"]["descoped_requirements"])
+        self.assertEqual(1, trace["summary"]["requirements"])
+
     def test_acceptance_status_sets_and_clears(self):
         """3.16.0：只改 x_status 一个键，text/ordinal 原样保留。"""
         self.init_repo()

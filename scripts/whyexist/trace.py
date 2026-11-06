@@ -249,12 +249,46 @@ def trace_report(conn, feature: dict, limit: int = 20, requirement: str | None =
     without_acceptance: list[str] = []
     aggregates: list[str] = []
     tail: list[tuple[int, dict]] = []
+    descoped: list[dict] = []
+    descoped_acceptance = 0
     acceptance_total = 0
     acceptance_tested = 0
     acceptance_spec_only = 0
     acceptance_blocked = 0
     for node_id in requirement_ids:
         node = get_node(conn, node_id)
+        attrs = loads(node["attrs_json"], {})
+        items = acceptance_children(conn, node_id)
+        if attrs.get("x_scope") == "out":
+            # 范围外需求：保留可见性，但不计入缺口/完成度——否则“不做”和“没做”混成一样
+            descoped.append({
+                "id": node_id,
+                "name": node["name"],
+                "reason": str(attrs.get("x_scope_reason") or "").strip(),
+                "acceptance": len(items),
+                "priority": attrs.get("x_priority"),
+            })
+            descoped_acceptance += len(items)
+            if requirement is not None:
+                for item in items:
+                    item_tests = _anchored_verifiers(verified, item["id"])
+                    item_rows.append({
+                        "id": item["id"],
+                        "text": item["text"],
+                        "ordinal": item["ordinal"],
+                        "tested": bool(item_tests),
+                        "tests": sorted(item_tests),
+                        "status": item.get("status") or "",
+                    })
+            rows.append({
+                "id": node_id, "name": node["name"], "acceptance": len(items),
+                "tested": 0, "spec_only": 0, "blocked": 0, "missing_count": 0,
+                "direct_tests": 0, "missing": [], "without_acceptance": False,
+                "aggregate": False, "descoped": True,
+                "priority": attrs.get("x_priority"),
+                "priority_rank": priority_rank(attrs.get("x_priority")),
+            })
+            continue
         items = acceptance_children(conn, node_id)
         anchored = [item for item in items if _anchored_verifiers(verified, item["id"])]
         spec_only = [
@@ -290,6 +324,7 @@ def trace_report(conn, feature: dict, limit: int = 20, requirement: str | None =
             "missing": [item["id"] for item in gaps][:limit],
             "without_acceptance": not items and not is_aggregate,
             "aggregate": is_aggregate,
+            "descoped": False,
             "priority": priority,
             "priority_rank": priority_rank(priority),
         }
@@ -306,7 +341,7 @@ def trace_report(conn, feature: dict, limit: int = 20, requirement: str | None =
                     "tests": sorted(item_tests),
                     "status": item.get("status") or "",
                 })
-    requirements = len(rows)
+    requirements = len(rows) - len(descoped)
     applicable = requirements > 0
     unknown = applicable and acceptance_total == 0
     complete = applicable and not missing and not without_acceptance
@@ -332,12 +367,15 @@ def trace_report(conn, feature: dict, limit: int = 20, requirement: str | None =
         "ok": (not applicable) or complete,
         "requirement": requirement,
         "items": item_rows,
+        "descoped": descoped,
         "top_gaps": top_gaps,
         "summary": {
             "requirements": requirements,
             "requirements_with_acceptance": requirements - len(without_acceptance) - len(aggregates),
             "requirements_without_acceptance": len(without_acceptance),
             "aggregate_requirements": len(aggregates),
+            "descoped_requirements": len(descoped),
+            "descoped_acceptance": descoped_acceptance,
             "acceptance_items": acceptance_total,
             "acceptance_tested": acceptance_tested,
             "acceptance_spec_only": acceptance_spec_only,

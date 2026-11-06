@@ -187,10 +187,10 @@ python <skill>/scripts/wxg.py --root <root> up --template standard
 | 角色 | 允许命令 |
 |------|----------|
 | `scan` | `import-file`、`import-repo`、`derive`、`upsert-node`、`retract`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
-| `model-architecture` | `derive`、`promote`、`upsert-node`、`upsert-edge`、`bulk`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
-| `model-structure` | `derive`、`promote`、`upsert-node`、`upsert-edge`、`bulk`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
-| `interact` | `upsert-node`、`upsert-edge`、`bulk`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
-| `specify-test` | `upsert-node`、`upsert-edge`、`bulk`、`bind`、`acceptance-add`、`acceptance-import`、`acceptance-status`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
+| `model-architecture` | `derive`、`promote`、`upsert-node`、`upsert-edge`、`bulk`、`bind`、`apply`、`requirement-scope`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
+| `model-structure` | `derive`、`promote`、`upsert-node`、`upsert-edge`、`bulk`、`bind`、`apply`、`requirement-scope`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
+| `interact` | `upsert-node`、`upsert-edge`、`bulk`、`bind`、`apply`、`requirement-scope`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
+| `specify-test` | `upsert-node`、`upsert-edge`、`bulk`、`bind`、`acceptance-add`、`acceptance-import`、`acceptance-status`、`requirement-scope`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
 | `implement-test` | `upsert-node`、`bind`、`apply`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
 | `observe` | `import-file`、`import-repo`、`derive`、`upsert-node`、`retract`、`get`、`find`、`slice`、`work-finish`、`role-prompt`、`evidence-record` |
 | `audit` | `get`、`find`、`slice`、`work-judge`、`role-prompt`、`evidence-record` |
@@ -228,6 +228,7 @@ python <skill>/scripts/wxg.py --root <root> up --template standard
 | `acceptance-add` | 给一条需求登记一条验收条目（生成 acceptance 节点 + has_acceptance 边）；同一条文重复登记拒绝 | --requirement <值> --text <值> --token <值> | 状态库（需 claim_token / 角色命令） |
 | `acceptance-import` | 从 requirement.attrs.x_acceptance 批量生成验收条目（按序号+条文对齐，幂等）；把旧项目一次性接进追溯门 | --feature <值> --dry-run | 状态库（需 claim_token / 角色命令；--dry-run 只读） |
 | `acceptance-status` | 给验收条目写/清 x_status（未实现、不适用、阻塞原因）；只改这一个键，其它 attrs 原样保留 | --acceptance <值> --token <值> | 状态库（需 claim_token / 角色命令） |
+| `requirement-scope` | 声明需求在/不在本次交付范围（x_scope=out 需给理由）：范围外需求仍列出，但不计入追溯缺口 | --requirement <值> --token <值> | 状态库（需 claim_token / 角色命令） |
 | `trace` | 需求→验收→测试追溯矩阵：每条需求的验收条目与覆盖它的测试；有缺口退出码 1 | --feature <值> --json --md | 只读 |
 | `bite` | 记录一次必要性判定；判决集固定，写 bites 与节点 attrs.bite（唯一写入口） | --node <值> --verdict <值> --allow-new-scope | 状态库 |
 | `evidence-record` | 记录一条可追溯证据：命令、退出码、执行者、产物 hash（BehaviorPassed 的门槛） | --feature <值> --name <值> --command <值> | 状态库 |

@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 
 SCHEMA_VERSION = 9
-CONTRACT_VERSION = "3.16.0"
+CONTRACT_VERSION = "3.17.0"
 
 #: ``doctor --fix`` 能自动修的检查项。其余问题（legacy 身份、条件行缺失、审计配对等）
 #: 只能报给人看——要么需要裁决，要么需要改设计，自动修等于替人做决定。
@@ -194,6 +194,7 @@ TRACE_RULES = [
     "`trace --requirement <id>` 同时给出**条目明细**（`items`：id / 序号 / 条文 / 是否被带锚点的测试覆盖 / 覆盖它的测试 id），`--md` 渲染成「验收条目明细」表——补测试时按条目看，不要按需求看；缺口是条目级的，不是需求级的。",
     "验收条目可以用 `x_status` **标注未实现/阻塞原因**（自由文本）：`trace` 把它算进 `acceptance_blocked` 并显示在明细里，便于区分“没实现”和“只是没写测试”。**标注不豁免门禁**——没被带锚点的测试指向就仍是缺口，gate 照样 FAIL；标注只是让红区可解释。",
     "`x_status` 的唯一写入口是 `acceptance-status`（只改这一个键，其它 attrs 原样保留；省略 `--status` 即清除）；新增验收条目用 `acceptance-add`。不要用 `upsert-node` 整体回写 attrs——漏键会丢 text/ordinal。",
+    "需求可用 `x_scope=out`（必须同时写 `x_scope_reason`）声明为**本次交付范围外**：`trace` 把它的验收条目从缺口里移出，但仍在 `descoped` 里逐条列出理由，`gate` PASS 时也会写明“另有 N 条需求声明为范围外”。范围外不是豁免——它把“决定不做”和“没做完”分开记录，两边都得有人负责；写入口是 `requirement-scope`。",
 ]
 
 JUDGE_HISTORY_COLUMNS = [
@@ -270,10 +271,10 @@ CONFORMANCE_RULES = [
 
 ROLES = {
     "scan": ["import-file", "import-repo", "derive", "upsert-node", "retract", "get", "find", "slice", "work-finish", "role-prompt"],
-    "model-architecture": ["derive", "promote", "upsert-node", "upsert-edge", "bulk", "bind", "apply", "get", "find", "slice", "work-finish", "role-prompt"],
-    "model-structure": ["derive", "promote", "upsert-node", "upsert-edge", "bulk", "bind", "apply", "get", "find", "slice", "work-finish", "role-prompt"],
-    "interact": ["upsert-node", "upsert-edge", "bulk", "bind", "apply", "get", "find", "slice", "work-finish", "role-prompt"],
-    "specify-test": ["upsert-node", "upsert-edge", "bulk", "bind", "acceptance-add", "acceptance-import", "acceptance-status", "apply", "get", "find", "slice", "work-finish", "role-prompt"],
+    "model-architecture": ["derive", "promote", "upsert-node", "upsert-edge", "bulk", "bind", "apply", "requirement-scope", "get", "find", "slice", "work-finish", "role-prompt"],
+    "model-structure": ["derive", "promote", "upsert-node", "upsert-edge", "bulk", "bind", "apply", "requirement-scope", "get", "find", "slice", "work-finish", "role-prompt"],
+    "interact": ["upsert-node", "upsert-edge", "bulk", "bind", "apply", "requirement-scope", "get", "find", "slice", "work-finish", "role-prompt"],
+    "specify-test": ["upsert-node", "upsert-edge", "bulk", "bind", "acceptance-add", "acceptance-import", "acceptance-status", "requirement-scope", "apply", "get", "find", "slice", "work-finish", "role-prompt"],
     "implement-test": ["upsert-node", "bind", "apply", "get", "find", "slice", "work-finish", "role-prompt"],
     "observe": ["import-file", "import-repo", "derive", "upsert-node", "retract", "get", "find", "slice", "work-finish", "role-prompt"],
     "audit": ["get", "find", "slice", "work-judge", "role-prompt"],
@@ -284,7 +285,7 @@ for _role in ROLES:
     ROLES[_role].append("evidence-record")
 
 # 这些命令只在拿到 claim_token 后可执行（写图/提交）。
-TOKEN_COMMANDS = ["upsert-node", "upsert-edge", "bind", "retract", "import-file", "work-finish", "acceptance-add", "acceptance-import", "acceptance-status", "apply", "bulk"]
+TOKEN_COMMANDS = ["upsert-node", "upsert-edge", "bind", "retract", "import-file", "work-finish", "acceptance-add", "acceptance-import", "acceptance-status", "requirement-scope", "apply", "bulk"]
 
 # implement-test 领取额外门槛：当轮明确允许改产品代码。
 PRODUCT_CODE_ROLES = ["implement-test"]
@@ -527,6 +528,16 @@ COMMANDS = {
         ],
         token=True,
     ),
+    "requirement-scope": C(
+        "声明需求在/不在本次交付范围（x_scope=out 需给理由）：范围外需求仍列出，但不计入追溯缺口",
+        options=[
+            O("--requirement", required=True, help="requirement 节点 id"),
+            O("--scope", default="in", choices=["in", "out"], help="in（默认）或 out"),
+            O("--reason", default=None, help="--scope out 时必填：为什么不做"),
+            O("--token", required=True),
+        ],
+        token=True,
+    ),
     "trace": C(
         "需求→验收→测试追溯矩阵：每条需求的验收条目与覆盖它的测试；有缺口退出码 1",
         options=[
@@ -737,6 +748,7 @@ WRITE_MODES = {
     "acceptance-add": "状态库（需 claim_token / 角色命令）",
     "acceptance-import": "状态库（需 claim_token / 角色命令；--dry-run 只读）",
     "acceptance-status": "状态库（需 claim_token / 角色命令）",
+    "requirement-scope": "状态库（需 claim_token / 角色命令）",
     "trace": "只读",
     "retract": "需要 claim_token / 角色命令",
     "bite": "状态库",
@@ -833,7 +845,7 @@ INVARIANTS = [
     ("I2 generation 是身份", "条件与工单 id 都带 generation；重新声明会开启新一代并 supersede 旧工单，work-claim 只发当前代；不会出现旧 passed 工单挡住或混淆新条件。"),
     ("I3 交付门只读", "gate 不写库；正常流程中条件只由 work-judge(passed) 改写，Accepted 由声明/登记入口新建时置真。判定与状态变更分离。"),
     ("I4 判决可校验", "bite 是唯一写入咬合的命令，只接受固定判决集；gate 只采信 bites 表，作用域包含 feature_nodes、requirement 前缀与当前代工单 target_ids。"),
-    ("I5 写入有边界", "图内容写入（upsert-node/upsert-edge/bulk/bind/apply/retract/import-file/acceptance-add/acceptance-import）必须带 claim_token 且落在工单 target_ids 内；角色只能调用自己在 ROLES 里的命令。feature-declare / feature-register 只写 feature 元数据与 requirement/acceptance 节点，bite 只写 bites/attrs.bite 且必须带 actor、不扩作用域。"),
+    ("I5 写入有边界", "图内容写入（upsert-node/upsert-edge/bulk/bind/apply/retract/import-file/acceptance-add/acceptance-import/acceptance-status/requirement-scope）必须带 claim_token 且落在工单 target_ids 内；角色只能调用自己在 ROLES 里的命令。feature-declare / feature-register 只写 feature 元数据与 requirement/acceptance 节点，bite 只写 bites/attrs.bite 且必须带 actor、不扩作用域。"),
     ("I6 技能通用", "技能不写死仓名、工作区路径；仓在运行期 repo-add 登记，状态库路径用 --root 指定；导入器当前仅 Python AST（扩展边界见 design.md）。"),
     ("I7 不臆造", "认不出的节点/边标 unmapped=1；导出缺 id 留空；BehaviorPassed 置真前必须有**同 generation**、exit_code=0 的 evidence，judge 与 gate 双向强制。"),
     ("I8 文档即生成的视图", "SKILL.md 与 references/contract.md 的契约块、references/export-sample 的样例都由同一实现生成；verify 比较字节。"),

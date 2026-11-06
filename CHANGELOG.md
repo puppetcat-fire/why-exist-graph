@@ -1,5 +1,21 @@
 # Changelog — why-exist-graph
 
+## 3.17.0（2026-11-06）
+
+**范围外需求有正式表达了：`requirement-scope`。** 审计四仓后摆出一个绕不开的问题：47 条需求
+是 0.1.0 的旧口径，0.2.0 重建根本不打算做。此前它们和"没做完"躺在同一个缺口列表里，
+门禁分不出"决定不做"和"还没做"。
+
+- **`wxg requirement-scope --requirement <id> --scope out --reason "…"`**（`--scope in` 恢复；
+  范围外必须写理由，否则拒绝）。
+- **`trace`**：范围外需求的验收条目从缺口里移出，但仍在 `descoped` 里逐条列出（id/名称/理由/验收数），
+  摘要里单列 `descoped_requirements` / `descoped_acceptance`。
+- **`gate`**：范围外需求不计缺口；PASS 时附 `descoped` 与 `note`，FAIL 时理由里也带
+  "另有 N 条需求声明为范围外"。**不是豁免**——只是把"决定不做"和"没做完"分开记账。
+- **契约**：命令 55 → 56、`TOKEN_COMMANDS` / `I5` 加入 `requirement-scope`、`trace_rules` 16 → 17 条。
+- **测试**：445 → 447（范围外需求不算缺口但可见 + gate PASS 写明；命令 set/clear 与缺理由拒绝）。
+- **版本**：契约 `3.16.0` → `3.17.0`；库 schema 仍为 `9`。
+
 ## 3.16.0（2026-11-06）
 
 **标注有专用命令了：`acceptance-status`。** 3.15.0 给验收条目加了 `x_status`，但只能靠

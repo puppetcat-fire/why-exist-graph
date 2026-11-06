@@ -102,6 +102,7 @@ from whyexist.commands_trace import (  # noqa: E402
     cmd_acceptance_add,
     cmd_acceptance_import,
     cmd_acceptance_status,
+    cmd_requirement_scope,
     cmd_trace,
 )
 from whyexist.query import cmd_find, cmd_get, cmd_slice  # noqa: E402
