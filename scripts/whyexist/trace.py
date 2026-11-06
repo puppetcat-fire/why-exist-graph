@@ -194,16 +194,27 @@ def import_acceptance(conn, feature_id: str, dry_run: bool = False, skip_require
     }
 
 
-def _verifies_index(conn) -> dict[str, set[str]]:
-    """目标节点 id → 指向它的 testcase id 集合（只看 kind=testcase 的 src）。"""
-    index: dict[str, set[str]] = {}
+def _verifies_index(conn) -> dict[str, dict[str, bool]]:
+    """目标节点 id → {testcase id: 是否带代码锚点}（只看 kind=testcase 的 src）。
+
+    锚点 = 节点自身的 `path` 或 `attrs.path`。只有"测试规格"（没写路径）的 testcase 不算
+    交付证据——否则"有测试指向"又退化成"有个节点说有测试"。
+    """
+    index: dict[str, dict[str, bool]] = {}
     for row in conn.execute(
-        "SELECT e.src AS src, e.dst AS dst FROM edges e JOIN nodes s ON s.id = e.src "
-        "WHERE e.kind = ? AND s.kind = 'testcase'",
+        "SELECT e.src AS src, e.dst AS dst, n.path AS path, n.attrs_json AS attrs_json "
+        "FROM edges e JOIN nodes n ON n.id = e.src "
+        "WHERE e.kind = ? AND n.kind = 'testcase'",
         (VERIFIES_EDGE_KIND,),
     ).fetchall():
-        index.setdefault(row["dst"], set()).add(row["src"])
+        attrs = loads(row["attrs_json"], {})
+        anchored = bool(row["path"]) or bool(attrs.get("path"))
+        index.setdefault(row["dst"], {})[row["src"]] = anchored
     return index
+
+
+def _anchored_verifiers(index: dict[str, dict[str, bool]], node_id: str) -> list[str]:
+    return [src for src, anchored in index.get(node_id, {}).items() if anchored]
 
 
 def trace_report(conn, feature: dict, limit: int = 20, requirement: str | None = None) -> dict:
@@ -238,13 +249,19 @@ def trace_report(conn, feature: dict, limit: int = 20, requirement: str | None =
     tail: list[tuple[int, dict]] = []
     acceptance_total = 0
     acceptance_tested = 0
+    acceptance_spec_only = 0
     for node_id in requirement_ids:
         node = get_node(conn, node_id)
         items = acceptance_children(conn, node_id)
-        tested = [item for item in items if verified.get(item["id"])]
+        anchored = [item for item in items if _anchored_verifiers(verified, item["id"])]
+        spec_only = [
+            item for item in items
+            if verified.get(item["id"]) and not _anchored_verifiers(verified, item["id"])
+        ]
         acceptance_total += len(items)
-        acceptance_tested += len(tested)
-        gaps = [item for item in items if not verified.get(item["id"])]
+        acceptance_tested += len(anchored)
+        acceptance_spec_only += len(spec_only)
+        gaps = [item for item in items if not _anchored_verifiers(verified, item["id"])]
         is_aggregate = aggregate_main and node_id == main_id and not items
         if is_aggregate:
             aggregates.append(node_id)
@@ -257,9 +274,10 @@ def trace_report(conn, feature: dict, limit: int = 20, requirement: str | None =
             "id": node_id,
             "name": node["name"],
             "acceptance": len(items),
-            "tested": len(tested),
+            "tested": len(anchored),
+            "spec_only": len(spec_only),
             "missing_count": len(gaps),
-            "direct_tests": len(verified.get(node_id, ())),
+            "direct_tests": len(_anchored_verifiers(verified, node_id)),
             "missing": [item["id"] for item in gaps][:limit],
             "without_acceptance": not items and not is_aggregate,
             "aggregate": is_aggregate,
@@ -301,6 +319,7 @@ def trace_report(conn, feature: dict, limit: int = 20, requirement: str | None =
             "aggregate_requirements": len(aggregates),
             "acceptance_items": acceptance_total,
             "acceptance_tested": acceptance_tested,
+            "acceptance_spec_only": acceptance_spec_only,
             "acceptance_missing": len(missing),
             "complete": complete,
             "unknown": unknown,

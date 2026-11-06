@@ -2543,7 +2543,7 @@ class WxgTestCase(unittest.TestCase):
         self.assertIsInstance(md, str)
         self.assertIn("# 追溯矩阵", md)
         self.assertIn("requirement:feat-md:main", md)
-        self.assertIn("| 需求 | 优先级 | 验收 | 已测 | 缺口 |", md)
+        self.assertIn("| 需求 | 优先级 | 验收 | 已测 | 仅规格 | 缺口 |", md)
         drill = self.cli("trace", "--feature", "feat-md", "--requirement", "requirement:feat-md:main", expect=1)
         self.assertEqual(1, drill["requirements"])
         self.assertEqual(2, drill["summary"]["acceptance_items"])
@@ -2594,6 +2594,45 @@ class WxgTestCase(unittest.TestCase):
         self.assertEqual(2, trace["top_gaps"][1]["missing"])
         md = self.cli("trace", "--feature", "feat-pri", "--md", expect=1)
         self.assertLess(md.index("requirement:feat-pri:sub"), md.index("requirement:feat-pri:main"))
+
+    def test_trace_requires_anchored_tests(self):
+        """3.12.0：只有测试规格（没路径）不算交付证据；node.path 与 attrs.path 都算锚点。"""
+        self.init_repo()
+        self.declare("feat-anchor")
+        self.trace_ok("feat-anchor")  # acceptance 01 由带 attrs.path 的测试覆盖
+        conn = self.db()
+        conn.row_factory = sqlite3.Row
+        try:
+            for ordinal, text in ((2, "第二条"), (3, "第三条")):
+                wxg.upsert_node(conn, {"id": f"acceptance:feat-anchor:main:0{ordinal}",
+                                       "kind": "acceptance", "name": text,
+                                       "attrs": {"text": text, "ordinal": ordinal}})
+                wxg.upsert_edge(conn, {"src": "requirement:feat-anchor:main",
+                                       "dst": f"acceptance:feat-anchor:main:0{ordinal}",
+                                       "kind": "has_acceptance"})
+            # 02 用节点自带 repo/path/symbol 的测试（不是 attrs.path）
+            wxg.upsert_node(conn, {"id": "testcase:feat-anchor:code", "kind": "testcase",
+                                   "name": "实测", "repo": "demo",
+                                   "path": "tests/test_demo.py", "symbol": "test_demo"})
+            wxg.upsert_edge(conn, {"src": "testcase:feat-anchor:code",
+                                   "dst": "acceptance:feat-anchor:main:02", "kind": "verifies"})
+            # 03 只有一条测试规格（没有任何路径）
+            wxg.upsert_node(conn, {"id": "testcase:feat-anchor:spec", "kind": "testcase",
+                                   "name": "只有规格", "attrs": {"text": "还没落地"}})
+            wxg.upsert_edge(conn, {"src": "testcase:feat-anchor:spec",
+                                   "dst": "acceptance:feat-anchor:main:03", "kind": "verifies"})
+            conn.commit()
+        finally:
+            conn.close()
+        trace = self.cli("trace", "--feature", "feat-anchor", "--json", expect=1)
+        self.assertEqual(3, trace["summary"]["acceptance_items"])
+        self.assertEqual(2, trace["summary"]["acceptance_tested"])
+        self.assertEqual(1, trace["summary"]["acceptance_spec_only"])
+        self.assertEqual(1, trace["summary"]["acceptance_missing"])
+        row = trace["requirements_detail"][0]
+        self.assertEqual(1, row["spec_only"])
+        gate = self.cli("gate", "--feature", "feat-anchor", "--json", expect=1)
+        self.assertEqual("FAIL", gate["result"])
 
     def test_trace_ignores_requirement_level_verifies(self):
         """旧式“一条测试覆盖整条需求”不算验收覆盖，只能计入 direct_tests。"""

@@ -2245,6 +2245,22 @@ requirement / ordinal / text），`feature-status` 加 `traceability` 摘要（�
 实测四仓：改成 P0 组打头（auth-02/03/04），P1 的 auth-05 虽然缺口 6 条也排在后面。口径一致，
 没有为了好看重排数字。
 
+## 119. 测试规格不再冒充交付证据（3.12.0）
+
+3.6.0 起追溯门只问"有没有 testcase 指向验收条目"。但 `testcase` 是一个图节点——一个没写路径、
+只有一句描述的节点也能满足它。这等于把"有测试"退化回"有个节点说有测试"，和当初 `gate` 空输入判
+PASS 是同一种病，只是下沉了一层。
+
+改法：锚点口径。`testcase` 的 `path`（节点自身或 `attrs.path`）非空才算覆盖；只有规格的不算，
+`trace` 单列 `acceptance_spec_only`，`gate` 理由里写清"其中 N 条只有测试规格"。
+
+**故意没做的**：没有校验文件是否真的存在。技能是语言/仓库无关的，`testcase.path` 是相对项目而言的
+字符串，硬校验会逼用户先建一个假仓；四仓项目自己在 `tools/requirement_trace.py` 里做文件级锚点
+校验——**分层的责任比一层大而全更可靠**。
+
+实测四仓：20 条已测、0 条纯规格——289 个 testcase 全部带锚点，这版不改他们的数字；但它堵住了
+"以后补测试时偷懒只写规格"这条路。
+
 ## 附：Windows 受限 token 下的临时目录
 
 Windows 上 `tempfile.mkdtemp()` / `TemporaryDirectory()`（Python ≥ 3.12.4，为 CVE-2024-4030）

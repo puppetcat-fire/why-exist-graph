@@ -125,6 +125,7 @@
 | P2.20 聚合需求豁免 | 完成 | 3.9.1：迁移时发现 `requirement:{f}:main` 被算成缺口；改为有其它需求时豁免、唯一需求不豁免 |
 | P2.21 红区可行动 | 完成 | 3.10.0：`trace --md`（缺口降序矩阵）、`trace --requirement`（钻取）；gate 追溯 FAIL 带 `top_gaps` 与 `next`。四仓项目首屏即 AUTH 组，与组级结论一致 |
 | P2.22 缺口按优先级排 | 完成 | 3.11.0：`x_priority` 接入矩阵与 `top_gaps` 排序（优先级 → 缺口数 → id），未登记按最低优先级不报错；四仓首屏变成 P0 组打头 |
+| P2.23 测试规格不冒充证据 | 完成（breaking） | 3.12.0：验收覆盖要求 `testcase` 带代码锚点（节点 path 或 attrs.path）；纯规格单列 `acceptance_spec_only`，gate 理由点出；四仓 289 个 testcase 全带锚点，数字不变 |
 | 3.3.0 – 3.5.1 发布闭环 | 完成 | 六个版本各自有 `dist/v<ver>`、annotated tag、GitHub Release；附件 SHA 与本地构建逐字节一致 |
 | Release asset 上传 | 自动（此前判断有误） | `release.yml` 在 tag push 时构建并上传 zip；实测 v2.96.0 附件 SHA `889e2af3…` 与干净 checkout 构建逐字节一致 |
 

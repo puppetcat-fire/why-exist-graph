@@ -325,16 +325,20 @@ def cmd_gate(conn, args):
         }
     if traceability["applicable"] and not traceability["ok"]:
         summary = traceability["summary"]
+        spec_only = summary.get("acceptance_spec_only", 0)
+        reason = (
+            f"需求追溯未通过：{summary['acceptance_missing']} 条验收条目没有带锚点的测试指向、"
+            f"{summary['requirements_without_acceptance']} 条需求没有验收条目"
+        )
+        if spec_only:
+            reason += f"（其中 {spec_only} 条只有测试规格、没有代码锚点）"
         return {
             "result": "FAIL",
-            "reason": (
-                f"需求追溯未通过：{summary['acceptance_missing']} 条验收条目没有测试指向、"
-                f"{summary['requirements_without_acceptance']} 条需求没有验收条目"
-            ),
+            "reason": reason,
             "missing_acceptance": traceability["missing"],
             "without_acceptance": traceability["without_acceptance"],
             "top_gaps": traceability["top_gaps"],
-            "next": "按 top_gaps 从缺口最多的需求开始补测试；`wxg trace --feature … --md` 看全表",
+            "next": "按 top_gaps 从缺口最多的需求开始补带锚点的测试；`wxg trace --feature … --md` 看全表",
             **base,
         }
     if coverage["enforced"] and coverage["unmet"]:
