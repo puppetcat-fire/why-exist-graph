@@ -326,12 +326,15 @@ def cmd_gate(conn, args):
     if traceability["applicable"] and not traceability["ok"]:
         summary = traceability["summary"]
         spec_only = summary.get("acceptance_spec_only", 0)
+        blocked = summary.get("acceptance_blocked", 0)
         reason = (
             f"需求追溯未通过：{summary['acceptance_missing']} 条验收条目没有带锚点的测试指向、"
             f"{summary['requirements_without_acceptance']} 条需求没有验收条目"
         )
         if spec_only:
             reason += f"（其中 {spec_only} 条只有测试规格、没有代码锚点）"
+        if blocked:
+            reason += f"（其中 {blocked} 条标注了未实现/阻塞，仍算缺口、不豁免）"
         return {
             "result": "FAIL",
             "reason": reason,

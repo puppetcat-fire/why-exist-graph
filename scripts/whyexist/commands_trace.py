@@ -65,13 +65,13 @@ def _render_markdown(report: dict) -> str:
         (
             f"需求 {summary['requirements']} 条；验收条目 {summary['acceptance_items']}，"
             f"已测（带锚点）{summary['acceptance_tested']}，仅规格 {summary['acceptance_spec_only']}，"
-            f"缺口 {summary['acceptance_missing']}；"
+            f"缺口 {summary['acceptance_missing']}（其中标注未实现/阻塞 {summary.get('acceptance_blocked', 0)}）；"
             f"未登记验收 {summary['requirements_without_acceptance']}，"
             f"聚合需求 {summary['aggregate_requirements']}。"
         ),
         "",
-        "| 需求 | 优先级 | 验收 | 已测 | 仅规格 | 缺口 |",
-        "|---|---|---|---|---|---|",
+        "| 需求 | 优先级 | 验收 | 已测 | 仅规格 | 缺口 | 未实现 |",
+        "|---|---|---|---|---|---|---|",
     ]
     rows = sorted(
         report["requirements_detail"],
@@ -81,15 +81,16 @@ def _render_markdown(report: dict) -> str:
         priority = row.get("priority") or "—"
         lines.append(
             f"| `{row['id']}` | {priority} | {row['acceptance']} | {row['tested']} "
-            f"| {row.get('spec_only', 0)} | {row['missing_count']} |"
+            f"| {row.get('spec_only', 0)} | {row['missing_count']} | {row.get('blocked', 0)} |"
         )
     if not rows:
-        lines.append("| （无需求） | | | | | |")
+        lines.append("| （无需求） | | | | | | |")
     if report.get("items"):
-        lines.extend(["", "### 验收条目明细", "", "| # | 验收 | 覆盖测试 |", "|---|---|---|"])
+        lines.extend(["", "### 验收条目明细", "", "| # | 验收 | 覆盖测试 | 状态 |", "|---|---|---|---|"])
         for item in report["items"]:
             tests = "、".join(f"`{test.split(':')[-1]}`" for test in item["tests"]) or "—"
-            lines.append(f"| {item['ordinal']} | {item['text']} | {tests} |")
+            status = item.get("status") or "—"
+            lines.append(f"| {item['ordinal']} | {item['text']} | {tests} | {status} |")
     if report["truncated"]:
         lines.append("")
         lines.append("明细按 `--limit` 截断；完整清单用 `--json`。")

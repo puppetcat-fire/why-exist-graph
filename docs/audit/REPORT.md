@@ -129,6 +129,8 @@
 | P2.24 四仓 P0 组开工 | 完成 | gen34：写 `AuthAcceptanceTest` 10 条（FR-AUTH-02/03 的 9 条验收），登记 testcase 节点 + verifies 边；四仓 tested 20→30、缺口 742→732，`fr-auth-02/03` 退出 top_gaps |
 | P2.25 缺口条目级明细 | 完成 | 3.13.0：`trace --requirement` 带 `items`（条文/是否被覆盖/测试 id），`--md` 出条目明细表；补测试时按条目看 |
 | P2.26 批量写入入口 | 完成 | 3.14.0：`bulk` 命令（JSONL，先全量校验再整批写，token+target 边界）；替掉项目侧自造的 `batch_write2.py` 那类循环脚本 |
+| P2.27 已有测试映射验收 | 完成 | gen35：`AuthApiTest` / `DictApiTest` / `PlanApiTest` 映射到 8 条验收（auth-04、dict-02、fanz-01），四仓 tested 30→37、缺口 732→725；auth-04 清零 |
+| P2.28 缺口可解释 | 完成 | 3.15.0：验收条目 `x_status` 标注未实现/不适用，trace 单列 `acceptance_blocked`、md 有状态列；标注不豁免门禁。四仓标了 6 条（cat-09 四条 + auth-02/03 各一条） |
 | 3.3.0 – 3.5.1 发布闭环 | 完成 | 六个版本各自有 `dist/v<ver>`、annotated tag、GitHub Release；附件 SHA 与本地构建逐字节一致 |
 | Release asset 上传 | 自动（此前判断有误） | `release.yml` 在 tag push 时构建并上传 zip；实测 v2.96.0 附件 SHA `889e2af3…` 与干净 checkout 构建逐字节一致 |
 

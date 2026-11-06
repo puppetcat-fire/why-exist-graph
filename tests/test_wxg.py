@@ -2543,7 +2543,7 @@ class WxgTestCase(unittest.TestCase):
         self.assertIsInstance(md, str)
         self.assertIn("# 追溯矩阵", md)
         self.assertIn("requirement:feat-md:main", md)
-        self.assertIn("| 需求 | 优先级 | 验收 | 已测 | 仅规格 | 缺口 |", md)
+        self.assertIn("| 需求 | 优先级 | 验收 | 已测 | 仅规格 | 缺口 | 未实现 |", md)
         drill = self.cli("trace", "--feature", "feat-md", "--requirement", "requirement:feat-md:main", expect=1)
         self.assertEqual(1, drill["requirements"])
         self.assertEqual(2, drill["summary"]["acceptance_items"])
@@ -2706,6 +2706,40 @@ class WxgTestCase(unittest.TestCase):
             conn.close()
         rejected = self.cli("bulk", "--token", "tok-scan", "--nodes", str(nodes), expect=2)
         self.assertIn("不能执行 bulk", rejected["error"])
+
+    def test_trace_reports_blocked_acceptance_without_waiving_gate(self):
+        """3.15.0：x_status 标注未实现/阻塞，进 acceptance_blocked，但仍是缺口。"""
+        self.init_repo()
+        self.declare("feat-blocked")
+        self.cli("evidence-record", "--feature", "feat-blocked", "--name", "e", "--command", "true", "--actor", "t")
+        self.trace_ok("feat-blocked")  # acceptance 01 有带锚点的测试
+        conn = self.db()
+        conn.row_factory = sqlite3.Row
+        try:
+            wxg.upsert_node(conn, {"id": "acceptance:feat-blocked:main:02", "kind": "acceptance",
+                                   "name": "未实现的一条", "attrs": {
+                                       "text": "未实现的一条", "ordinal": 2,
+                                       "x_status": "未实现：依赖引擎映射表"}})
+            wxg.upsert_edge(conn, {"src": "requirement:feat-blocked:main",
+                                   "dst": "acceptance:feat-blocked:main:02", "kind": "has_acceptance"})
+            conn.commit()
+        finally:
+            conn.close()
+        self.force_ready("feat-blocked")
+        trace = self.cli("trace", "--feature", "feat-blocked", "--json", expect=1)
+        self.assertEqual(1, trace["summary"]["acceptance_blocked"])
+        self.assertEqual(1, trace["summary"]["acceptance_missing"])
+        gate = self.cli("gate", "--feature", "feat-blocked", "--json", expect=1)
+        self.assertIn("标注了未实现", gate["reason"])
+        drill = self.cli("trace", "--feature", "feat-blocked",
+                         "--requirement", "requirement:feat-blocked:main", "--json", expect=1)
+        statuses = {item["ordinal"]: item["status"] for item in drill["items"]}
+        self.assertEqual("", statuses[1])
+        self.assertIn("未实现", statuses[2])
+        md = self.cli("trace", "--feature", "feat-blocked",
+                      "--requirement", "requirement:feat-blocked:main", "--md", expect=1)
+        self.assertIn("| 状态 |", md)
+        self.assertIn("未实现：依赖引擎映射表", md)
 
     def test_trace_requires_anchored_tests(self):
         """3.12.0：只有测试规格（没路径）不算交付证据；node.path 与 attrs.path 都算锚点。"""

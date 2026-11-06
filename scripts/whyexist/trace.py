@@ -72,6 +72,7 @@ def acceptance_children(conn, requirement_id: str) -> list[dict]:
             "id": row["id"],
             "text": str(attrs.get("text") or row["name"] or ""),
             "ordinal": ordinal,
+            "status": str(attrs.get("x_status") or "").strip(),
         })
     return sorted(items, key=lambda item: (item["ordinal"], item["id"]))
 
@@ -251,6 +252,7 @@ def trace_report(conn, feature: dict, limit: int = 20, requirement: str | None =
     acceptance_total = 0
     acceptance_tested = 0
     acceptance_spec_only = 0
+    acceptance_blocked = 0
     for node_id in requirement_ids:
         node = get_node(conn, node_id)
         items = acceptance_children(conn, node_id)
@@ -268,8 +270,13 @@ def trace_report(conn, feature: dict, limit: int = 20, requirement: str | None =
             aggregates.append(node_id)
         elif not items:
             without_acceptance.append(node_id)
+        blocked = [item for item in gaps if item.get("status")]
+        acceptance_blocked += len(blocked)
         for item in gaps:
-            missing.append({"requirement": node_id, "acceptance": item["id"], "text": item["text"]})
+            entry = {"requirement": node_id, "acceptance": item["id"], "text": item["text"]}
+            if item.get("status"):
+                entry["status"] = item["status"]
+            missing.append(entry)
         priority = loads(node["attrs_json"], {}).get("x_priority")
         row = {
             "id": node_id,
@@ -277,6 +284,7 @@ def trace_report(conn, feature: dict, limit: int = 20, requirement: str | None =
             "acceptance": len(items),
             "tested": len(anchored),
             "spec_only": len(spec_only),
+            "blocked": len(blocked),
             "missing_count": len(gaps),
             "direct_tests": len(_anchored_verifiers(verified, node_id)),
             "missing": [item["id"] for item in gaps][:limit],
@@ -296,6 +304,7 @@ def trace_report(conn, feature: dict, limit: int = 20, requirement: str | None =
                     "ordinal": item["ordinal"],
                     "tested": bool(item_tests),
                     "tests": sorted(item_tests),
+                    "status": item.get("status") or "",
                 })
     requirements = len(rows)
     applicable = requirements > 0
@@ -332,6 +341,7 @@ def trace_report(conn, feature: dict, limit: int = 20, requirement: str | None =
             "acceptance_items": acceptance_total,
             "acceptance_tested": acceptance_tested,
             "acceptance_spec_only": acceptance_spec_only,
+            "acceptance_blocked": acceptance_blocked,
             "acceptance_missing": len(missing),
             "complete": complete,
             "unknown": unknown,
