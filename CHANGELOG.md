@@ -1,5 +1,18 @@
 # Changelog — why-exist-graph
 
+## 3.16.0（2026-11-06）
+
+**标注有专用命令了：`acceptance-status`。** 3.15.0 给验收条目加了 `x_status`，但只能靠
+`upsert-node` 整体回写 attrs——得先把原 attrs 读回来再拼，漏一个键就丢 `text`/`ordinal`。
+在四仓标注 6 条时就踩了这个手工回读的流程。
+
+- **`wxg acceptance-status --acceptance <id> [--status <说明>] --token …`**：只改 `x_status`
+  一个键，其它 attrs 原样保留；省略 `--status` 即清除标注。非 acceptance 节点、缺 token 都拒绝。
+- **契约**：命令 54 → 55、`TOKEN_COMMANDS` 与 `I5` 清单加 `acceptance-status`、
+  `trace_rules` 15 → 16 条（写明唯一写入口）。
+- **测试**：443 → 445（写/清除且其它键不丢；非 acceptance 与缺 token 拒绝）。
+- **版本**：契约 `3.15.0` → `3.16.0`；库 schema 仍为 `9`。
+
 ## 3.15.0（2026-11-06）
 
 **缺口要能解释自己：验收条目可标注"未实现/阻塞"，但不豁免门禁。** 查四仓 `fr-cat-09` 时发现

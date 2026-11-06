@@ -131,6 +131,8 @@
 | P2.26 批量写入入口 | 完成 | 3.14.0：`bulk` 命令（JSONL，先全量校验再整批写，token+target 边界）；替掉项目侧自造的 `batch_write2.py` 那类循环脚本 |
 | P2.27 已有测试映射验收 | 完成 | gen35：`AuthApiTest` / `DictApiTest` / `PlanApiTest` 映射到 8 条验收（auth-04、dict-02、fanz-01），四仓 tested 30→37、缺口 732→725；auth-04 清零 |
 | P2.28 缺口可解释 | 完成 | 3.15.0：验收条目 `x_status` 标注未实现/不适用，trace 单列 `acceptance_blocked`、md 有状态列；标注不豁免门禁。四仓标了 6 条（cat-09 四条 + auth-02/03 各一条） |
+| P2.29 标注专用写入口 | 完成 | 3.16.0：`acceptance-status` 只改 `x_status`（省略即清除），替掉手工回读 attrs 的 `upsert-node` 用法；命令 54→55 |
+| P2.30 四仓 CAT-09 补测 | 完成 | gen37：`CatalogAcceptanceTest` 覆盖验收 3（未知编码→未识别），tested 37→38、缺口 724；cat-09 现 1/5 + 4 条标注 |
 | 3.3.0 – 3.5.1 发布闭环 | 完成 | 六个版本各自有 `dist/v<ver>`、annotated tag、GitHub Release；附件 SHA 与本地构建逐字节一致 |
 | Release asset 上传 | 自动（此前判断有误） | `release.yml` 在 tag push 时构建并上传 zip；实测 v2.96.0 附件 SHA `889e2af3…` 与干净 checkout 构建逐字节一致 |
 

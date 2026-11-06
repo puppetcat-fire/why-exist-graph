@@ -2438,6 +2438,54 @@ class WxgTestCase(unittest.TestCase):
         doctor = self.cli("doctor", expect=1)
         self.assertIn("acceptance-source-drift", doctor["by_check"])
 
+    def test_acceptance_status_sets_and_clears(self):
+        """3.16.0：只改 x_status 一个键，text/ordinal 原样保留。"""
+        self.init_repo()
+        self.declare("feat-status")
+        self.open_targets("feat-status", "specify-test", ["acceptance:feat-status:*"])
+        self.ready_ticket("feat-status", "specify-test")
+        spec = self.claim("specify-test")
+        token = spec["claim_token"]
+        acc = "acceptance:feat-status:main:01"
+        set_result = self.cli("acceptance-status", "--acceptance", acc,
+                              "--status", "未实现：依赖引擎映射表", "--token", token)
+        self.assertEqual("未实现：依赖引擎映射表", set_result["status"])
+        trace = self.cli("trace", "--feature", "feat-status", "--json", expect=1)
+        self.assertEqual(1, trace["summary"]["acceptance_blocked"])
+        conn = self.db()
+        try:
+            attrs = json.loads(conn.execute(
+                "SELECT attrs_json FROM nodes WHERE id=?", (acc,)).fetchone()[0])
+        finally:
+            conn.close()
+        self.assertEqual("返回成功", attrs["text"])  # 其它键没丢
+        self.assertEqual(1, attrs["ordinal"])
+        cleared = self.cli("acceptance-status", "--acceptance", acc, "--token", token)
+        self.assertTrue(cleared["cleared"])
+        conn = self.db()
+        try:
+            attrs = json.loads(conn.execute(
+                "SELECT attrs_json FROM nodes WHERE id=?", (acc,)).fetchone()[0])
+        finally:
+            conn.close()
+        self.assertNotIn("x_status", attrs)
+        trace = self.cli("trace", "--feature", "feat-status", "--json", expect=1)
+        self.assertEqual(0, trace["summary"]["acceptance_blocked"])
+
+    def test_acceptance_status_rejects_non_acceptance_and_roles(self):
+        self.init_repo()
+        self.declare("feat-status2")
+        self.open_targets("feat-status2", "specify-test", ["acceptance:feat-status2:*"])
+        self.ready_ticket("feat-status2", "specify-test")
+        spec = self.claim("specify-test")
+        token = spec["claim_token"]
+        rejected = self.cli("acceptance-status", "--acceptance", "requirement:feat-status2:main",
+                            "--status", "x", "--token", token, expect=2)
+        self.assertIn("不是 acceptance", rejected["error"])
+        missing = self.cli("acceptance-status", "--acceptance", "acceptance:feat-status2:main:01",
+                           "--status", "x", expect=2)
+        self.assertIn("--token", json.dumps(missing, ensure_ascii=False))
+
     def test_acceptance_edges_are_guarded_at_write_time(self):
         """3.9.0：has_acceptance / verifies 的结构不变量在写入期就拒绝，doctor 只兜旧库。"""
         self.init_repo()

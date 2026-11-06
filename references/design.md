@@ -2302,6 +2302,18 @@ kind/id 形态/attrs/边 kind/端点存在/批次内重复 id 全部先查，任
 实测四仓：`fr-cat-09` 明细现在直接写清第 1/2/4/5 条为什么没测试，第 3 条（未知编码→未识别）
 是真正该补测试的那条。
 
+## 123. 标注有专用命令（3.16.0）
+
+3.15.0 给验收条目加了 `x_status`，可写它的路只有 `upsert-node` 整体回写 attrs：得先把原 attrs
+读回来、合并、再写回。在四仓标 6 条时我就这么手搓了一遍——**这就是给自己造重复实现**，
+而且漏一个键就会把 `text` 或 `ordinal` 冲掉。
+
+改法：`acceptance-status --acceptance <id> [--status <说明>] --token`，只碰 `x_status` 一个键，
+省略 `--status` 即清除。与 `acceptance-add` 分工明确：**新增用 add，标注用 status**。
+
+教训：给某个字段开口子时，顺手给它一个专用写入口，否则下一个人（包括未来的我）就会用
+通用写命令去整体覆盖，迟早丢数据。
+
 ## 附：Windows 受限 token 下的临时目录
 
 Windows 上 `tempfile.mkdtemp()` / `TemporaryDirectory()`（Python ≥ 3.12.4，为 CVE-2024-4030）

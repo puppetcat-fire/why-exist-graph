@@ -8,6 +8,8 @@ target_ids 内时，它的 acceptance 子节点自动在边界内**——验收�
 from __future__ import annotations
 
 from .commands_feature import _require_write
+from .errors import Reject
+from .graph import get_node, upsert_node
 from .jsonio import loads
 from .work import append_evidence, require_targets, target_match
 from .workflow import ensure_feature
@@ -95,6 +97,35 @@ def _render_markdown(report: dict) -> str:
         lines.append("")
         lines.append("明细按 `--limit` 截断；完整清单用 `--json`。")
     return "\n".join(lines) + "\n"
+
+
+def cmd_acceptance_status(conn, args):
+    """给验收条目写/清 `x_status`（未实现、不适用、阻塞原因）。
+
+    为什么不走 upsert-node：那要先把 attrs 原样读回来再整体写回，漏一个键就丢 text/ordinal。
+    这个命令只碰 `x_status` 一个键，别的键原样保留。
+    """
+    item = _require_write(conn, args, "acceptance-status")
+    node = get_node(conn, args.acceptance)
+    if node is None:
+        raise Reject(f"节点不存在：{args.acceptance}")
+    if node["kind"] != "acceptance":
+        raise Reject(f"{args.acceptance} 不是 acceptance 节点（实际 kind={node['kind']}）")
+    require_targets(item, [args.acceptance])
+    attrs = loads(node["attrs_json"], {})
+    status = (args.status or "").strip()
+    if status:
+        attrs["x_status"] = status
+    else:
+        attrs.pop("x_status", None)
+    upsert_node(conn, {
+        "id": args.acceptance,
+        "kind": "acceptance",
+        "name": node["name"],
+        "attrs": attrs,
+    })
+    append_evidence(conn, item, [args.acceptance])
+    return {"id": args.acceptance, "status": status or None, "cleared": not status}
 
 
 def cmd_trace(conn, args):
