@@ -11,7 +11,7 @@
   字段是追加的（blind-check 只读它关心的三项，不受影响）。
 - **`feature-status` 新增 `traceability` 摘要**：验收条目数、已测数、缺口数、`complete` / `unknown`，
   与 `trace` / `gate` 同一口径。
-- **契约**：`trace_rules` 6 → 7 条（brief/status 的验收口径）。
+- **契约**：`trace_rules` 7 → 8 条（brief/status 的验收口径）。
 - **测试**：429 → 431（briefing 两条纯函数、brief 端到端一条、feature-status 一条）。
 - **版本**：契约 `3.7.0` → `3.8.0`；库 schema 仍为 `9`。
 

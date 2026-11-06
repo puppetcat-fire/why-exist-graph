@@ -29,7 +29,7 @@ python tools/install_skill.py --zip dist/v3.8.0/why-exist-graph-3.8.0.zip
   `brief_version` 不动——字段是追加的，`blind-check` 仍只读 `write_boundary` / `inputs` / `produces`。
 - **`feature-status` 新增 `traceability` 摘要**：验收条目数、已测数、缺口数、`complete` / `unknown`，
   与 `trace` 和 `gate` 的 `traceability` 检查同一口径。
-- **契约**：`trace_rules` 6 → 7 条（brief / status 的验收口径）。
+- **契约**：`trace_rules` 7 → 8 条（brief / status 的验收口径）。
 - **测试**：429 → 431（briefing 两条纯函数、`brief` 端到端一条、`feature-status` 一条）。
 
 ## 验证
