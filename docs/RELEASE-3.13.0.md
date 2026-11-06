@@ -28,7 +28,7 @@ python tools/install_skill.py --zip dist/v3.13.0/why-exist-graph-3.13.0.zip
   `tested` / `tests`（覆盖它的带锚点测试 id）。
 - **`trace --requirement … --md`** 渲染「验收条目明细」表：`| # | 验收 | 覆盖测试 |`，没测的显示 `—`。
 - **契约**：`trace_rules` 13 → 14 条。
-- **测试**：438 → 439（钻取带条目明细、md 有小节、未覆盖条目的 tests 为空）。
+- **测试**：438（没有新增用例；把已有 drill 用例的断言补到条目级）。
 
 ## 验证
 

@@ -31,7 +31,7 @@ API——这正是"同一职责两份实现"的味道。
 - **边界与 `upsert-node` / `upsert-edge` 相同**：token + 工单 `target_ids`；角色只给
   `model-architecture` / `model-structure` / `interact` / `specify-test`（能同时写节点和边的角色）。
 - **契约**：命令 53 → 54、`TOKEN_COMMANDS` 加 `bulk`、`I5` 写入边界清单加 `bulk`。
-- **测试**：439 → 443（成对写入、整批原子 + 边界拒绝、重复 id/悬空端点、角色与 token）。
+- **测试**：438 → 442（成对写入、整批原子 + 边界拒绝、重复 id/悬空端点、角色与 token）。
 
 ## 验证
 
