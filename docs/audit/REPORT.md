@@ -124,6 +124,7 @@
 | P2.19 四仓项目验收迁移实战 | 完成 | gen33：762 条验收条目入库、31 条测试→验收边、20 条验收被指到；`gate` 从 PASS/UNKNOWN 变成 FAIL（742 条无测试）——门禁第一次对真实项目说真话 |
 | P2.20 聚合需求豁免 | 完成 | 3.9.1：迁移时发现 `requirement:{f}:main` 被算成缺口；改为有其它需求时豁免、唯一需求不豁免 |
 | P2.21 红区可行动 | 完成 | 3.10.0：`trace --md`（缺口降序矩阵）、`trace --requirement`（钻取）；gate 追溯 FAIL 带 `top_gaps` 与 `next`。四仓项目首屏即 AUTH 组，与组级结论一致 |
+| P2.22 缺口按优先级排 | 完成 | 3.11.0：`x_priority` 接入矩阵与 `top_gaps` 排序（优先级 → 缺口数 → id），未登记按最低优先级不报错；四仓首屏变成 P0 组打头 |
 | 3.3.0 – 3.5.1 发布闭环 | 完成 | 六个版本各自有 `dist/v<ver>`、annotated tag、GitHub Release；附件 SHA 与本地构建逐字节一致 |
 | Release asset 上传 | 自动（此前判断有误） | `release.yml` 在 tag push 时构建并上传 zip；实测 v2.96.0 附件 SHA `889e2af3…` 与干净 checkout 构建逐字节一致 |
 

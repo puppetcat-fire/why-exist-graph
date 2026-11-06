@@ -2543,7 +2543,7 @@ class WxgTestCase(unittest.TestCase):
         self.assertIsInstance(md, str)
         self.assertIn("# 追溯矩阵", md)
         self.assertIn("requirement:feat-md:main", md)
-        self.assertIn("| 需求 | 验收 | 已测 | 缺口 |", md)
+        self.assertIn("| 需求 | 优先级 | 验收 | 已测 | 缺口 |", md)
         drill = self.cli("trace", "--feature", "feat-md", "--requirement", "requirement:feat-md:main", expect=1)
         self.assertEqual(1, drill["requirements"])
         self.assertEqual(2, drill["summary"]["acceptance_items"])
@@ -2560,6 +2560,40 @@ class WxgTestCase(unittest.TestCase):
         self.assertEqual("requirement:feat-gap-lead:main", gate["top_gaps"][0]["id"])
         self.assertEqual(1, gate["top_gaps"][0]["missing"])
         self.assertIn("trace", gate["next"])
+
+    def test_trace_orders_gaps_by_priority(self):
+        """3.11.0：缺口排序先看 x_priority（P0 的 1 条缺口排在 P2 的 3 条前面）。"""
+        self.init_repo()
+        self.declare("feat-pri")
+        conn = self.db()
+        conn.row_factory = sqlite3.Row
+        try:
+            # main 降级为 P2 并补第二条验收（缺口 2 条）；子需求 P0 只有 1 条缺口
+            conn.execute(
+                "UPDATE nodes SET attrs_json=? WHERE id='requirement:feat-pri:main'",
+                (json.dumps({"statement": "创建订单。", "x_priority": "P2"}, ensure_ascii=False),),
+            )
+            wxg.upsert_node(conn, {"id": "acceptance:feat-pri:main:02", "kind": "acceptance",
+                                   "name": "第二条", "attrs": {"text": "第二条", "ordinal": 2}})
+            wxg.upsert_edge(conn, {"src": "requirement:feat-pri:main",
+                                   "dst": "acceptance:feat-pri:main:02", "kind": "has_acceptance"})
+            wxg.upsert_node(conn, {"id": "requirement:feat-pri:sub", "kind": "requirement",
+                                   "name": "子需求", "attrs": {"statement": "子需求", "x_priority": "P0"}})
+            wxg.upsert_node(conn, {"id": "acceptance:feat-pri:sub:01", "kind": "acceptance",
+                                   "name": "子验收", "attrs": {"text": "子验收", "ordinal": 1}})
+            wxg.upsert_edge(conn, {"src": "requirement:feat-pri:sub",
+                                   "dst": "acceptance:feat-pri:sub:01", "kind": "has_acceptance"})
+            conn.commit()
+        finally:
+            conn.close()
+        trace = self.cli("trace", "--feature", "feat-pri", "--json", expect=1)
+        # P0 的 1 条缺口排在 P2 的 2 条前面：先看优先级，再看缺口数量
+        self.assertEqual("requirement:feat-pri:sub", trace["top_gaps"][0]["id"])
+        self.assertEqual("P0", trace["top_gaps"][0]["priority"])
+        self.assertEqual(1, trace["top_gaps"][0]["missing"])
+        self.assertEqual(2, trace["top_gaps"][1]["missing"])
+        md = self.cli("trace", "--feature", "feat-pri", "--md", expect=1)
+        self.assertLess(md.index("requirement:feat-pri:sub"), md.index("requirement:feat-pri:main"))
 
     def test_trace_ignores_requirement_level_verifies(self):
         """旧式“一条测试覆盖整条需求”不算验收覆盖，只能计入 direct_tests。"""

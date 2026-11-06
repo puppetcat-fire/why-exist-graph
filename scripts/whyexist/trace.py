@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+import re
+
 from .errors import Reject
 from .graph import get_node, upsert_edge, upsert_node
 from .jsonio import loads
@@ -22,6 +24,16 @@ from .workflow import scope_ids
 
 ACCEPTANCE_EDGE_KIND = "has_acceptance"
 VERIFIES_EDGE_KIND = "verifies"
+
+#: `x_priority` 的形态：P0/P1/…（大小写不敏感）。没有或认不出按最低优先级排。
+_PRIORITY = re.compile(r"^[Pp](\d{1,2})$")
+NO_PRIORITY_RANK = 99
+
+
+def priority_rank(value) -> int:
+    """`x_priority` → 排序用的整数；认不出（含 None）返回最低优先级。"""
+    match = _PRIORITY.match(str(value)) if value is not None else None
+    return int(match.group(1)) if match else NO_PRIORITY_RANK
 
 
 def split_requirement(requirement_id: str) -> tuple[str, str]:
@@ -240,6 +252,7 @@ def trace_report(conn, feature: dict, limit: int = 20, requirement: str | None =
             without_acceptance.append(node_id)
         for item in gaps:
             missing.append({"requirement": node_id, "acceptance": item["id"], "text": item["text"]})
+        priority = loads(node["attrs_json"], {}).get("x_priority")
         row = {
             "id": node_id,
             "name": node["name"],
@@ -250,6 +263,8 @@ def trace_report(conn, feature: dict, limit: int = 20, requirement: str | None =
             "missing": [item["id"] for item in gaps][:limit],
             "without_acceptance": not items and not is_aggregate,
             "aggregate": is_aggregate,
+            "priority": priority,
+            "priority_rank": priority_rank(priority),
         }
         rows.append(row)
         tail.append((len(gaps), row))
@@ -258,9 +273,17 @@ def trace_report(conn, feature: dict, limit: int = 20, requirement: str | None =
     unknown = applicable and acceptance_total == 0
     complete = applicable and not missing and not without_acceptance
     # 缺口最多的需求：让红区直接可行动（gate FAIL 里也用它）
+    # 缺口数量排序之外还要看优先级：P0 的 2 条缺口比 P2 的 6 条更该先补
     top_gaps = [
-        {"id": row["id"], "missing": count, "acceptance": row["acceptance"]}
-        for count, row in sorted(tail, key=lambda pair: (-pair[0], pair[1]["id"]))[:5]
+        {
+            "id": row["id"],
+            "missing": count,
+            "acceptance": row["acceptance"],
+            "priority": row["priority"],
+        }
+        for count, row in sorted(
+            tail, key=lambda pair: (pair[1]["priority_rank"], -pair[0], pair[1]["id"])
+        )[:5]
         if count
     ]
     return {

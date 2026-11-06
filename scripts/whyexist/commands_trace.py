@@ -69,14 +69,20 @@ def _render_markdown(report: dict) -> str:
             f"聚合需求 {summary['aggregate_requirements']}。"
         ),
         "",
-        "| 需求 | 验收 | 已测 | 缺口 |",
-        "|---|---|---|---|",
+        "| 需求 | 优先级 | 验收 | 已测 | 缺口 |",
+        "|---|---|---|---|---|",
     ]
-    rows = sorted(report["requirements_detail"], key=lambda row: (-row["missing_count"], row["id"]))
+    rows = sorted(
+        report["requirements_detail"],
+        key=lambda row: (row.get("priority_rank", 99), -row["missing_count"], row["id"]),
+    )
     for row in rows:
-        lines.append(f"| `{row['id']}` | {row['acceptance']} | {row['tested']} | {row['missing_count']} |")
+        priority = row.get("priority") or "—"
+        lines.append(
+            f"| `{row['id']}` | {priority} | {row['acceptance']} | {row['tested']} | {row['missing_count']} |"
+        )
     if not rows:
-        lines.append("| （无需求） | | | |")
+        lines.append("| （无需求） | | | | |")
     if report["truncated"]:
         lines.append("")
         lines.append("明细按 `--limit` 截断；完整清单用 `--json`。")
