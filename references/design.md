@@ -2198,6 +2198,18 @@ requirement / ordinal / text），`feature-status` 加 `traceability` 摘要（�
 没做的事：没有把验收条目塞进 `write_boundary`。验收不是执行者的产出物，硬塞进去会让人以为
 "新增验收"也算这次工单的交付。
 
+## 115. 验收边：把结构约束挪到写入期（3.9.0）
+
+3.6.0 加 `acceptance` 时，结构正确性全靠 `doctor` 事后报告：孤儿验收、多父挂载、非 testcase
+指向验收。`upsert-edge` 当时对 `has_acceptance` / `verifies` 什么都不查——等于允许先写坏再体检。
+这正是这个技能存在理由的反面：**检查要在写入路径上，而不是在报告里**。
+
+改法：`upsert-edge` 对 `has_acceptance` 要求 src=requirement、dst=acceptance、且一条验收只能属于
+一条需求（同父重复写仍幂等）；`verifies` 指向 acceptance 时 src 必须是 testcase。`doctor` 的
+`acceptance-orphan` / `acceptance-multi-parent` 保留，只兜旧库遗留数据。
+
+代价：`trace_rules` 8 → 9；测试 +1（正反例）；照旧不升 schema。
+
 ## 附：Windows 受限 token 下的临时目录
 
 Windows 上 `tempfile.mkdtemp()` / `TemporaryDirectory()`（Python ≥ 3.12.4，为 CVE-2024-4030）

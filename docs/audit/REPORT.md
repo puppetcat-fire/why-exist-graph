@@ -120,6 +120,7 @@
 | P2.15 验收单一来源 | 完成 | 3.6.1：导出的 01-需求.md 改读 acceptance 节点、声明不再写 `x_acceptance`、doctor 加四类验收结构检查（孤儿/多父/序号/声明漂移，只报告） |
 | P2.16 门禁输入口上锁 | 完成（breaking） | 3.7.0：`bite --feature` 不再扩作用域（节点须已在域内，`--allow-new-scope` 显式）；`apply` 落库要 token 且落 `target_ids`；doctor 报 `bite-out-of-scope`。审计 P2.12 挂着的两处关闭 |
 | P2.17 验收进工作流 | 完成 | 3.8.0：`brief` 带边界内验收条目（`acceptance_items`），`feature-status` 带 `traceability` 摘要；执行者与控制器不必另跑 trace |
+| P2.18 验收边写入期约束 | 完成 | 3.9.0：`upsert-edge` 强制 `has_acceptance`（requirement→acceptance、一条验收一个父）与 `verifies→acceptance`（src 必须是 testcase）；doctor 同类检查退为兜旧库 |
 | 3.3.0 – 3.5.1 发布闭环 | 完成 | 六个版本各自有 `dist/v<ver>`、annotated tag、GitHub Release；附件 SHA 与本地构建逐字节一致 |
 | Release asset 上传 | 自动（此前判断有误） | `release.yml` 在 tag push 时构建并上传 zip；实测 v2.96.0 附件 SHA `889e2af3…` 与干净 checkout 构建逐字节一致 |
 

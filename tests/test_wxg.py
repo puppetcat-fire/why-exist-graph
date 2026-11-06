@@ -2408,8 +2408,12 @@ class WxgTestCase(unittest.TestCase):
                                "name": "孤儿", "attrs": {"text": "孤儿", "ordinal": 9}})
         wxg.upsert_node(conn, {"id": "requirement:feat-doc-acc:other", "kind": "requirement",
                                "name": "other", "attrs": {"statement": "other"}})
-        wxg.upsert_edge(conn, {"src": "requirement:feat-doc-acc:other",
-                               "dst": "acceptance:feat-doc-acc:main:01", "kind": "has_acceptance"})
+        # 多父是旧库才可能有的坏数据（新写入会被 upsert-edge 拒绝），这里直接造行
+        conn.execute(
+            "INSERT INTO edges(id, src, dst, kind) VALUES(?,?,?,?)",
+            ("edge:has_acceptance:requirement:feat-doc-acc:other:acceptance:feat-doc-acc:main:01",
+             "requirement:feat-doc-acc:other", "acceptance:feat-doc-acc:main:01", "has_acceptance"),
+        )
         conn.execute(
             "UPDATE nodes SET attrs_json=? WHERE id='acceptance:feat-doc-acc:main:01'",
             (json.dumps({"text": "返回成功", "ordinal": 3}, ensure_ascii=False),),
@@ -2433,6 +2437,41 @@ class WxgTestCase(unittest.TestCase):
         conn.close()
         doctor = self.cli("doctor", expect=1)
         self.assertIn("acceptance-source-drift", doctor["by_check"])
+
+    def test_acceptance_edges_are_guarded_at_write_time(self):
+        """3.9.0：has_acceptance / verifies 的结构不变量在写入期就拒绝，doctor 只兜旧库。"""
+        self.init_repo()
+        self.declare("feat-edge-guard")
+        conn = self.db()
+        conn.row_factory = sqlite3.Row
+        try:
+            wxg.upsert_node(conn, {"id": "acceptance:feat-edge-guard:main:09", "kind": "acceptance",
+                                   "name": "孤儿", "attrs": {"text": "孤儿", "ordinal": 9}})
+            wxg.upsert_node(conn, {"id": "use_case:feat-edge-guard:uc", "kind": "use_case", "name": "uc"})
+            # src 必须是 requirement
+            with self.assertRaises(wxg.Reject):
+                wxg.upsert_edge(conn, {"src": "use_case:feat-edge-guard:uc",
+                                       "dst": "acceptance:feat-edge-guard:main:09", "kind": "has_acceptance"})
+            # dst 必须是 acceptance
+            with self.assertRaises(wxg.Reject):
+                wxg.upsert_edge(conn, {"src": "requirement:feat-edge-guard:main",
+                                       "dst": "use_case:feat-edge-guard:uc", "kind": "has_acceptance"})
+            # 一个条目只能挂一条需求
+            wxg.upsert_node(conn, {"id": "requirement:feat-edge-guard:other", "kind": "requirement",
+                                   "name": "other", "attrs": {"statement": "other"}})
+            with self.assertRaises(wxg.Reject):
+                wxg.upsert_edge(conn, {"src": "requirement:feat-edge-guard:other",
+                                       "dst": "acceptance:feat-edge-guard:main:01", "kind": "has_acceptance"})
+            # 同一父重复写是幂等的
+            wxg.upsert_edge(conn, {"src": "requirement:feat-edge-guard:main",
+                                   "dst": "acceptance:feat-edge-guard:main:01", "kind": "has_acceptance"})
+            # verifies 指向 acceptance 时 src 必须是 testcase
+            with self.assertRaises(wxg.Reject):
+                wxg.upsert_edge(conn, {"src": "use_case:feat-edge-guard:uc",
+                                       "dst": "acceptance:feat-edge-guard:main:01", "kind": "verifies"})
+            conn.commit()
+        finally:
+            conn.close()
 
     def test_doctor_reports_bite_out_of_scope(self):
         """旧库可能留着“咬合把节点带进作用域”时期的越界咬合，doctor 只报告。"""

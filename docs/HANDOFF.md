@@ -143,6 +143,7 @@ DSH 的 dreaming 会按实际调用给每个技能打分、记录边界缺口。
 | 3.6.1 | 3.6.0 后自检发现同一"验收"有三份表示（feature JSON / requirement attrs / acceptance 节点），导出读 A、门禁读 C | 收成单一来源：导出只读节点、声明不再写 `x_acceptance`、doctor 四类验收结构检查（只报告） |
 | 3.7.0 | 审计 P2.12 一直挂着的两处：`bite --feature` 会顺手扩作用域、`apply` 无 token 无边界 | 门的两个输入口上锁：`bite` 要求节点已在作用域（`--allow-new-scope` 显式承担）、`apply` 落库要 token + 落 `target_ids`、doctor 报 `bite-out-of-scope` |
 | 3.8.0 | 3.6/3.7 之后验收条目只进得了门禁，进不了任务书与状态：执行者得自己跑 trace 才知道验收长什么样 | `brief` 加 `acceptance_items`（边界内需求的验收条目），`feature-status` 加 `traceability` 摘要（与 trace/gate 同口径） |
+| 3.9.0 | 验收边只有 doctor 事后报告结构问题，`upsert-edge` 什么都放行 | 结构约束挪到写入期：`has_acceptance` 两端 kind 固定且一条验收只能属于一条需求；`verifies` 指向 acceptance 时 src 必须是 testcase；doctor 退为兜旧库 |
 
 ### 还没解决的
 

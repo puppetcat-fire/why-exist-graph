@@ -149,6 +149,25 @@ def upsert_edge(conn, payload: dict) -> dict:
         raise Reject(f"边的 src 不存在：{src}")
     if get_node(conn, dst) is None:
         raise Reject(f"边的 dst 不存在：{dst}")
+    if kind == "has_acceptance":
+        # 写入期就锁住结构：验收条目唯一归属一条需求、两端 kind 固定。doctor 只兜旧库。
+        src_node = get_node(conn, src)
+        dst_node = get_node(conn, dst)
+        if src_node["kind"] != "requirement":
+            raise Reject(f"has_acceptance 的 src 必须是 requirement，实际 {src_node['kind']}")
+        if dst_node["kind"] != "acceptance":
+            raise Reject(f"has_acceptance 的 dst 必须是 acceptance，实际 {dst_node['kind']}")
+        holder = conn.execute(
+            "SELECT src FROM edges WHERE kind='has_acceptance' AND dst=?", (dst,)
+        ).fetchone()
+        if holder is not None and holder["src"] != src:
+            raise Reject(f"验收条目已挂在 {holder['src']} 下：{dst}（一个条目只能属于一条需求）")
+    if kind == "verifies":
+        dst_node = get_node(conn, dst)
+        if dst_node["kind"] == "acceptance":
+            src_node = get_node(conn, src)
+            if src_node["kind"] != "testcase":
+                raise Reject(f"verifies 指向 acceptance 时 src 必须是 testcase，实际 {src_node['kind']}")
     if kind == "applies":
         src_kind = get_node(conn, src)["kind"]
         dst_kind = get_node(conn, dst)["kind"]
