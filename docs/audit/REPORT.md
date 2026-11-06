@@ -134,6 +134,7 @@
 | P2.29 标注专用写入口 | 完成 | 3.16.0：`acceptance-status` 只改 `x_status`（省略即清除），替掉手工回读 attrs 的 `upsert-node` 用法；命令 54→55 |
 | P2.30 四仓 CAT-09 补测 | 完成 | gen37：`CatalogAcceptanceTest` 覆盖验收 3（未知编码→未识别），tested 37→38、缺口 724；cat-09 现 1/5 + 4 条标注 |
 | P2.31 四仓 BASE-01 补测 | 完成 | gen38：`EnvelopeAcceptanceTest` 覆盖验收 3/6 + 复用 `AuthApiTest` 证明验收 4；验收 1/2/5 用 `acceptance-status` 标注未统一。tested 38→41、缺口 724→721、标注 6→9；sysj 120 测试 |
+| P2.32 四仓 FANZ-03/08 映射 | 完成 | gen39：`PlanFingerprintApiTest`（指纹稳定/变更、回读新快照）、`PlanApiTest`（缺内码 404）、`PlanGroupApiTest`（编组树层级）映射 4 条验收；FANZ-03 验收 1/5 与 FANZ-08 验收 2 标注部分实现。tested 41→45、缺口 721→717、标注 9→12 |
 | 3.3.0 – 3.5.1 发布闭环 | 完成 | 六个版本各自有 `dist/v<ver>`、annotated tag、GitHub Release；附件 SHA 与本地构建逐字节一致 |
 | Release asset 上传 | 自动（此前判断有误） | `release.yml` 在 tag push 时构建并上传 zip；实测 v2.96.0 附件 SHA `889e2af3…` 与干净 checkout 构建逐字节一致 |
 
