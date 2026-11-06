@@ -49,6 +49,23 @@ def backup_dir() -> Path:
     return base / "wxg-skill-backup" / time.strftime("%Y%m%d-%H%M%S")
 
 
+def prune_backups(keep: int = 3) -> list[Path]:
+    """只保留最近 keep 个技能备份。
+
+    每次安装都会把整个技能目录（一百来个文件）复制到临时目录；连装十几次就是
+    几十 MB 的残留，而且按时间戳目录名排下去很难看出谁还有用。留三个足够回退。
+    """
+    root = backup_dir().parent
+    if not root.is_dir():
+        return []
+    dirs = sorted((item for item in root.iterdir() if item.is_dir()), key=lambda item: item.name)
+    removed: list[Path] = []
+    for stale in dirs[:-keep] if len(dirs) > keep else []:
+        shutil.rmtree(stale, ignore_errors=True)
+        removed.append(stale)
+    return removed
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="把发布包安装到本机 DSH 技能目录")
     parser.add_argument("--zip", default=None, help="发布包路径（默认 dist/ 下最新）")
@@ -81,6 +98,9 @@ def main(argv: list[str] | None = None) -> int:
         bak.mkdir(parents=True, exist_ok=True)
         shutil.copytree(target, bak, dirs_exist_ok=True)
         print(f"[3] 备份旧目录 -> {bak}（{len(list(bak.rglob('*')))} 项）")
+        pruned = prune_backups()
+        if pruned:
+            print(f"    清理旧备份 {len(pruned)} 个（只留最近 3 个）")
         shutil.rmtree(target)
     else:
         print("[3] 目标不存在，全新安装")
