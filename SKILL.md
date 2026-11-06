@@ -11,7 +11,7 @@ description: >-
   **能力边界**：`wxg verify` 只比字节一致性（生成文档块、导出样例），不是契约提取器；
   `doctor` 只体检状态库。用于设计一致性检查、并行切分规划、质疑代码必要性、声明功能、
   交付前门禁（gate，PASS/FAIL 退出码 0/1）。
-whenToUse: 需要一次性 PASS/FAIL 判定（gate / verify / doctor / 咬合结论）、按工单流程推进一个 feature 的交付、规划并行切分、判断一次切分能不能交给不知全局的执行者、估算改动影响面时；或用户点名 why-exist、设计期编译器、并行规划、盲执行、撕咬、交付门、声明调和、设计图谱时。开放式仓库审计、代码综述、多文件行为契约盘点不属于本技能的典型路径——那类任务用普通读码/grep 更快，加载本技能只会增加状态库与流程开销。
+whenToUse: 需要一次性 PASS/FAIL 判定（gate / verify / doctor / 咬合结论）、按工单流程推进一个 feature 的交付、规划并行切分、给一次重构做需求与用例的落点规划（feature / plan / brief / impact 这些层不依赖导入器，非 Python 仓库也能用）、判断一次切分能不能交给不知全局的执行者、估算改动影响面时；或用户点名 why-exist、设计期编译器、并行规划、盲执行、撕咬、交付门、声明调和、设计图谱时。纯代码综述（没有交付判定或切分规划目标）不属于典型路径——那类任务用普通读码/grep 更快，加载本技能只会增加状态库与流程开销。
 ---
 
 # why-exist-graph（DSH 原生）
@@ -340,7 +340,13 @@ feature 开启 `--conformance`（默认关闭）时，gate 对 `missing`/`missin
 
 ## 已知边界
 
-- 导入器只有 Python AST；`repo-add --language` 仅接受 `python`，其他语言请用 `upsert-node`/`upsert-edge`（详见 `references/design.md` §5）。
+- 导入器只有 Python AST；`repo-add --language` 仅接受 `python`。**非 Python 仓库不等于不能用本技能**——
+  分层看：`import-file` / `import-repo` / `derive` / `sync` / `conformance` 依赖导入器，跳过；
+  而 `feature-declare` / `work-*` / `plan` / `brief` / `blind-check` / `impact` / `conflicts` /
+  `gate` 只吃图里的节点与边，和语言无关。做法是：设计层（requirement / use_case / component）
+  用 `upsert-node` + `upsert-edge` 手工建模（或让子代理并行抽取后批量 upsert），代码层只记
+  「要改哪些文件/符号」的锚点节点，然后照常走 work → gate。代价是代码层盘点靠人/子代理，
+  `sync` 与 `conformance` 用不了；详见 `references/design.md` §5。
 - 测试执行不在 wxg 内：BehaviorPassed 只强制“必须有同 generation、exit_code=0 且产物有效的 evidence”，不校验证据真伪；需要调用方如实执行并登记（重新声明后旧代证据不再满足新代）。
 - `wxg` 信任状态库文件本身：直接手改 sqlite（绕过命令）不在防护范围，`doctor` 只能发现部分不一致。
 - `gate` 校验条件/咬合/证据、pattern、施工标记、作用域内 stale 节点、coverage/drift 与 conformance（开启时）；不评价图规模与设计语义质量，最小 requirement 图也可能 PASS。

@@ -1,5 +1,26 @@
 # Changelog — why-exist-graph
 
+## 3.5.0（2026-11-06）
+
+**修正定位：非 Python 重构也是目标场景**。依据是 dreaming 第 18 次调用
+（`ep_mw46bgd0_f9771e`，07:25–07:32）：用户要「整理全部需求和用例，从头做代码重构，
+还要加功能」，仓库是 Java（`XwsServiceImpl.java` / `sysj`）。实际用法是建 feature
+`four-repo-rebuild` + 9 个切片并行抽取，`turnEnd: completed`——但 probe 预测的 `fit`
+只有 0.18，`likelyPitfalls` 第一条就写着「技能不做需求挖掘」「Java 仓库无法直接进图库」。
+
+- **`whenToUse` 把「重构的需求与用例落点规划」加回适用场景**：3.3.0 为了压 wasteRate
+  把「多文件行为契约盘点」整个排除了，过头了——`feature` / `plan` / `brief` / `impact`
+  这一层恰恰是为重构切分设计的，而且不依赖导入器。现在只排除「纯代码综述
+  （没有交付判定或切分规划目标）」。
+- **已知边界第一条重写**：以前只有一句「导入器只有 Python AST」。现在明确分层——
+  `import-file` / `import-repo` / `derive` / `sync` / `conformance` 依赖导入器；
+  `feature-declare` / `work-*` / `plan` / `brief` / `blind-check` / `impact` /
+  `conflicts` / `gate` 只吃图里的节点与边，与语言无关。非 Python 仓库的做法：
+  设计层用 `upsert-node` + `upsert-edge` 手工建模，代码层只记「要改哪些文件/符号」
+  的锚点节点，然后照常走 work → gate；代价是 `sync` / `conformance` 用不了。
+- **测试**：416 不变（只改技能文档）。
+- **版本**：契约 `3.4.1` → `3.5.0`；schema 仍为 `9`。
+
 ## 3.4.1（2026-11-06）
 
 **「文件」节对齐现实**。3.1.0 精简入口、2.97 加后端集成、3.1 加 `check_undefined`、
